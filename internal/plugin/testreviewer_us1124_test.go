@@ -183,12 +183,12 @@ func TestAC5Gate3DelegatesToTheTestReviewerBeforeTheFreezeAndSendsABlockBackToTh
 func TestAC10ThePagesDescribeTheTestReviewerAndThatTheFreezeWaitsForIt(t *testing.T) {
 	t.Parallel()
 	agents := trPage(t, "docs/the-agents.md")
-	row := regexp.MustCompile("(?m)^\\| `sdlc:test-reviewer` \\| 3 \\| [^|]*Yes[^|]*\\|").FindString(agents)
+	row := regexp.MustCompile("(?m)^\\| `sdlc:test-reviewer` \\| (?:Gate )?3 \\| [^|]*Yes[^|]*\\|").FindString(agents)
 	if row == "" {
 		t.Error("AC-10 docs/the-agents.md has no row for sdlc:test-reviewer at Gate 3 that says it can block")
 	}
 	for _, c := range []struct{ page, heading string }{
-		{"docs/the-loop.md", "## Gate 3"},
+		{"docs/the-loop.md", "### Gate 3: freeze the tests"},
 		{"docs/commands.md", "## `sdlc freeze`"},
 	} {
 		section := trFold(trSection(t, trPage(t, c.page), c.heading))

@@ -1,15 +1,26 @@
 # Configuration
 
 - [Introduction](#introduction)
-- [What `init` writes for a Go project](#what-init-writes-for-a-go-project)
+- [The configuration file](#the-configuration-file)
+  - [Comments in the file](#comments-in-the-file)
+- [Changing a setting](#changing-a-setting)
+  - [When a change takes effect](#when-a-change-takes-effect)
+  - [When a setting is wrong](#when-a-setting-is-wrong)
+- [The settings you will change most](#the-settings-you-will-change-most)
+  - [Match the commands to your project](#match-the-commands-to-your-project)
+  - [Set the numbers a change is held to](#set-the-numbers-a-change-is-held-to)
+  - [Choose where stories are worked](#choose-where-stories-are-worked)
+  - [Choose where the loop waits for you](#choose-where-the-loop-waits-for-you)
+  - [Shape the team](#shape-the-team)
+  - [Set a budget](#set-a-budget)
 - [Every setting at once](#every-setting-at-once)
 - [`commands`](#commands)
   - [Trusting the commands](#trusting-the-commands)
-  - [The freeze check](#the-freeze-check)
-  - [Formatting each file](#formatting-each-file)
   - [Installing what a worktree needs](#installing-what-a-worktree-needs)
-  - [The coverage profile](#the-coverage-profile)
-  - [Which configuration a checkout reads](#which-configuration-a-checkout-reads)
+  - [The narrow test command](#the-narrow-test-command)
+  - [The run directory](#the-run-directory)
+  - [Coverage and mutation](#coverage-and-mutation)
+  - [The freeze check](#the-freeze-check)
   - [At landing](#at-landing)
 - [`thresholds`](#thresholds)
 - [`paths`](#paths)
@@ -17,68 +28,56 @@
   - [`paths.src`](#pathssrc)
   - [`paths.conflict_markers_intended`](#pathsconflict_markers_intended)
 - [`git`](#git)
-  - [How worktrees work](#how-worktrees-work)
-  - [What start writes into the repository](#what-start-writes-into-the-repository)
   - [Turning worktrees off](#turning-worktrees-off)
+- [`human_gates`](#human_gates)
+- [`team`](#team)
+  - [An agent's entry](#an-agents-entry)
+  - [Models, efforts and floors](#models-efforts-and-floors)
+  - [Bringing a reviewer back](#bringing-a-reviewer-back)
+  - [What the project manager cannot leave out](#what-the-project-manager-cannot-leave-out)
+  - [Upgrading from the staffing section](#upgrading-from-the-staffing-section)
+- [`budget`](#budget)
+- [`loop`](#loop)
+- [`freeze`](#freeze)
+  - [`freeze.allow_new_test_files`](#freezeallow_new_test_files)
+- [`reviews`](#reviews)
+  - [`reviews.policy`](#reviewspolicy)
+  - [`reviews.gate7_advisory`](#reviewsgate7_advisory)
 - [`backlog`](#backlog)
   - [`backlog.path`](#backlogpath)
 - [`spec`](#spec)
   - [`spec.paths`](#specpaths)
-- [`version`](#version)
-- [`loop`](#loop)
-- [`reviews`](#reviews)
-  - [`reviews.gate7_advisory`](#reviewsgate7_advisory)
-  - [`reviews.policy`](#reviewspolicy)
-- [`freeze`](#freeze)
-  - [`freeze.allow_new_test_files`](#freezeallow_new_test_files)
-- [`human_gates`](#human_gates)
-- [`budget`](#budget)
 - [`consolidate`](#consolidate)
-- [`team`](#team)
-  - [An agent's entry](#an-agents-entry)
-  - [Models and efforts](#models-and-efforts)
-  - [Setting a floor with `lowest`](#setting-a-floor-with-lowest)
-  - [Bringing a reviewer back with `bring_back`](#bringing-a-reviewer-back-with-bring_back)
-  - [What a staffing cannot do](#what-a-staffing-cannot-do)
-  - [When a setting takes effect](#when-a-setting-takes-effect)
-  - [Upgrading from the staffing section](#upgrading-from-the-staffing-section)
+- [`version`](#version)
 - [Settings read from the environment](#settings-read-from-the-environment)
   - [`SDLC_HOOK_DEADLINE_MS`](#sdlc_hook_deadline_ms)
 - [The other half of the contract](#the-other-half-of-the-contract)
+- [Where to go next](#where-to-go-next)
 
 ## Introduction
 
-Everything the loop knows about your project lives in one file,
-`.sdlc/config.json`. You do not have to write it: `sdlc init` creates it with
-values that already match the stack it found, so the loop works as soon as
-`init` has run.
+Everything `sdlc` knows about your project is in two places. The file
+`.sdlc/config.json`, at the root of your repository, holds what a program can
+check: the commands that build and test your code, the numbers a change is
+held to, which files are tests, and where the loop waits for you. The
+`## SDLC Contract` section of your `CLAUDE.md` holds the rules only a reader
+can check.
 
-In most projects the only settings you will change are `commands`, the
-programs that build, test and check your code, and, if your tests live somewhere
-unusual, `paths.tests`. If `commands` is all you need, the
-guide on [tuning the commands for your stack](guides/tuning-commands-for-your-stack.md)
-is the place to go. The rest of this page describes each setting in turn, from
-the ones you are most likely to touch to the ones you may never need.
+You don't have to write either from nothing. `sdlc init` creates both, with
+settings that already match the stack it found, so the loop works as soon as
+`init` has run. Most projects then change a handful of settings and leave the
+rest alone.
 
-A field you leave out keeps its documented default. The file is loaded over the
-defaults rather than replacing them, so an old configuration keeps working when
-a new field arrives.
+This page starts with the file and how to change it safely, and then walks
+through the few settings you are most likely to change. After that it is a
+reference: every setting, with its default, an example, and what changes when
+you change it.
 
-A key `sdlc` does not know changes nothing, because the setting it was meant to
-be keeps its default. `sdlc doctor` names such a key as a problem, so run it
-after editing the file. A top-level key that starts with `_` is a comment and is
-never read as a setting, so `doctor` does not report it. `commands` takes any
-name, so a key there is read as a command, whatever it is called.
+## The configuration file
 
-A few settings are not in the file at all. They are read from the environment
-the session starts with, and are listed under
-[Settings read from the environment](#settings-read-from-the-environment).
-
-## What `init` writes for a Go project
-
-Let's take a look at the file `sdlc init` writes for a Go project. It leaves
-out the comment blocks `init` writes, and `mutation`, which `init` leaves empty
-for Go:
+Let's take a look at the file `sdlc init` writes for a Go project. This is all
+of it, apart from the comment blocks and the two commands `init` leaves empty
+for Go, `mutation` and `freeze_check`:
 
 ```json
 {
@@ -129,14 +128,23 @@ for Go:
 }
 ```
 
-The file `init` writes has `\u0026\u0026` where the example shows `&&`, and
-`\u003e` where it shows `>`. Both spellings are the same JSON string.
+The `test`, `test_files` and `coverage` commands are long because each does
+two jobs: one when the loop runs it, and one when you run it by hand.
+[The narrow test command](#the-narrow-test-command) and
+[The run directory](#the-run-directory) explain them.
 
-`sdlc init` writes a comment block above each setting. The block is a list of
-lines under a key made of `_` and the setting's name, such as `_thresholds`: a
-title, what the setting controls and what changing it costs, and the address of
-that setting's heading on this page. The loop skips these keys, so the blocks
-change nothing. This is the block above `thresholds`, as `init` writes it:
+A Rust, Node or Python project gets the same file with its own
+[`commands`](#commands) and [`paths`](#paths), and everything else as it is
+here. The file is plain JSON, so you may see `\u0026\u0026` where this page
+shows `&&`, and `\u003e` for `>`. That is how `init` writes them, and both
+spellings mean the same.
+
+### Comments in the file
+
+`sdlc init` writes a comment block above each setting. A block is a list of
+lines under a key made of `_` and the setting's name: a title, what the
+setting controls and what changing it costs, and the address of that setting's
+entry on this page. This is the one above `thresholds`:
 
 ```json
   "_thresholds": [
@@ -148,29 +156,206 @@ change nothing. This is the block above `thresholds`, as `init` writes it:
   "thresholds": { "coverage_min": 80, "mutation_min": 70 },
 ```
 
-A comment block belongs at the top level only. A list under a `_` key inside
-`commands` is refused, because every key there is read as a command.
+A top-level key that starts with `_` is never read as a setting, so the blocks
+change nothing, and you may add notes of your own in the same way. Keep them
+at the top level: inside `commands` every key is read as a command, whatever
+it is called.
 
-The sections below follow the order of the settings you are most likely to
-change, starting with `commands`.
+## Changing a setting
+
+The file is yours to edit by hand. Change it on trunk, in your main checkout,
+between stories, and then check it and commit it:
+
+```console
+$ sdlc doctor
+$ git add .sdlc/config.json
+$ git commit -m "Raise the coverage threshold"
+```
+
+`sdlc doctor` reads the file the way the loop will. It names a key it does not
+know, a value it cannot use and a command whose program is not installed, each
+with its fix. It never runs your commands.
+
+> [!WARNING]
+> Commit the change to trunk before you start the next story. Each story is
+> worked in a worktree cut from what trunk commits, so an edit you have not
+> committed never reaches it. Don't edit the file inside a story's worktree
+> either: no story lands a change under `.sdlc/`, so that story is
+> [refused at landing](troubleshooting.md#sdlc-e0055).
+
+A setting you leave out keeps its default, so a short file is a valid one, and
+an old file keeps working when a new setting arrives. While a story is being
+worked on, the hook refuses an agent's attempt to change the file, so a story
+is never held to settings it rewrote itself.
+
+To put every setting back to its default, there is `sdlc init --force`. It
+keeps your backlog's path, your trunk branch and a review policy you have
+moved, and nothing else: your commands and your team are written afresh.
+[Starting again from the defaults](guides/adding-to-an-existing-project.md#starting-again-from-the-defaults)
+says when that is worth it.
+
+### When a change takes effect
+
+Each checkout reads its own `.sdlc/config.json`. A story's worktree has the
+file trunk had committed when the story started, and that is the one its gates
+read. So a change reaches the stories you start after it is on trunk, and a
+story already under way keeps the settings it started with.
+
+Two things are read from somewhere else:
+
+- **The landing** reads `commands` and `thresholds` as trunk commits them at
+  that moment, never from a file on disk. [At landing](#at-landing) says what
+  it runs.
+- **`git.worktrees`** is read from the checkout you run `sdlc start` in, since
+  it decides whether there will be a worktree at all.
+
+The simplest course with a story under way is to let it finish. If it cannot
+wait, commit the change on trunk and bring the story onto the new trunk, as
+[a story in flight](#upgrading-from-the-staffing-section) is brought there.
+
+A second clone of the repository is another project as far as `sdlc` can
+tell, with a backlog and records of its own. Nothing stops two clones working
+the same story.
+
+### When a setting is wrong
+
+A key `sdlc` does not know changes nothing, because the setting it was meant
+to be keeps its default. No command stops for it, so run `sdlc doctor` after
+every edit. With `thresholds` misspelt, the first line of its `configuration`
+check reads:
+
+```text
+  problem  configuration        .sdlc/config.json has settings sdlc does not know, which change nothing: threshholds
+```
+
+A value `sdlc` cannot use is another matter. Every command refuses the file
+until you correct it, and says which setting it is:
+
+```text
+sdlc: .sdlc/config.json has settings sdlc cannot use
+
+  why  thresholds.coverage_min is -5, and 0 is how it is turned off
+  fix  change the settings the message names in .sdlc/config.json — docs/configuration.md says what each one takes; for a newer version, upgrade sdlc
+
+  SDLC-E0045  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0045
+```
+
+Fix a refused file before the next story. The hook cannot read it either, and
+until it can, it works from the defaults: your own test paths and freeze
+setting do not apply.
+
+## The settings you will change most
+
+Six groups of settings account for nearly every edit. Each is described
+briefly here, with a link to its full entry further down.
+
+### Match the commands to your project
+
+`commands` are the programs that build, test and check your code. `init`
+guesses them from your stack, and it cannot know that you run your tests
+through `make`. Put in what you type yourself:
+
+```json
+"commands": {
+  "build": "make build",
+  "test": "make test",
+  "lint": "make lint"
+}
+```
+
+Leave the other keys as they are. A command set to `""` is skipped.
+[`commands`](#commands) lists every key and who runs it, and
+[Tuning commands for your stack](guides/tuning-commands-for-your-stack.md)
+goes through the job for Go, Rust, Node and Python.
+
+### Set the numbers a change is held to
+
+`thresholds` are the percentages a change has to reach before its
+implementation is recorded as done at Gate 5:
+
+```json
+"thresholds": { "coverage_min": 85, "mutation_min": 0 }
+```
+
+A threshold of `0` is not enforced. [`thresholds`](#thresholds) says what each
+number is compared with.
+
+### Choose where stories are worked
+
+By default every story gets a worktree of its own, a second checkout under
+`.sdlc/worktrees/`, and your own checkout is left alone. To have stories
+worked in your checkout instead, one at a time, turn worktrees off:
+
+```json
+"git": { "trunk_branch": "main", "remote": false, "worktrees": false }
+```
+
+Read [Turning worktrees off](#turning-worktrees-off) first. It changes what
+has to be committed, and when.
+
+### Choose where the loop waits for you
+
+`human_gates` says which stories wait for your approval before they are
+committed. With the default, those are the stories you marked
+`"risk_tier": "high"`. To see the medium ones as well, and any story that
+touches your authentication code, whatever its tier:
+
+```json
+"human_gates": {
+  "pre_commit_pause_tiers": ["medium", "high"],
+  "pre_commit_pause_paths": ["src/auth/**"],
+  "dor_advocate_check": false
+}
+```
+
+[`human_gates`](#human_gates) has all three settings, and
+[Human approval gates](guides/human-approval-gates.md) shows what the pause
+looks like and how to answer it.
+
+### Shape the team
+
+`team` has a line for each of the thirteen agents. You may turn one off, decide
+whether a reviewer's block stops a gate, or ask for two reviews where there
+was one:
+
+```json
+"security": { "enabled": true, "can_block": true, "instances": 2 },
+"red-team": { "enabled": true, "can_block": true, "instances": 1 },
+```
+
+Two of these settings loosen the loop, so read [`team`](#team) before you
+commit a change to it.
+[Change the team for every story](the-agents.md#change-the-team-for-every-story)
+walks through an example.
+
+### Set a budget
+
+`budget` is what you expect one story to cost, and the points along the way at
+which `sdlc` warns you:
+
+```json
+"budget": { "per_story_usd": 40, "alert_fractions": [0.5, 0.9] }
+```
+
+A budget warns and never stops a story. [`budget`](#budget) has the details,
+and [Tracking what a story costs](guides/tracking-what-a-story-costs.md) shows
+the warnings as they appear.
 
 ## Every setting at once
 
-The `//` comments are for reading here. JSON takes none, so leave them out of your copy: a file
-with a `//` in it is refused as [SDLC-E0004](troubleshooting.md#sdlc-e0004). The file itself is
-plain JSON. To annotate your own file, use a top-level key that starts with `_`, as `sdlc init`
-does ([Introduction](#introduction)).
+Here is the whole file, with every setting at its default and a comment
+naming the values it can take. The `//` comments are for reading here. The
+file itself is plain JSON, which takes none: a file with a `//` in it is
+refused as [SDLC-E0004](troubleshooting.md#sdlc-e0004), so leave them out of
+your copy. To annotate your own file, use a top-level key that starts with
+`_`, as [`sdlc init` does](#comments-in-the-file).
 
-Every setting is at its default, with a comment naming the values it can take. `security` also
-shows the three keys `sdlc init` writes for no agent, `max_rounds`, `lowest` and `bring_back`, and
-four settings `sdlc init` does not write are shown too: `git.worktrees`, `budget.gate_hours`,
-`paths.conflict_markers_intended` and `reviews.policy`. Each of these seven is at the value its
-absence means, so it changes nothing. Name `reviews.policy` only to move the file every reviewer
-reads: named, with no file at that path, it makes `sdlc doctor` warn, where leaving it out does
-not.
-
-A new project's `sdlc init` writes the rest, with no `//`. Do not run `sdlc init --force` on a
-project you have: it writes the `team` section back at its defaults, and your own is lost.
+`init` writes most of this for a new project. The example also shows the
+settings `init` leaves out, each at the value its absence means, so that none
+of them changes anything: `git.worktrees`, `paths.conflict_markers_intended`,
+`reviews.policy`, `budget.gate_hours` and `consolidate`, and on `security` the
+three keys any agent's entry may hold, `max_rounds`, `lowest` and
+`bring_back`.
 
 ```jsonc
 {
@@ -270,118 +455,304 @@ project you have: it writes the `team` section back at its defaults, and your ow
 }
 ```
 
+The rest of this page takes the settings one section at a time. Every entry
+has the same parts: what the section is for, a table of its settings and
+their defaults, an example, and what changes when you change it.
+
 ## `commands`
 
-These are how to build, test and check this project. The loop runs them rather
-than guessing at a toolchain, and `sdlc doctor` checks that the programs they
-name are installed. They are the settings most projects adjust, usually to match
-a build system `init` could not guess.
+`commands` are how to build, test and check this project. The loop runs them
+and never guesses at a toolchain. `sdlc` runs most of them itself, once, when
+the implementation is recorded as done at Gate 5, and the agents run the rest
+at their gates.
 
-| Key | When it runs |
+| Command | Who runs it, and when |
 | --- | --- |
-| `build` | the implementer, when the frozen tests pass; the verifier, at Gate 6 |
-| `test` | `sdlc gate implementation pass`; the verifier at Gate 6 where no current result is recorded; `sdlc freeze` where `test_files` is empty |
-| `test_files` | the test author at Gate 3 and the implementer after each step, on the story's tests; `sdlc freeze`, over the new and changed tests: [The narrow test command](#the-narrow-test-command) |
-| `lint` | the implementer, when the frozen tests pass; the verifier, at Gate 6 |
-| `fmt` | the implementer, when the frozen tests pass |
-| `fmt_check` | the verifier |
-| `fmt_file` | the hook, on each file a tool writes while a story is being worked on |
-| `coverage` | the verifier, compared against `thresholds.coverage_min` |
-| `mutation` | the verifier, compared against `thresholds.mutation_min` |
-| `freeze_check` | `sdlc freeze`, before it records anything. Empty until you choose one: [The freeze check](#the-freeze-check) |
-| `smoke` | `sdlc start`, before each new story: in the story's new worktree, or on trunk with `git.worktrees` off. Keep it fast: it runs before every story |
+| `test` | `sdlc`, when the implementation gate is recorded as passed at Gate 5. This is the whole suite |
+| `test_files` | the test author and the test reviewer at Gate 3, and the implementer after each step of the plan, on the story's own tests; `sdlc freeze`, on the new and changed tests: [The narrow test command](#the-narrow-test-command) |
+| `build` | `sdlc`, at the implementation gate |
+| `lint` | `sdlc`, at the implementation gate |
+| `fmt` | the implementer once the frozen tests pass |
+| `fmt_check` | `sdlc`, at the implementation gate |
+| `coverage` | `sdlc`, at the implementation gate, which holds the number it prints to `thresholds.coverage_min` |
+| `mutation` | `sdlc`, at the implementation gate, which holds the number it prints to `thresholds.mutation_min` |
+| `smoke` | `sdlc start`, before each new story, in the story's new worktree. If it fails, the story does not start |
+| `fmt_file` | the hook, on each file an agent writes during a story, with `$FILE` set to that file |
+| `freeze_check` | `sdlc freeze`, before the tests are frozen. Empty until you choose one: [The freeze check](#the-freeze-check) |
 
-Any key you add is available to the agents; these are the ones the loop looks
-for by name. A key you leave out is simply not run.
+At the implementation gate `sdlc` runs `build`, `test`, `lint`, `fmt_check`,
+`coverage` and `mutation`, those that are set, in that order, and records what
+passed against the tree it ran them on. While that result is current, nobody
+runs them again: the verifier at Gate 6 works from it, and so does
+[the landing](#at-landing). Where the tree has changed since, the verifier
+runs them itself.
+[`sdlc gate`](commands.md#sdlc-gate-gate-status) says what a failing command
+looks like.
+
+There is no default for a command. `init` fills them in from the stack it
+finds, and a command it has no guess for is left as `""`:
+
+| Command | Go | Rust | Node | Python |
+| --- | --- | --- | --- | --- |
+| `smoke` | `go vet ./...`, where the module has a package | `cargo check --all-targets` | the same as `build` | none |
+| `build` | `go build ./...` | `cargo build` | `npm run build --silent` | none |
+| `test` | `go test ./... -count=1` | `cargo test` | `npm test --silent` | `pytest -q` |
+| `test_files` | `go test -count=1` on the packages of the files listed | `cargo test --test=<name>` for each file listed | `npm test --silent --` and the files listed | `pytest -q` on the files listed |
+| `lint` | `golangci-lint run` | `cargo clippy --all-targets -- -D warnings` | `npm run lint --silent` | `ruff check .` |
+| `fmt` | `gofmt -w .` | `cargo fmt` | `npx prettier --write .` | `ruff format .` |
+| `fmt_check` | `test -z "$(gofmt -l .)"` | `cargo fmt --check` | `npx prettier --check .` | `ruff format --check .` |
+| `fmt_file` | `gofmt -w "$FILE"`, for a `.go` file | none | `npx prettier --write --ignore-unknown "$FILE"` | `ruff format "$FILE"`, for a `.py` file |
+| `coverage` | `go test` with a cover profile | none | none | `pytest --cov` |
+
+The table gives each command in short. For Go and Python, `test` and
+`coverage` are written as a pair that shares one run of the suite, which
+[The run directory](#the-run-directory) shows in full, and
+[The narrow test command](#the-narrow-test-command) shows each stack's
+`test_files`.
+
+No stack gets a `mutation` or a `freeze_check`. For Node, `init` reads your
+`package.json`. It fills in `build`, `test` and `lint` only where there is a
+script of that name. It formats with your `format` and `format:check` scripts
+where you have them, and with Prettier where that is a dependency.
+
+Let's say your Python project runs its tests from a virtual environment, and
+has no build step:
+
+```json
+"commands": {
+  "build": "",
+  "test": ".venv/bin/python -m pytest -q"
+}
+```
+
+**When you change it.** Each value is a shell command, run from the root of
+the checkout the story is worked in. A command that is wrong fails the gate
+that runs it: a failure at the implementation gate
+[records the gate as failed](troubleshooting.md#sdlc-e0095), and the verifier
+blocks when any command it runs fails. A command you set to `""`, or leave
+out, is skipped. A key of your own is not run by anything, though the agents
+can read it.
+
+A few things follow from who runs each command:
+
+- **`test` runs the whole suite, and exits.** A script that starts a watcher
+  never returns.
+- **`test_files` runs only the files it is given.** With it empty, the freeze
+  runs the whole of `test` in its place, and the agents run a story's test
+  files with your runner as best they can.
+- **`smoke` is fast.** It runs before every new story.
+- **`fmt_file` says which files it formats.** It runs for every file written,
+  whatever its type. A formatter that fails is reported to the session, and
+  the file stays as it was written.
+- **Nothing is left behind in the project.** A file a command leaves in the
+  working tree, and git does not ignore, is uncommitted work, and the commit
+  gate [refuses to pass](troubleshooting.md#sdlc-e0032) while there is any.
 
 ### Trusting the commands
 
 > [!WARNING]
-> These commands run with your permissions, and `sdlc` runs them itself:
-> `smoke` is covered by the prompt for `sdlc start`; `fmt_file` and
-> `freeze_check` get no prompt at all, and `freeze_check` runs whenever
-> `sdlc freeze` does, which an agent does at Gate 3.
+> These commands run with your permissions, and `sdlc` runs most of them
+> itself. `smoke` is covered by the prompt for `sdlc start`. The rest get no
+> prompt at all: `fmt_file` on every file written, `freeze_check` and
+> `test_files` whenever an agent runs `sdlc freeze` at Gate 3, and the others
+> when it records the implementation at Gate 5.
 
-They are read from `.sdlc/config.json` in the repository, and a clone brings
-that file with it, so in a repository you did not write, read its `commands`
-before you work in it, as you would its `.claude/settings.json`.
+The commands are read from `.sdlc/config.json` in the repository, and a clone
+brings that file with it. In a repository you did not write, read its
+`commands` before you work in it, as you would its `.claude/settings.json`.
+
+### Installing what a worktree needs
+
+A story's worktree has only what trunk commits. There is no `node_modules` in
+it, no virtual environment and no generated code. `smoke` is the first command
+to run there, and every later command runs there too, so `smoke` is where you
+install what they need.
+
+For Node, install from the lockfile before you build:
+
+```json
+"smoke": "npm ci && npm run build --silent"
+```
+
+For Python, create the virtual environment, and make sure git ignores it:
+
+```json
+"smoke": "python -m venv .venv && .venv/bin/pip install --quiet -r requirements.txt"
+```
+
+Go and Rust keep their dependencies outside the project, so the commands
+`init` writes work in a new worktree as they are.
+
+Watch for tools that look upwards from where they run. From inside
+`.sdlc/worktrees/<ID>` they find the files of your main checkout: Go's
+`go.work`, Node's `node_modules`, and configuration that cascades, such as
+ESLint's `.eslintrc` and `.editorconfig`. A `go.work` at the root of your main
+checkout takes over the worktree's build. Set `GOWORK=off` in the commands, or
+commit a workspace that works from there. Installing in `smoke` gives the
+worktree a `node_modules` of its own.
+
+### The narrow test command
+
+`commands.test_files` runs the test files a story adds or changes, and not
+the whole suite. The test author and the test reviewer run it on the story's tests at
+Gate 3, the implementer runs it after each step of the plan, and `sdlc freeze`
+runs it over the new and changed test files before it takes the freeze. The
+whole suite, `test`, is left to the implementation gate.
+
+The command runs from the repository root. `SDLC_TEST_FILES` names a file
+that lists the test files, one to a line, each relative to the root with `/`
+between its parts, as git names them. `init` writes the command for every
+stack it knows.
+
+For Go, it tests the packages that hold the files listed. A file under
+`testdata/` stands for the package above it:
+
+```json
+"test_files": "if [ -n \"${SDLC_TEST_FILES-}\" ]; then sed -e 's#^#./#' -e 's#/testdata/.*#/x#' -e 's#/[^/]*$##' \"$SDLC_TEST_FILES\" | tr '\\n' '\\0' | xargs -0 go test -count=1; else go test ./... -count=1; fi"
+```
+
+For Python, it hands pytest each file listed:
+
+```json
+"test_files": "if [ -n \"${SDLC_TEST_FILES-}\" ]; then sed 's#^#./#' \"$SDLC_TEST_FILES\" | tr '\\n' '\\0' | xargs -0 pytest -q; else pytest -q; fi"
+```
+
+For Rust, it passes `--test=<name>` for each `tests/<name>.rs`. Where a file
+listed is anything else, it runs the whole of `cargo test`:
+
+```json
+"test_files": "if [ -n \"${SDLC_TEST_FILES-}\" ] && ! grep -qv '^tests/[^/]*\\.rs$' \"$SDLC_TEST_FILES\"; then sed 's#^tests/\\(.*\\)\\.rs$#--test=\\1#' \"$SDLC_TEST_FILES\" | tr '\\n' '\\0' | xargs -0 cargo test; else cargo test; fi"
+```
+
+For Node, it hands each file listed to your `test` script, where
+`package.json` has one:
+
+```json
+"test_files": "if [ -n \"${SDLC_TEST_FILES-}\" ]; then sed 's#^#./#' \"$SDLC_TEST_FILES\" | tr '\\n' '\\0' | xargs -0 npm test --silent --; else npm test --silent; fi"
+```
+
+Each of them runs the whole suite when you run it by hand, with no
+`SDLC_TEST_FILES` set. A command of your own should treat every name in the
+list as data, as these do: a name can start with `-` or hold a space.
+
+**When you change it.** With `test_files` empty, `sdlc freeze` runs the whole
+of `test` in its place, and with neither set it runs nothing. A wrong command
+is hard to see, because the freeze expects the run to fail: new tests fail
+until the code is written, and a command that fails for a reason of its own
+looks the same. So read the first story's
+`.sdlc/stories/<ID>/freeze-run.log` after you change it.
+[`sdlc freeze`](commands.md#sdlc-freeze) says what the freeze does with the
+run. A test file whose name holds a line break or another control character
+is refused before anything runs.
+
+### The run directory
+
+Whenever `sdlc` runs your commands itself, it hands that run one new
+directory, in `SDLC_RUN_DIR`. That is so at the implementation gate, at the
+landing and in the freeze's narrow run. The directory is empty when the first
+command begins, it is the same for every command of the run, and it is outside
+your project.
+
+It is how `test` and `coverage` share one run of the suite: `test` leaves its
+coverage data in the directory, and `coverage` reads the figure from it. Each
+run's directory is new, so a figure another run left is never read. A
+`coverage` that finds no data prints no figure, and the run is refused.
+
+When you run a command by hand, there is no `SDLC_RUN_DIR`, and each command
+works alone as it always did. A `coverage` command written before the run
+directory, which runs the suite itself, still works. It runs the suite twice.
+
+**Go.** `init` writes this pair:
+
+```json
+"test": "if [ -n \"${SDLC_RUN_DIR-}\" ]; then go test ./... -count=1 -coverprofile=\"$SDLC_RUN_DIR/cover.out\"; else go test ./... -count=1; fi",
+"coverage": "if [ -n \"${SDLC_RUN_DIR-}\" ]; then test -f \"$SDLC_RUN_DIR/cover.out\" && go tool cover -func=\"$SDLC_RUN_DIR/cover.out\" | tail -1 | grep -Eo '[0-9]+\\.[0-9]+'; else p=$(mktemp) && trap 'rm -f \"$p\"' EXIT && go test ./... -count=1 -coverprofile=\"$p\" >/dev/null && go tool cover -func=\"$p\" | tail -1 | grep -Eo '[0-9]+\\.[0-9]+'; fi"
+```
+
+**Python.** `init` writes this pair. It needs pytest-cov, which `--cov` turns
+on, and coverage.py, which comes with it:
+
+```json
+"test": "if [ -n \"${SDLC_RUN_DIR-}\" ]; then COVERAGE_FILE=\"$SDLC_RUN_DIR/.coverage\" pytest -q --cov; else pytest -q; fi",
+"coverage": "if [ -n \"${SDLC_RUN_DIR-}\" ]; then COVERAGE_FILE=\"$SDLC_RUN_DIR/.coverage\" python3 -m coverage report | grep -E '^TOTAL' | grep -Eo '[0-9]+%' | tr -d %; else p=$(mktemp) && trap 'rm -f \"$p\"' EXIT && COVERAGE_FILE=\"$p\" pytest -q --cov --cov-report=term | grep -E '^TOTAL' | grep -Eo '[0-9]+%' | tr -d %; fi"
+```
+
+**Rust.** `init` writes `cargo test` and no `coverage`. With
+[cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov) installed, a pair
+that shares one run is:
+
+```json
+"test": "if [ -n \"${SDLC_RUN_DIR-}\" ]; then cargo llvm-cov --lcov --output-path \"$SDLC_RUN_DIR/lcov.info\"; else cargo test; fi",
+"coverage": "if [ -n \"${SDLC_RUN_DIR-}\" ]; then test -f \"$SDLC_RUN_DIR/lcov.info\" && awk -F: '/^LF:/{t+=$2} /^LH:/{h+=$2} END{if (t) printf \"%.1f\\n\", 100*h/t}' \"$SDLC_RUN_DIR/lcov.info\"; else cargo llvm-cov --summary-only | grep -E '^TOTAL' | grep -Eo '[0-9]+\\.[0-9]+%' | tail -1 | tr -d %; fi"
+```
+
+**Node.** `init` writes `npm test --silent` and no `coverage`. With
+[c8](https://github.com/bcoe/c8) as a development dependency, a pair that
+shares one run is:
+
+```json
+"test": "if [ -n \"${SDLC_RUN_DIR-}\" ]; then npx c8 --reporter=json-summary --report-dir \"$SDLC_RUN_DIR\" npm test --silent; else npm test --silent; fi",
+"coverage": "if [ -n \"${SDLC_RUN_DIR-}\" ]; then test -f \"$SDLC_RUN_DIR/coverage-summary.json\" && node -e 'console.log(require(process.argv[1]).total.lines.pct)' \"$SDLC_RUN_DIR/coverage-summary.json\"; fi"
+```
+
+**When you change it.** `sdlc` makes the directory, names it in
+`SDLC_RUN_DIR` and removes it when the run ends, whether the run passed,
+failed or was interrupted. It knows nothing of what a tool puts there, so the
+file names above are yours to choose. The directory is made in your operating
+system's temporary directory, with a name that starts `sdlc-run-`. A run that
+is killed outright leaves it behind, and it is safe to delete.
+
+What the commands print is kept for you in the story's directory:
+`.sdlc/stories/<ID>/implementation-run.log` for the implementation gate, and
+`freeze-run.log` beside it for the freeze. Git ignores both. Neither run has
+a time limit of its own.
+
+### Coverage and mutation
+
+The rule for both commands is the same: print the percentage as the last
+number on standard output. `sdlc` compares it with the
+[threshold](#thresholds) at the implementation gate and at
+[the landing](#at-landing), and so does the verifier where it runs the
+command itself.
+
+Leave nothing in the project on the way. In a run of the loop's, the
+`coverage` commands `init` writes for Go and Python read their data from
+[the run directory](#the-run-directory). Run by hand, the Go one puts its
+profile in a temporary file outside the project and removes it when the shell
+exits, and the Python one does the same with pytest-cov's data file. A
+command of your own should do likewise, because a profile left in the working
+tree is uncommitted work. Don't write it under `.sdlc/`: the
+hook [refuses a command](enforcement.md#loop-state-through-the-tool) that
+writes or deletes there, and `sdlc doctor` reports a configured command that
+may.
+
+`init` guesses no coverage command for Rust or Node, and no mutation command
+for any stack.
+[Measure coverage](guides/tuning-commands-for-your-stack.md#measure-coverage)
+has examples.
 
 ### The freeze check
 
-`freeze_check` is a command that `sdlc freeze` runs before it records anything.
-It exists so that a test file that CI would refuse is corrected by the test
-author at Gate 3, and not after the plan and its reviews, at the cost of a
-person's unfreeze. It is empty until you choose one, and with it empty
-`sdlc freeze` does what it always did.
+`freeze_check` is a command that `sdlc freeze` runs before it freezes
+anything. It is there so that a test file CI would refuse, for its formatting
+or for a secret in it, is corrected by the test author at Gate 3. Found later,
+the same mistake costs an unfreeze, and that is yours to give. The key is
+empty until you choose a command, and with it empty `sdlc freeze` runs no
+check.
 
-**What it is handed.** `SDLC_FREEZE_FILES` holds the test files that are new or
-changed since the story's base, one slash-separated name to a line. The base is
-the commit the story's branch was cut from, else the base its record holds; if
-there is neither, or git cannot read it, every test file is listed, so the check
-sees more and never less. A deleted file is never listed, and a renamed one is
-listed by its new path. A list with nothing in it is set and empty, so a loop
-over it has no work and passes. A name with a line break in it cannot be handed
-over, and `sdlc freeze` refuses until it is renamed. Every other name is the
-test author's data: it can start with `-` or hold `$(...)`, so quote it, prefix
-it with `./` and never evaluate it.
+The check is handed the test files that are new or changed in the story, in
+`SDLC_FREEZE_FILES`, one name to a line. It is run by `sh` from the repository
+root, once for each freeze: the first, a freeze after `sdlc unfreeze`, and
+each addition under
+[`freeze.allow_new_test_files`](#freezeallow_new_test_files).
 
-**Where and how it runs.** From the repository root, by `sh`, with the project's
-lock let go so that no other command waits for it. It has no time limit of its
-own, and Ctrl-C stops it and everything in its process group; a `kill -9` of
-`sdlc freeze` does not, so give a long check a long timeout of its own. The environment is
-inherited apart from git's location variables. Run from your own terminal, that
-is your environment, so a check can run what you can, `sdlc approve` and
-`sdlc unfreeze` among it. A check must not run `sdlc freeze`:
-[SDLC-E0085](troubleshooting.md#sdlc-e0085) refuses it when `SDLC_FREEZE_FILES`
-is already set.
+A check that exits 0 passes. Anything else
+[refuses the freeze](troubleshooting.md#sdlc-e0085) and shows the last 40
+lines the check printed, so the test author can correct the files and run
+`sdlc freeze` again. A check that rewrites, deletes or creates a test file is
+refused too, so use your formatter's checking mode, never the one that writes.
 
-**What it costs.** One run per freeze, and again on a freeze after
-`sdlc unfreeze` and on every addition under `freeze.allow_new_test_files`. A
-second freeze with nothing to add is refused before the check runs.
-
-**What it decides.** A check that exits 0 passes. Any other end refuses with
-[SDLC-E0085](troubleshooting.md#sdlc-e0085), shows the last 40 lines of what it
-printed, both streams together, and freezes and records nothing. After a pass
-the freeze reads the test files again, and a check that rewrote, deleted or
-created one is refused too, naming it. For a first freeze, a formatter as the
-check is refused once for what it did and passes the second time, because the
-file is by then what it judged. On an addition, a frozen test it changed is not
-kept, and the hook refuses the author's edit, so the author stops and a person
-restores it or lifts the freeze (a freeze run over it is refused with
-[SDLC-E0025](troubleshooting.md#sdlc-e0025)). A pass is recorded in the freeze
-event, as "commands.freeze_check ran and passed". `sdlc freeze` itself never
-prints or records the command's text, because it can hold a token; what the
-shell or the command prints of it is replaced by the key where it can be, as
-below. `sdlc doctor` names a program it cannot find, which is the first word of
-a command.
-
-**Whose it is.** The key is read from the checkout, so a worktree that was cut
-before a person set it does not see it, and rolling it back has the same delay.
-A script in the tree is as editable as the tree, where a command written in
-`.sdlc/config.json` stays in the protected file. A pass is what the command
-reported under the environment of whoever ran `sdlc freeze`, `PATH` included, so
-neither the refusal nor the event is a control against a session set on getting
-round it; CI remains the bar. Put no token in the command and take it from the
-environment: the shell quotes a command that does not parse back in its own
-error, which `sdlc` replaces with the key when the command is more than one
-word, but cannot catch every time, such as a command of several lines or a
-trace from `set -x`. A check that prints a secret prints it into the session,
-hence `--redact` below. It should write nothing in the tree, since a stray file
-is a change the next review sees.
-
-**What cannot pass.** Whole-module `go vet ./...` and `./task check` fail at
-Gate 3 on a test-first tree, because the tests name code that does not exist
-yet. A refusal that no correction of a test can clear is a person's, and not the
-author's to loop on: no shell, a program that is not installed, a check that
-fails whatever the tests hold, one that rewrites a test file on every run.
-`sdlc doctor` reports that the check is set and looks up the first word of each
-of its commands as its scanner reads them, so it can miss a program in a compound
-command, and it cannot see the programs a script calls. A list too long for one
-environment string (about 128 KiB on Linux) cannot start the check at all: the
-refusal says "argument list too long", and the fix is to clear the key or shorten
-the list.
-
-An example for Go, saved as `scripts/freeze-check.sh`:
+Here is a check for Go, saved as `scripts/freeze-check.sh`:
 
 ```sh
 #!/bin/sh
@@ -437,332 +808,206 @@ fi
 exit "$failed"
 ```
 
-and named in the configuration:
+Name it in the configuration:
 
 ```json
 "freeze_check": "sh scripts/freeze-check.sh"
 ```
 
-It checks each listed file as a whole name and runs nothing a name holds. It
-checks the format, scans for secrets and for paths that carry an account name in
-the spellings Linux, macOS and Windows use, which a project that commits its
-tests wants out of them, and lints the packages the files are in. The
-golangci-lint it runs has to be built with the Go version the project uses, or
-it refuses every tree with "Running error". A test in a package that does not
-compile yet is not linted: golangci-lint stops at a package whose tests
-name code that is not written, so the script leaves that package out and says so
-in a refusal's output, while `gofmt` and `gitleaks` still read its files. It is
-the test-first tree's usual state, and it can still cost an unfreeze when a lint
-finding in such a test comes to light only after the code is written.
+The script checks the format of each listed file, scans it for secrets and
+for paths that carry an account name, and lints the packages the files are
+in. For another stack, keep the loop over the list and put your own
+formatter's check and your own linter in place of the Go tools.
 
-The script avoids the traps that make a check pass when it should not:
+A few things are worth copying from it, whatever your stack:
 
-- `gofmt -l` exits 0 when it lists a file, so its output is what is tested.
-- `| tee` and `a; b` hide a failure. A `while read` at the end of a pipe loses
-  `failed` in a subshell, so the list is read from a file.
-- An unquoted `$SDLC_FREEZE_FILES` splits a name with a space in it and, empty,
-  makes the next command read the whole tree.
+- **Treat every name as data.** A name can start with `-` or hold `$(...)`,
+  so quote it, put `./` in front of it and never evaluate it.
+- **Read the list from a file.** An unquoted `$SDLC_FREEZE_FILES` splits a
+  name with a space in it, and a `while read` at the end of a pipe loses
+  `failed` in a subshell.
+- **Test the output where the exit code lies.** `gofmt -l` exits 0 when it
+  lists a file. `| tee` and `a; b` hide a failure in the same way.
+- **Print no secret.** What the check prints goes into the session, which is
+  why the script passes `--redact`. Take a token from the environment, never
+  from the command's own text.
 
-### Formatting each file
+At Gate 3 the tests name code nobody has written yet, so a check over the
+whole project, such as `go vet ./...`, fails on every story. That is also why
+the script does not lint a package that does not compile yet, and says so in
+its output: `gofmt` and `gitleaks` still read those files, and a lint finding
+in them can come to light only after the code is written.
 
-`fmt_file` is run by `sh` from the repository root, with `$FILE` set to the file
-that was written. It runs for every file, so a formatter that understands only
-some should say which. The commands `sdlc init` writes do:
-
-```json
-"fmt_file": "case \"$FILE\" in *.go) gofmt -w \"$FILE\" ;; esac"
-```
-
-A formatter that fails is reported to the session with what it printed, and the
-file stays as it was written. Nothing is refused: the write has already
-happened.
-
-### Installing what a worktree needs
-
-With [`git.worktrees`](#git) on, `smoke` runs in the story's new worktree, and
-so does every command a later gate runs, so what the smoke check installs is
-what they use. A new worktree has only what trunk commits: no `node_modules`, no
-virtual environment and no generated files. A project whose build needs them
-installs them in `smoke`, as a Node project does with:
-
-```json
-"smoke": "npm ci && npm run build --silent"
-```
-
-Commit that to trunk before the next story starts: the worktree reads trunk's
-committed `.sdlc/config.json`, so an edit to any command that is not committed
-does not reach a new story.
-
-Tools that look upward from where they run find the main checkout's copies from
-inside `.sdlc/worktrees/<ID>`: Go's `go.work`, Node's `node_modules`, and
-configuration that cascades, such as ESLint's `.eslintrc` and `.editorconfig`. A
-`go.work` at the main checkout's root takes over the worktree's build: set
-`GOWORK=off` in the commands, or commit a workspace that works from there.
-Installing in `smoke` gives the worktree a `node_modules` of its own.
-
-### The run directory
-
-`sdlc gate implementation pass`, the landing and the freeze's narrow run hand each run of the
-commands one new directory, `SDLC_RUN_DIR`: empty when the first command begins, the same for
-every command of that run, and outside the project. It is made in the operating system's
-temporary directory (`$TMPDIR` on macOS, usually `/tmp` on Linux, `%TEMP%` on Windows), named
-`sdlc-run-` and a random suffix, mode 0700, and removed when the run ends, whether it passed,
-failed or was interrupted. A run killed outright leaves it, and it is safe to delete. `sdlc`
-makes the directory, names it and removes it; it knows nothing of what a tool puts in it.
-
-That is how `test` and `coverage` share one run of the suite: `test` leaves its coverage data in
-the directory and `coverage` reads the figure from it. Each run's directory is new, so a figure
-another run left is never read, and a `coverage` that finds no data prints no figure and is
-refused. Run by hand, with no `SDLC_RUN_DIR`, each command runs as it did on its own. A
-configuration written before this, whose `coverage` runs the suite itself, still works; it runs
-the suite twice.
-
-#### Go
-
-`init` writes this pair:
-
-```json
-"test": "if [ -n \"${SDLC_RUN_DIR-}\" ]; then go test ./... -count=1 -coverprofile=\"$SDLC_RUN_DIR/cover.out\"; else go test ./... -count=1; fi",
-"coverage": "if [ -n \"${SDLC_RUN_DIR-}\" ]; then test -f \"$SDLC_RUN_DIR/cover.out\" && go tool cover -func=\"$SDLC_RUN_DIR/cover.out\" | tail -1 | grep -Eo '[0-9]+\\.[0-9]+'; else p=$(mktemp) && trap 'rm -f \"$p\"' EXIT && go test ./... -count=1 -coverprofile=\"$p\" >/dev/null && go tool cover -func=\"$p\" | tail -1 | grep -Eo '[0-9]+\\.[0-9]+'; fi"
-```
-
-#### Python
-
-`init` writes this pair. It needs pytest-cov, which `--cov` turns on, and coverage.py, which comes
-with it:
-
-```json
-"test": "if [ -n \"${SDLC_RUN_DIR-}\" ]; then COVERAGE_FILE=\"$SDLC_RUN_DIR/.coverage\" pytest -q --cov; else pytest -q; fi",
-"coverage": "if [ -n \"${SDLC_RUN_DIR-}\" ]; then COVERAGE_FILE=\"$SDLC_RUN_DIR/.coverage\" python3 -m coverage report | grep -E '^TOTAL' | grep -Eo '[0-9]+%' | tr -d %; else p=$(mktemp) && trap 'rm -f \"$p\"' EXIT && COVERAGE_FILE=\"$p\" pytest -q --cov --cov-report=term | grep -E '^TOTAL' | grep -Eo '[0-9]+%' | tr -d %; fi"
-```
-
-#### Rust
-
-`init` writes no `coverage` for Rust. With [cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov)
-installed, a pair that shares one run is:
-
-```json
-"test": "if [ -n \"${SDLC_RUN_DIR-}\" ]; then cargo llvm-cov --lcov --output-path \"$SDLC_RUN_DIR/lcov.info\"; else cargo test; fi",
-"coverage": "if [ -n \"${SDLC_RUN_DIR-}\" ]; then test -f \"$SDLC_RUN_DIR/lcov.info\" && awk -F: '/^LF:/{t+=$2} /^LH:/{h+=$2} END{if (t) printf \"%.1f\\n\", 100*h/t}' \"$SDLC_RUN_DIR/lcov.info\"; else cargo llvm-cov --summary-only | grep -E '^TOTAL' | grep -Eo '[0-9]+\\.[0-9]+%' | tail -1 | tr -d %; fi"
-```
-
-#### Node
-
-`init` writes no `coverage` for Node. With [c8](https://github.com/bcoe/c8) as a development
-dependency, a pair that shares one run is:
-
-```json
-"test": "if [ -n \"${SDLC_RUN_DIR-}\" ]; then npx c8 --reporter=json-summary --report-dir \"$SDLC_RUN_DIR\" npm test --silent; else npm test --silent; fi",
-"coverage": "if [ -n \"${SDLC_RUN_DIR-}\" ]; then test -f \"$SDLC_RUN_DIR/coverage-summary.json\" && node -e 'console.log(require(process.argv[1]).total.lines.pct)' \"$SDLC_RUN_DIR/coverage-summary.json\"; fi"
-```
-
-#### What a run leaves
-
-The gate writes what its commands print to a temporary file in the story's directory,
-`.implementation-run.log.tmp`, random digits and `.out` (`.freeze-run.log.tmp` at the freeze), and
-puts it at `implementation-run.log` or `freeze-run.log` when the run ends. Another `sdlc` command
-run meanwhile leaves it alone. The story's `.gitignore` lists both names and the pattern
-`.*-run.log.tmp*`, so a temporary file a killed run leaves is not committed; it is safe to delete.
-The gate and the freeze set no time limit of their own, as the landing sets none.
-
-### The narrow test command
-
-`commands.test_files` runs the test files a story adds or changes, and not the whole suite: the
-test author runs it on its own tests at Gate 3, the implementer after each step at Gates 4 and 5,
-and `sdlc freeze` over the new and changed test files before it takes the freeze. Where it is
-empty, `sdlc freeze` runs the whole `commands.test` instead, and where neither is set it runs
-nothing. It runs from the repository root, with `SDLC_TEST_FILES` naming a file that lists the
-files, one to a line, slash-separated and relative to the root, as git names them, and with
-`SDLC_RUN_DIR` set as above. A name that holds a C0 control character other than a tab (a line
-feed and a carriage return among them), DEL, U+0085, U+2028 or U+2029 is refused before anything
-runs, since a reader such as Python's `splitlines` would split it in two. `init` writes it for
-every stack it knows, using only `tr`, `xargs -0`, `sed`, `grep` and `if`, and leaves the key empty
-for a project it does not know.
-
-For Go, the packages that hold the files listed, a file under `testdata/` standing for the package
-above it:
-
-```json
-"test_files": "if [ -n \"${SDLC_TEST_FILES-}\" ]; then sed -e 's#^#./#' -e 's#/testdata/.*#/x#' -e 's#/[^/]*$##' \"$SDLC_TEST_FILES\" | tr '\\n' '\\0' | xargs -0 go test -count=1; else go test ./... -count=1; fi"
-```
-
-For Python, each file listed, from `./`:
-
-```json
-"test_files": "if [ -n \"${SDLC_TEST_FILES-}\" ]; then sed 's#^#./#' \"$SDLC_TEST_FILES\" | tr '\\n' '\\0' | xargs -0 pytest -q; else pytest -q; fi"
-```
-
-For Rust, `--test=<name>` for each `tests/<name>.rs`, and where a file listed is anything else,
-the whole `cargo test`:
-
-```json
-"test_files": "if [ -n \"${SDLC_TEST_FILES-}\" ] && ! grep -qv '^tests/[^/]*\\.rs$' \"$SDLC_TEST_FILES\"; then sed 's#^tests/\\(.*\\)\\.rs$#--test=\\1#' \"$SDLC_TEST_FILES\" | tr '\\n' '\\0' | xargs -0 cargo test; else cargo test; fi"
-```
-
-For Node, each file listed, from `./`, handed to the `test` script, where `package.json` has one:
-
-```json
-"test_files": "if [ -n \"${SDLC_TEST_FILES-}\" ]; then sed 's#^#./#' \"$SDLC_TEST_FILES\" | tr '\\n' '\\0' | xargs -0 npm test --silent --; else npm test --silent; fi"
-```
-
-### The coverage profile
-
-Run by hand, with no `SDLC_RUN_DIR`, the `coverage` command `init` guesses for Go writes its
-profile to a temporary file made by `mktemp`, in the operating system's temporary directory, and
-removes it when the shell exits,
-whether the run passed or a step failed. The Python command does the same with pytest-cov's
-data file, through `COVERAGE_FILE`. Neither leaves anything in the project, so Gate 8's
-`git add -A` has nothing to pick up and `sdlc init` has no `.gitignore` line to write; what a
-project commits stays the project's decision.
-
-A command of your own should do the same. `.sdlc/state/` is where the loop keeps its records, and
-a profile left in the project is uncommitted work that the commit gate refuses. A command that
-writes or deletes under `.sdlc/` is refused too
-([`loop-state-through-the-tool`](enforcement.md#loop-state-through-the-tool)), and
-[`sdlc doctor`](commands.md#sdlc-doctor) reports a configured command that may be. If your shell
-has no `mktemp` or `trap`, write the profile to a path of your own outside the project and remove
-it in the same command; a file `mktemp` named that is left in the temporary directory after a
-killed run is safe to delete.
-
-### Which configuration a checkout reads
-
-Each checkout reads its own `.sdlc/config.json`. A linked worktree, a story's
-own or one made with `git worktree add`, runs the commands and uses the trunk
-that its own copy names, while its backlog and story records are the main
-checkout's
-([more than one checkout](the-loop.md#more-than-one-checkout)). A second clone
-is another repository altogether, with a backlog and records of its own, and
-nothing stops two clones working the same story. Landing a story is the
-exception, described next.
+A check is honest only about the machine it ran on. It passes or fails in the
+environment of whoever ran `sdlc freeze`, so it catches mistakes early and is
+no substitute for CI. `sdlc doctor` says whether a check is set, and names a
+program it cannot find.
 
 ### At landing
 
-A story worked in its worktree lands when `sdlc stop` runs there after the retro
-([the loop](the-loop.md#done-when-it-lands)). Where Gate 5 recorded a result for the tree that
-would land, with trunk's commands and thresholds, and the story was not rebased onto a trunk that
-had moved, the landing lands on that result and runs nothing again. Otherwise it runs `build`,
-`test`, `lint`, `fmt_check`, `coverage` and `mutation`, those that are set, in that order, in the
-story's worktree, on the commit that would land, says first why it runs them, and records what it
-ran against that tree. It reads them, and `thresholds`, from `.sdlc/config.json` as trunk
-commits it at the tip the landing would move from, never from a checkout's copy
-on disk: an uncommitted edit that would make a failing command pass changes
-nothing. Trunk is the main checkout's `git.trunk_branch`.
+A story worked in its own worktree lands when `sdlc stop` runs there after the
+retro. Where Gate 5 recorded a result for the very tree that would land, with
+the commands and thresholds trunk has, and the story was not put onto a trunk
+that had moved, the landing lands on that result and runs nothing again.
 
-A file git tracks and `.gitignore` also matches is in the commit's tree but not in the one Gate 5
-measured, so in such a project the two never agree and the landing runs the commands every time.
-`git ls-files -ci --exclude-standard` lists such files; untrack each one, or stop ignoring it.
+Otherwise it says why, and runs `build`, `test`, `lint`, `fmt_check`,
+`coverage` and `mutation`, those that are set, in that order, on the commit
+that would land. A story that was put onto a trunk that had moved lands this
+way. So does one whose tree is not the one Gate 5 measured, as when its branch
+carries a commit of `CODEMAP.md`.
 
-#### What counts as passing
+It reads those commands, and `thresholds`, from the `.sdlc/config.json` trunk
+has committed. An uncommitted edit that would make a failing command pass
+changes nothing.
+
+> [!NOTE]
+> A file git tracks and `.gitignore` also matches makes the landing run the
+> commands every time, because the tree Gate 5 measured leaves it out. Run
+> `git ls-files -ci --exclude-standard` to list such files, and untrack each
+> one or stop ignoring it.
 
 A command passes when it exits 0. `coverage` and `mutation` must also print a
-number on standard output, and the last one printed has to reach
-`thresholds.coverage_min` or `thresholds.mutation_min`; with the threshold at 0,
-no number is needed. The number is looked for in the last 64 KB of standard
-output, so a command that prints more than that after its figure, with no digit
-in it, is refused as printing none. What a command prints on standard error is
-shown when it fails, and is never read for the number.
+number on standard output, and the last one has to reach its threshold. With
+the threshold at `0`, no number is needed.
 
-#### What a command may not change
+A command may not change what it checks. If a tracked file differs after a
+command has run, as it does after a formatter that writes,
+[the landing is refused](troubleshooting.md#sdlc-e0055). That is what
+`fmt_check` is for.
 
-After each command, HEAD, `story/<ID>` and every tracked file must be as they
-were: a command that rewrites a tracked file, as a formatter that writes does,
-refuses the landing ([SDLC-E0055](troubleshooting.md#sdlc-e0055)). Each command
-runs in a process group of its own, a job object on Windows, and a stop that is
-interrupted kills the whole group before it lets the story go. On Windows a stop
-killed outright takes the job with it too, and anything a command leaves running
-when it ends is ended with the job; a process the command starts in the moment
-before it joins its job is not in it.
-
-#### Time, privileges and several stories
-
-The landing sets no time limit of its own. The runbook runs `sdlc stop` with the
-Bash tool's longest timeout, 600 seconds, and where the commands need longer, a
-person runs that stop in their own terminal.
+Keep these commands fast. A session's `sdlc stop` has ten minutes for the
+whole landing, the wait for another story that is landing included. Where
+your commands need longer, run `sdlc stop` in the story's worktree from a
+terminal of your own.
 
 > [!WARNING]
-> That stop runs the story's code, and whatever git settings the repository
-> holds, with the person's own privileges and credentials: read the story before
-> you run it.
+> A stop you run yourself runs the story's code with your own privileges and
+> credentials. Read the story before you run it.
 
-With several stories worked at once, trunk moves each time one lands. Stories
-land one at a time, and each of the others is put onto the new trunk by its own
-`sdlc stop` and has its commands run once before it lands. A stop waits eight
-minutes for the landing in front of it, and that wait and its own commands have
-to fit in the 600 seconds a session's stop has. A session refused with
-[SDLC-E0006](troubleshooting.md#sdlc-e0006) stops again up to three times, and
-where the third is refused too hands its story to a person: four stops of up to
-eight minutes each, so landings that keep a story waiting for about half an hour
-send it to a person, and commands that take longer than a few minutes make that
-likely; one more reason to keep them fast.
+[Done when it lands](the-loop.md#done-when-it-lands) describes the rest of
+what a landing checks.
 
 ## `thresholds`
 
-These are the numbers the verifier holds a change to. The defaults `init`
-writes are usually a fine place to start.
+`thresholds` are the numbers a change is held to: by `sdlc` when the
+implementation is recorded at Gate 5 and again at the landing, and by the
+verifier at Gate 6.
 
-| Key | What it means |
-| --- | --- |
-| `coverage_min` | the coverage the verifier holds the change to, when `commands.coverage` is configured |
-| `mutation_min` | the mutation score the verifier holds the change to, where a project measures one |
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `coverage_min` | `80` | the lowest percentage `commands.coverage` may print |
+| `mutation_min` | `70` | the lowest percentage `commands.mutation` may print |
 
-A threshold of `0` is not enforced, and a negative one is refused.
+```json
+"thresholds": { "coverage_min": 85.5, "mutation_min": 0 }
+```
+
+**When you change it.** Lowering a threshold lets weaker work through, and
+`0` turns it off. A negative number is refused. A threshold whose command is
+empty has nothing to be compared with, so with no `mutation` command the
+default of `70` holds nothing. The landing reads both numbers from what trunk
+commits, as it does the [commands](#at-landing).
 
 ## `paths`
 
-`paths` tells the loop which files are tests and which are source, and where the
-lines of an unresolved conflict are meant to be. Its keys have a section each:
-[`paths.tests`](#pathstests) decides what the freeze covers,
-[`paths.src`](#pathssrc) is where production code lives, and
-[`paths.conflict_markers_intended`](#pathsconflict_markers_intended) lists the
-files a story may add conflict markers to.
+`paths` tells the loop which files are tests and which are source, and where
+the lines of an unresolved conflict are there on purpose.
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| [`tests`](#pathstests) | by stack | which files are tests, and so what the freeze covers |
+| [`src`](#pathssrc) | by stack | where production code lives |
+| [`conflict_markers_intended`](#pathsconflict_markers_intended) | none | the files a story may add conflict markers to |
 
 ### `paths.tests`
 
-This is the one setting worth reading carefully. It decides what the freeze
-covers, and therefore what the implementer cannot touch. `sdlc init` fills it in
-for the stack it finds, and you only need to change it if your project keeps
-tests, or things that tests depend on, somewhere unusual.
+`paths.tests` decides what the freeze covers, and so what the implementer may
+never touch. A file is a test if `dirs` or `file_globs` matches it.
 
-| Key | What it means |
+| Setting | What it does |
 | --- | --- |
-| `dirs` | a directory and everything beneath it is tests. A bare name, such as `testdata` or `__snapshots__`, is a directory of that name wherever it is, because that is what projects mean by it; one with a slash inside it, like `src/fixtures`, is that directory and no other. A slash at either end does not count: `tests/` is the bare name `tests` |
-| `file_globs` | a pattern matched against the whole path *and* against the file's own name, so `*_test.go` finds `internal/store/x_test.go`. `**` stands for any number of directories, so `src/**/*.spec.ts` finds a spec at any depth under `src/`, and `e2e/**` is everything under `e2e/` |
+| `dirs` | directories whose every file is a test |
+| `file_globs` | patterns for test files that sit beside the code |
 
-**Anything that decides whether a test passes belongs here, not only the test
-files.** A frozen test that reads a golden file is frozen only if the golden
-file is too; otherwise the fixture is the way round the freeze. `sdlc init`
-covers the usual ones for the stack it finds: `testdata/` for Go, `tests/` and
-`fixtures/` for Rust, `conftest.py` and `fixtures/` for Python, `__snapshots__/`,
-`__mocks__/` and `*.snap` for Node. If your project keeps them somewhere else,
-add it here.
+`init` fills both in for your stack:
+
+| Stack | `dirs` | `file_globs` |
+| --- | --- | --- |
+| Go | `testdata/` | `*_test.go` |
+| Rust | `tests/`, `testdata/`, `fixtures/` | `*_test.rs` |
+| Node | `tests/`, `test/`, `__tests__/`, `__snapshots__/`, `__mocks__/`, `__fixtures__/` | `*.test.ts`, `*.test.js`, `*.spec.ts`, `*.spec.js`, `*.snap` |
+| Python | `tests/`, `test/`, `fixtures/`, `testdata/` | `test_*.py`, `*_test.py`, `conftest.py` |
+
+A list you leave out of the file is not an empty list. `dirs` is then `tests/`
+and `test/`, and `file_globs` is `*_test.go`, `*.test.ts`, `*.spec.ts`,
+`test_*.py`, `*_test.py`, `*Test.java` and `*_spec.rb`. Write `[]` to mean
+none.
+
+Let's take a look at a Node project that keeps its component tests beside the
+code as `*.test.tsx`, and its fixtures in one directory of its own:
+
+```json
+"paths": {
+  "tests": {
+    "dirs": ["tests/", "__snapshots__/", "__mocks__/", "src/fixtures"],
+    "file_globs": ["*.test.ts", "*.test.tsx", "*.snap"]
+  }
+}
+```
+
+The two lists read their entries differently:
+
+- **A bare name in `dirs`**, such as `testdata/` or `__snapshots__`, is a
+  directory of that name at any depth. A slash at either end changes nothing.
+- **A name with a slash inside it**, such as `src/fixtures`, is that one
+  directory, from the root. An entry that starts with `./` matches nothing.
+- **A pattern in `file_globs`** is tried against the whole path and against
+  the file's own name, so `*_test.go` finds `internal/store/x_test.go`.
+- **Wildcards.** `*` does not cross a `/`, and `**` stands for any number of
+  directories. `src/**/*.spec.ts` finds a spec at any depth under `src/`, and
+  `e2e/**` is everything under `e2e/`.
+- **Case is ignored** in a pattern, so `*_test.go` matches `Foo_Test.go`.
+
+**When you change it.** Anything that decides whether a test passes belongs
+here, not only the test files: golden files, snapshots, fixtures, a
+`conftest.py`. A frozen test that reads a fixture nobody froze can be made to
+pass by changing the fixture. The test author is refused when it writes
+outside what `paths.tests` describes, and the refusal says so.
+
+Change it between stories. A file that becomes a test halfway through a story
+is a test the freeze does not hold, and the story's next gate
+[refuses to pass](troubleshooting.md#sdlc-e0043).
+[Tell sdlc which files are tests](guides/tuning-commands-for-your-stack.md#tell-sdlc-which-files-are-tests)
+has more examples, and shows how to check what a freeze covered.
 
 > [!WARNING]
 > A Rust unit test inside a source file, under `#[cfg(test)]`, is in no test
 > file, so the freeze cannot hold it. Put the acceptance tests under `tests/`.
 
-The test author is refused when it writes outside what this describes, and the
-refusal says so.
-
 ### `paths.src`
 
-This is where production code lives. The researcher looks there first at Gate 2,
-the implementer puts new code there, and the code reviewer reads it with
-`paths.tests` to tell a change's code apart from its tests.
+`paths.src` lists where production code lives. `init` writes `cmd/`,
+`internal/` and `pkg/` for Go, `src/` for Rust and for Python, and `src/` and
+`lib/` for Node. Left out of the file, it is `src/`, `internal/`, `pkg/`,
+`cmd/` and `lib/`.
 
-Nothing refuses a write outside it. A build file, a migration or a
-configuration change can be part of a story, and a rule that refused them would
-be worked around rather than followed.
+```json
+"paths": { "src": ["app/", "lib/"] }
+```
+
+**When you change it.** The researcher looks there first at Gate 2, the
+implementer puts new code there, and the code reviewer uses it to tell a
+change's code from its tests. It is a hint, and nothing refuses a write
+outside it: a build file or a migration can be part of a story too.
 
 ### `paths.conflict_markers_intended`
 
-The paths where a story may add the lines of an unresolved conflict. It is a list
-of paths and globs, and **absent from what `sdlc init` writes**: until a person
-adds it, no path is exempt.
-
-The commit gate and `sdlc stop` refuse a story whose commits add a set of conflict
-markers to a file ([`SDLC-E0080`](troubleshooting.md#sdlc-e0080)). A document that
-shows what a conflict looks like, or a test fixture that holds one, is meant to
-have them; listing its path here is what lets a story add it.
+The commit gate and `sdlc stop` refuse a story whose commits
+[add the markers of an unresolved conflict](troubleshooting.md#sdlc-e0080) to
+a file. A document that shows what a conflict looks like, or a test fixture
+that holds one, is meant to have them. This setting lists those files. It is
+empty by default, and `init` does not write it, so no path is exempt until you
+add one.
 
 ```json
 "paths": {
@@ -770,253 +1015,133 @@ have them; listing its path here is what lets a story add it.
 }
 ```
 
-- A pattern is matched against the whole path from the repository root, slash
-  separated, and **exactly**: `Docs/a.md` is not `docs/a.md`, and a bare name
-  such as `testdata` is that one path and not a directory of that name anywhere.
-  This is not how `paths.tests` reads its patterns, and is stricter on purpose,
-  since an exemption that matched more than it names would let a conflict in.
+A pattern here is stricter than one in `paths.tests`, because an exemption
+that matched more than it names would let a conflict in:
+
+- It is matched against the whole path from the repository root, and exactly:
+  `Docs/a.md` is not `docs/a.md`, and a bare name such as `testdata` is that
+  one path, not a directory of that name anywhere.
 - `**` is a segment of its own that stands for any number of directories, so
-  `docs/**` is everything under `docs/` and `**/*.patch` is a patch file at any
-  depth. A trailing `**` needs something beneath it.
-- A list that cannot mean what it says does not load, and `sdlc doctor` names the
-  entry ([`SDLC-E0045`](troubleshooting.md#sdlc-e0045)): one that is empty, starts
-  with a slash, has a backslash or a control character in it, has a `..`, a `.` or
-  an empty segment, ends in a slash, or is a pattern `path.Match` rejects, such
-  as `docs/[`. A scanned path with an empty, `.` or `..` segment is never exempt.
-- **The commit gate reads this checkout's copy and `sdlc stop` reads trunk's**, as
-  committed at the tip it lands on. A change to `.sdlc/` cannot ride a story, so a
-  person lists a path in a commit to trunk, and runs `sdlc stop` in the story's
-  worktree again. `sdlc doctor` lists this checkout's copy, on the line of the
-  configuration check, or says `none`; it does not read trunk's.
+  `docs/**` is everything under `docs/`, and `**/*.patch` is a patch file at
+  any depth.
+- An entry that cannot mean what it says is
+  [refused](troubleshooting.md#sdlc-e0045), and `sdlc doctor` names it: an
+  empty one, one that starts or ends with a slash, or one with a backslash, a
+  `..` or a `.` segment in it.
+
+**When you change it.** The commit gate reads the file in the checkout it
+runs in, and `sdlc stop` reads the one trunk has committed. A story cannot
+carry a change to `.sdlc/`, so to exempt a path for a story that is waiting
+to land, commit the setting on trunk and run `sdlc stop` in the story's
+worktree again. `sdlc doctor` shows what this checkout's file lists, on a
+line of its `configuration` check:
+
+```text
+                                paths.conflict_markers_intended (this checkout's copy; "sdlc stop" reads trunk's): "docs/merging.md", "testdata/**", "**/*.patch"
+```
 
 ## `git`
 
-These settings tell the loop which branch is trunk and whether to give each
-story a worktree of its own. The defaults suit most repositories.
+`git` says which branch is trunk, whether there is a remote to keep up with,
+and whether each story gets a worktree of its own.
 
-| Key | What it means |
-| --- | --- |
-| `trunk_branch` | the branch a new story starts from. With `worktrees` on, each story's branch is cut from it; with `worktrees` off, `sdlc start` begins new work only there, and the story is committed straight to it. `sdlc init` writes the branch `origin`'s `HEAD` names, else `main` or `master` if the repository has one, else the branch it is on; `main` when none of those answers |
-| `remote` | whether this repository has an `origin` to keep up with. With it on, `sdlc start` fetches trunk from `origin` and will not begin new work while trunk is behind it. Off by default, and the loop never pushes either way |
-| `worktrees` | whether `sdlc start` gives each new story a worktree and a branch of its own: `true` or `false`. Left out, it is on |
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `trunk_branch` | `main` | the branch stories start from and land on. `init` writes the branch `origin`'s `HEAD` names, else `main` or `master` if the repository has one, else the branch you are on |
+| `remote` | `false` | with `true`, `sdlc start` fetches trunk from `origin`, and will not begin new work while trunk is behind it. The loop never pushes, whatever this says |
+| `worktrees` | `true` | whether `sdlc start` gives each new story a worktree and a branch of its own. `init` does not write it, and left out it is on |
 
-### How worktrees work
+```json
+"git": { "trunk_branch": "trunk", "remote": true }
+```
 
-With `worktrees` on, `sdlc start` makes a new story's worktree at
-`.sdlc/worktrees/<ID>` in the main checkout, on a new branch `story/<ID>` cut
-from the tip of the local trunk branch, and the story is worked and committed
-there. The main checkout keeps its branch, its index and its files, apart from
-the loop's own bookkeeping, and need not be on trunk
-([more than one checkout](the-loop.md#more-than-one-checkout)).
-
-A story worked in its worktree lands on the trunk the main checkout's
-`trunk_branch` names, by fast-forward
-([done when it lands](the-loop.md#done-when-it-lands)).
-
-The worktree has only what trunk commits, and it reads trunk's committed
-`.sdlc/config.json`, not the copy in your checkout: a change to `commands`,
-`thresholds` or any other setting reaches a new story only once it is committed
-to trunk. `worktrees` itself is read from the checkout `sdlc start` runs in.
-
-### What start writes into the repository
-
-The first start writes `.sdlc/worktrees/.gitignore`, holding `*`, so that
-`git status` in the main checkout does not list the worktrees and `git add -A`
-does not take them in; your own `.gitignore` and `.git/info/exclude` are left
-alone. That file is never rewritten: one without a `*` line, or with a line
-starting `!`, is refused ([SDLC-E0053](troubleshooting.md#sdlc-e0053)). It needs
-git 2.17 or later, and `sdlc doctor` says when yours is older.
-
-In each new worktree start also writes `.sdlc/state/.gitignore`, holding `*`,
-where there is none, so that what the loop writes there is never the story's to
-commit. Ignoring a file does not untrack it: where trunk tracks files under
-`.sdlc/state`, no story worked in a worktree can land until trunk stops tracking
-them, and `sdlc doctor` says so before one starts.
+**When you change it.** With `worktrees` on, `sdlc start` makes a new story's
+worktree at `.sdlc/worktrees/<ID>` in your main checkout, on a new branch
+`story/<ID>` cut from the tip of your local trunk. The story is worked and
+committed there, and lands on trunk by fast-forward when it is finished. Your
+main checkout keeps its branch and its files, and need not be on trunk.
+Worktrees need git 2.17 or newer, and `sdlc doctor` says when yours is older.
+[More than one checkout](the-loop.md#more-than-one-checkout) describes working
+several stories at once.
 
 ### Turning worktrees off
 
-`false` is how `sdlc start` worked before: a new story begins in the checkout
-it runs in, which has to be on trunk with nothing uncommitted, as
-[SDLC-E0038](troubleshooting.md#sdlc-e0038) to
-[SDLC-E0041](troubleshooting.md#sdlc-e0041) say.
+Set `worktrees` to `false` and stories are worked in the checkout you run
+`sdlc start` in, one at a time, and committed straight to trunk:
 
-## `backlog`
+```json
+"git": { "trunk_branch": "main", "remote": false, "worktrees": false }
+```
 
-`backlog` names the file your stories live in. It has one key, `path`.
+Several things change with it:
 
-### `backlog.path`
+- **A story starts only from a clean trunk.** The checkout has to be on trunk
+  ([SDLC-E0038](troubleshooting.md#sdlc-e0038)) with nothing uncommitted that
+  belongs to no story ([SDLC-E0039](troubleshooting.md#sdlc-e0039)). The
+  loop's own files under `.sdlc/` and the backlog do not count. `smoke` runs
+  on trunk itself, and a failure
+  [stops the start](troubleshooting.md#sdlc-e0041).
+- **The story's commit takes everything.** The commit gate refuses while
+  `git status --porcelain` shows anything at all. So every file under `.sdlc/`
+  has to be committed or ignored, the story's own directory and the loop's
+  state among them, and the story's commit carries whatever git does not
+  ignore.
+- **There is no landing.** A story is on trunk as soon as it is committed, so
+  nothing runs your commands a second time.
+- **An uncommitted edit to the configuration is read at once.** There is one
+  checkout and one file. Commit the edit yourself all the same, or the next
+  story's commit takes it along.
 
-This is where your stories live, relative to the repository root. The default is
-`user_stories.json`, and most projects keep it.
-
-It has to be inside the repository, because the backlog is committed with the
-work and protected while a story runs. An absolute path, or one that climbs out
-with `..`, is refused.
-
-## `spec`
-
-`spec` names where the project's own specifications live. It has one key,
-`paths`.
-
-### `spec.paths`
-
-This is where the project's own specifications live. The analysis gate reads
-these before it writes anything.
-
-## `version`
-
-This is the configuration format's version, `1`. Leave it alone: it is how a
-future release recognises a file written by this one, and how this one refuses a
-file written by a newer release rather than misread it. A version of `0` or less
-is refused too; leaving the key out reads as `1`
-([SDLC-E0045](troubleshooting.md#sdlc-e0045)).
-
-## `loop`
-
-These limits decide when the loop stops trying and hands the story to a person.
-The defaults of 2, 3 and 3 are rarely worth changing.
-
-| Key | What it means |
-| --- | --- |
-| `max_review_rounds` | how many times one reviewer may block a gate before `sdlc review add` sends the gate to its [arbiter](the-loop.md#the-arbiter), and how many times the arbiter may before the story is handed to a person, unless the agent has `max_rounds` in [`team`](#an-agents-entry). A disabled agent has no arbiter, and its reviewer's limit hands the story over. A block that cannot stop the gate is not counted |
-| `max_rework_rounds` | how many times one gate may be recorded as failed before `sdlc gate` hands the story to a person |
-| `max_stop_blocks` | how many stops in a row, with nothing recorded on the story, the `Stop` hook sends back before it hands the story to a person. See [stopping mid-story](enforcement.md#stopping-mid-story) |
-
-A limit of `0` turns that limit off, for all three, and a negative one is
-refused.
-
-## `reviews`
-
-`reviews` holds where the review policy is, the file every reviewer reads first. It has one key,
-`policy`. How much a reviewer's word counts is set per agent in `team`, with `can_block`.
-
-### `reviews.gate7_advisory`
-
-This key moved to `team.agents.code-reviewer.can_block`, which takes the opposite value: to make
-the code reviewer advisory, set `"can_block": false` on it ([`team`](#an-agents-entry)).
-`"gate7_advisory": true` is refused as [SDLC-E0087](troubleshooting.md#sdlc-e0087), and
-`"gate7_advisory": false` is a leftover that changes nothing: `sdlc doctor` reports it, and the
-line can be deleted. [Upgrading from the staffing section](#upgrading-from-the-staffing-section)
-shows both.
-
-### `reviews.policy`
-
-This is the file every reviewer reads first: which passes to make, what counts as important,
-what is a nit, how many nits to report, and what not to review. Give it relative to the
-repository root. Left out or empty it is `REVIEW.md`, which `sdlc init` writes; with no file
-there the project has no review policy, and reviewers review as they do without one.
-
-The path is refused, and the configuration does not load, where it leaves the repository, holds
-a `..` segment even one that stays inside, ends in `/`, or holds a character the shell rules
-cannot hold in a name: white space, a control or format character, a quote, a backslash, a
-backtick, or any of `$`, `;`, `&`, `|`, `<`, `>`, `(` and `)`. A path the rule cannot hold is a policy
-any shell command could rewrite, so it is no path for one.
-
-A file that is a link out of the repository, or whose parent is, counts as no policy, so that a
-reviewer does not copy what it reads into a committed review. A link to a file inside the repository
-is the policy. `sdlc doctor` warns about each of these where `reviews.policy` names it, including a
-directory. It warns rather than refuses, and until you act on it the rule below holds the directory
-you named and everything under it.
-
-No agent writes the file while a story is being worked on
-([`review-policy-is-not-edited`](enforcement.md#review-policy-is-not-edited)), and no story lands a
-change to it. A person commits a change on trunk between stories, and a running story keeps the
-copy it was cut from. To apply a change to the story in front of you, end the story, commit on trunk
-and start again. A configuration that will not load holds `REVIEW.md`, not the file it named, until
-it is fixed. A file refused only as [SDLC-E0087](troubleshooting.md#sdlc-e0087) or
-[SDLC-E0088](troubleshooting.md#sdlc-e0088) is still read for this key, so it holds the policy it
-names. `sdlc doctor` reports the configuration and skips this check.
-
-## `freeze`
-
-`freeze` changes what the test freeze allows. It has one key,
-`allow_new_test_files`.
-
-### `freeze.allow_new_test_files`
-
-This lets the test author add a test file after the freeze has been taken. It is
-off by default.
-
-A new file is not frozen by being written. Until `sdlc freeze` is run again,
-which adds it to the freeze, `tests_frozen`, `plan`, `implementation`,
-`verification` and `commit` refuse with
-[SDLC-E0043](troubleshooting.md#sdlc-e0043); with the setting off, the same
-gates refuse and `sdlc freeze` does not add it. Where the test reviewer is
-staffed, the added file is reviewed with the rest before `sdlc freeze` takes it:
-until the test reviewer approves the test files as they now are, the freeze
-refuses with [SDLC-E0029](troubleshooting.md#sdlc-e0029) or
-[SDLC-E0030](troubleshooting.md#sdlc-e0030).
-
-> [!WARNING]
-> This is a real loosening, because a test written after the implementation can
-> be written to pass. It does **not** let the implementer write one. That rule
-> is not a setting.
+> [!NOTE]
+> Add `/.sdlc/state/` to your `.gitignore` before the first story. It holds
+> the loop's own state, and if trunk comes to track it, no story can land
+> from a worktree after you turn them back on. `sdlc doctor` says so, and
+> prints the commands that put it right.
 
 ## `human_gates`
 
-These settings decide where the loop waits for a person.
+`human_gates` decides where the loop waits for a person.
 
-| Key | What it means |
-| --- | --- |
-| `pre_commit_pause_tiers` | the story risk tiers that wait for a person's approval before they are committed. Default `["high"]`; `[]` pauses no story for its tier, though a path can still pause it |
-| `pre_commit_pause_paths` | globs from the repository root, slash-separated, such as `"internal/hook/**"`: a story whose change touches a path one matches waits for a person's approval before it is committed, whatever its tier. Default `[]`. A glob that cannot mean what it says (one that does not parse, starts with `/`, holds a backslash or `..`, or is not in its plainest form) is refused when the file loads, with [SDLC-E0045](troubleshooting.md#sdlc-e0045) naming the entry |
-| `dor_advocate_check` | have the human advocate read the story at Gate 1 as well. `sdlc gate dor pass` then waits for its review, which is advisory there too. Off by default |
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `pre_commit_pause_tiers` | `["high"]` | the risk tiers whose stories wait for your approval before they are committed: any of `low`, `medium` and `high`. `[]` pauses no story for its tier, though a path can still pause it |
+| `pre_commit_pause_paths` | `[]` | patterns for files, from the repository root. A story whose change touches a file one of them matches waits for your approval before it is committed, whatever its tier |
+| `dor_advocate_check` | `false` | with `true`, the human advocate reads each story at Gate 1, before any work starts |
 
-A story's tier is its `risk_tier` in the backlog, and a story without one is
-`low`. A story waits for a person where either list says so: its tier is in
-`pre_commit_pause_tiers`, or its change touches a path `pre_commit_pause_paths`
-matches. One that waits reaches Gate 8 and stops: the loop hands it over with
-`sdlc escalate pre_commit_approval`, and both `git commit` and
-`sdlc gate commit pass` refuse, naming the tier or each file with the glob it
-matched, until a person has run [`sdlc approve`](commands.md#sdlc-approve) in
-their own terminal. An approval is bound to the work as it stands, so a change
-made after it needs approving again.
-[What your approval covers](guides/human-approval-gates.md#what-your-approval-covers)
-says what that is, and what it is not.
+```json
+"human_gates": { "pre_commit_pause_tiers": ["medium", "high"], "dor_advocate_check": true }
+```
 
-A project that wants every high-tier story to pause as it does today keeps
-`pre_commit_pause_tiers` at `["high"]`, the default, and adds paths beside it.
-A release of sdlc older than the one that reads `pre_commit_pause_paths` ignores
-the key, so empty the tiers only once every machine that works the project runs
-a release that reads the paths.
+**When you change it.** A story's tier is its `risk_tier` in the backlog, and
+a story without one is `low`. Tiers are compared without regard to case, so
+`"High"` in this list still matches a `high` story. A story waits for you
+where either list says so: its tier is listed, or its change touches a listed
+path. Such a story reaches Gate 8 and stops. The loop hands it to you, and the
+commit is refused, naming the tier or each file with the pattern it matched,
+until you have run [`sdlc approve`](commands.md#sdlc-approve). Your approval
+is for the work as it stands, so a change made after it needs approving again.
+[The pause before the commit](guides/human-approval-gates.md#the-pause-before-the-commit)
+shows the whole exchange.
 
-What a story changes is measured from where its branch left trunk: its commits,
-what is staged, what is changed and not staged, deletions, and files git does
-not track yet. A file that moved counts under both its names, so a file moved
-out from under a glob still pauses. A glob matches without regard to case, as
-macOS and Windows read a name, and a bare directory such as `"internal/hook"`
-covers what is under it. In one checkout, with no story worktree, the change
-is what the story has done since it started.
+**Paths.** A pattern in `pre_commit_pause_paths` is written from the
+repository root with `/` between its parts, such as `"src/auth/**"`. `*` does
+not cross a `/`, and `**` stands for any number of directories. A bare
+directory, such as `"src/auth"`, covers everything under it. Case is ignored,
+as macOS and Windows ignore it in a file's name. A pattern that cannot mean
+what it says is [refused](troubleshooting.md#sdlc-e0045) when the file loads,
+and the refusal names it: an empty one, one that starts or ends with a slash,
+or one with a backslash, a `..` or a `.` segment in it.
 
-Nothing the story does takes a pause away. In a story's worktree the main
-checkout's lists and the worktree's own copy of `.sdlc/config.json` count
-together, so a story that empties its copy still pauses, and its tier is read
-from the backlog the main checkout's configuration names. In one checkout the
-configuration committed where the story started counts as well as the file on
-disk, its tiers as well as its paths, so narrowing either list takes a commit
-before the story starts. The landing asks again of a story that was rebased or
-changed, with trunk's lists added. A configuration or a change that cannot be
-read is a pause too, never no pause: the refusal says what did not read, a
-person's approval answers it as it answers any pause, and
-[`sdlc doctor`](commands.md#sdlc-doctor) names the file. In one checkout the
-backlog the committed configuration names is a pause too where it does not
-read. The backlog the story's tier is read from, the one the main checkout's
-configuration names, is not: where it does not read, the commit gate refuses
-with its error, which no approval answers, until it is put right as
-`sdlc doctor` says.
+What a story changes is measured from where its branch left trunk. Its
+commits count, and so does everything not yet committed: what is staged, what
+is changed, what is deleted, and files git does not track yet. A file that
+moved counts under both its names, so moving a file out from under a pattern
+still pauses the story.
 
-[`sdlc status`](commands.md#sdlc-status) says before the commit gate whether
-the commit will pause and why, under `pre_commit_pause` in `--json`. A story
-that passes the commit gate with no pause leaves a `landed_without_pause`
-event on its record, naming its tier and saying that no file matched
-`pre_commit_pause_paths`, and [`sdlc log`](commands.md#sdlc-log) shows a
-`no pause` line for it until `sdlc ack` marks it read. That is so in every
-project once it upgrades, including one that never sets the key: each story
-committed without a person's sign-off is shown as such.
-
-These are this repository's own paths, as an example of the kind to list:
-whatever decides who may approve, commit or enforce, which a Python or Node
-project translates to its own layout.
+These are `sdlc`'s own paths, as an example of the kind to list: the code
+that decides who may approve, what is frozen and what the hook refuses. Your
+project will have its own, such as its authentication, its payments or its
+migrations:
 
 ```json
 {
@@ -1052,53 +1177,335 @@ project translates to its own layout.
 }
 ```
 
-The list leaves to the reviewers the files where the pause and the approval
-are enforced among much else: `internal/cli/loop.go`, `internal/cli/landing.go`,
-`internal/model/model.go`, `internal/config/config.go` and
-`internal/gitx/landing.go`, whose calls to git build the set of files a change
-touches. Listing them would pause nearly every story; a project that wants
-them paused lists them.
+List the files that decide such things and little else. A file that nearly
+every story touches would pause nearly every story.
+
+**Keeping the tiers.** The two lists add up, so a project that wants every
+high-tier story to pause as before keeps `pre_commit_pause_tiers` at
+`["high"]`, the default, and adds paths beside it. A release of `sdlc` older
+than 0.7.0 ignores `pre_commit_pause_paths`. Empty the tiers only once every
+machine that works the project runs a release that reads the paths.
+
+**A story cannot remove its own pause.** In a story's worktree, the lists in
+your main checkout and the ones in the worktree's own copy of the file count
+together, so a story that empties its copy still pauses. With
+[worktrees off](#turning-worktrees-off), the file committed when the story
+started counts as well as the one on disk, so narrowing either list takes a
+commit before the story starts. The landing asks again of a story that was
+put onto a trunk that had moved, with trunk's lists added. And a
+configuration or a change that cannot be read is a pause too, never a commit
+without one: the refusal says what did not read, your approval answers it,
+and [`sdlc doctor`](commands.md#sdlc-doctor) names the file.
+
+**Seeing it beforehand, and afterwards.**
+[`sdlc status`](commands.md#sdlc-status) says before the commit gate whether
+the commit will pause, and why. A story that passes the commit gate with no
+pause is marked as such on its record, as a `landed_without_pause` event, and
+[`sdlc log`](commands.md#sdlc-log) shows a `no pause` line for it until you
+run `sdlc ack`. So every story committed without your sign-off is shown to
+you as one, in every project, whether or not it lists any paths.
+
+With `dor_advocate_check` on, Gate 1 waits for the human advocate's review of
+the story. The review is advisory there, as it is everywhere unless you
+[change that](#an-agents-entry), and it is listed with the others:
+
+```console
+$ sdlc review list --gate dor
+Review policy: REVIEW.md
+  dor             human-advocate  advisory  not reviewed
+```
+
+If the story changes after the advocate has read it, the review goes stale,
+and the gate waits for a new one.
+
+## `team`
+
+`team` says which agents take part, which of them can block a gate, how many
+instances of a reviewer there are, how often a run may fail, and what the
+project manager may ask for. Every agent is on by default, the project manager
+included: story by story, it says which agents the story needs and the model
+and effort each is asked for, and records that as the story's staffing.
+[Agents](the-agents.md) describes each of them.
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `retries` | `2` | how many times a run of one agent may fail at a gate, reported with [`sdlc team failure`](commands.md#sdlc-team-failure-agent), before the story is handed to you. From `0`, which hands it over at the first failure, to `20` |
+| `models` | `["haiku", "sonnet", "opus"]` | the model names a staffing may ask for, **lowest first** |
+| `efforts` | `["low", "medium", "high", "xhigh", "max"]` | the effort names a staffing may ask for, **lowest first** |
+| `agents` | every agent on | one entry for each agent, under the name the plugin gives it. An agent with no entry keeps every default |
+
+Let's take a look at a team that lets the red team stop a gate, asks for two
+security reviews, turns the performance reviewer off and sets a floor under
+what the verifier is asked for. Only the entries that differ from the defaults
+are shown:
+
+```json
+"team": {
+  "agents": {
+    "verifier": { "lowest": { "model": "opus", "effort": "high" } },
+    "security": { "instances": 2, "bring_back": ["internal/auth/"] },
+    "red-team": { "can_block": true },
+    "perf":     { "enabled": false }
+  }
+}
+```
+
+**When you change it.** A change reaches the stories started after it is on
+trunk. A story under way reads the file its worktree started with, so turning
+off a failing agent on trunk changes nothing in that story. The story's
+record keeps no history of the team either: afterwards, only git's history of
+`.sdlc/config.json` says what it was.
+
+> [!WARNING]
+> Two settings loosen the loop: `enabled` set to `false` takes an agent out of
+> every story, and `can_block` set to `false` lets a gate pass over that
+> reviewer's block. An agent can write this file between stories, when the
+> hook is not holding it, so read a change to either before you commit it.
+
+To see what you committed, run `sdlc doctor`. Under `configuration` it adds a
+line for each agent you have disabled, each `can_block` that differs from its
+default, and each reviewer with more than one instance. For the team above,
+those lines are:
+
+```text
+                                team.agents.security.instances is 2: 2 instances of security review
+                                team.agents.red-team.can_block is true, where the default is false
+                                perf is disabled in team.agents.perf.enabled
+```
+
+It also says where a `can_block`, an `instances` or a `max_rounds` is set on
+an agent it can do nothing for. A team at its defaults adds no line at all.
+
+### An agent's entry
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `enabled` | `true` | whether the agent runs. `false` takes it out of every story |
+| `can_block` | `true` for the architect, security, perf, the verifier, the code reviewer and the test reviewer; `false` for red-team and the human advocate | for an agent that reviews, whether its block stops the gate |
+| `max_rounds` | `loop.max_review_rounds` | how many blocks that stop the gate one reviewer may make before the gate goes to its [arbiter](the-loop.md#the-arbiter), and how many the arbiter may make before the story is handed to you. `1` or more |
+| `instances` | `1` | how many instances of a reviewer review each gate it reviews, from `1` to `16` |
+| `lowest` | none | the lowest `model` and `effort` the project manager may ask for this agent: [Models, efforts and floors](#models-efforts-and-floors) |
+| `bring_back` | none | for a reviewer of the code, the paths that return it to a story it was left out of: [Bringing a reviewer back](#bringing-a-reviewer-back) |
+
+Each agent has one entry, under one of these names: `project-manager`,
+`researcher`, `sdet`, `implementer`, `verifier`, `bookkeeper`, `architect`,
+`security`, `red-team`, `perf`, `human-advocate`, `code-reviewer` and
+`test-reviewer`. An agent listed twice is refused, so write each agent's
+settings once.
+
+**`enabled`.** With an agent disabled, what happens depends on its job. Where
+it does a gate's work, or is the verifier or the code reviewer, that work is
+yours to do by hand, and the loop
+[hands the story to you](the-agents.md#doing-an-agents-gate-by-hand) when it
+reaches the gate. A disabled reviewer of the tests, the plan or the change is
+not waited for: with the test reviewer disabled, `sdlc freeze` waits for no
+review. With the project manager disabled no story is staffed, and every
+enabled agent takes part in every story.
+
+**`can_block`.** `false` makes a review advisory: still required, never
+skipped, and its block does not stop the gate. On the test reviewer, `sdlc
+freeze` then waits only until it has reviewed. Its findings are still closed
+before the commit, like any other reviewer's. `true` gives a reviewer no more
+than its role has: security still blocks only a story recorded as
+security-sensitive, and perf only on a stated budget. On red-team or the
+human advocate, `true` makes a block stop the gate.
+[Which reviewers can stop a gate](the-agents.md#which-reviewers-can-stop-a-gate)
+has the whole table.
+
+**`max_rounds`.** It counts only blocks that stop the gate, so it does nothing
+on an advisory agent, or on one that reviews nothing. Each instance of a
+reviewer counts its own blocks, and so does its arbiter. A disabled agent has
+no arbiter, so at its limit the story is handed to you.
+
+**`instances`.** The second instance of `security` is `security-2`, the third
+`security-3`. Each is recorded under its own name, and the gate waits for a
+review from each. Be honest with yourself about what that buys: `sdlc` cannot
+see that two instances were two runs, and one run can record a review under
+both names. Nothing shows them to be independent, though
+[`sdlc trace`](commands.md#sdlc-trace) shows how many runs there were.
+Lowering `instances` drops the reviews of the instances it removes.
+
+### Models, efforts and floors
+
+The model and effort a staffing records are what is asked for. The environment
+can override both, and `sdlc` does not observe what a delegation is given.
+
+**The first name in each list is the lowest.** `sdlc` ranks nothing by its
+name: a floor is a position in your own lists. A list written highest first
+allows everything, and nothing can tell it from one that means it, so
+[`sdlc staffing show`](commands.md#sdlc-staffing-show) prints both lists in
+order. The names are whatever your Claude Code takes for a delegation. `sdlc`
+checks what is asked for against these lists and against nothing else, so a
+name mistyped here is asked for as it is typed.
+
+`lowest` sets a floor for one agent. It names a model from `models`, an effort
+from `efforts`, or both, and the project manager may not ask for less:
+
+```json
+"verifier": { "lowest": { "model": "opus", "effort": "high" } }
+```
+
+An agent with no `lowest` may be asked for from the first name in each list.
+Every instance has its role's floor.
+
+### Bringing a reviewer back
+
+The project manager may leave a reviewer out of a story that does not need it.
+`bring_back` lists the paths that return a reviewer of the code to the code
+review all the same: `security`, `perf`, `human-advocate` or `code-reviewer`.
+
+```json
+"security": { "bring_back": ["internal/auth/", "install.sh"] }
+```
+
+Each path is a file or a directory relative to the repository root, with `/`
+between its parts and no pattern. It is matched a segment at a time, without
+regard to case, and it brings back every instance of its reviewer. A path
+typed wrongly loads and matches nothing, and `sdlc staffing show` prints the
+paths as they were read, which is where to look for one.
+
+### What the project manager cannot leave out
+
+Some agents are never left out while they are enabled, and that is not a
+setting: the agents that do a gate's work, the verifier, the code reviewer,
+and security on a story the analysis recorded as security-sensitive.
+
+Three things the project manager can do are worth knowing. It can leave the
+architect out, and nothing brings the architect back at the design review,
+where there is no change to read. It can leave perf out, with `bring_back`
+all that returns it, so a project with a performance budget lists its hot
+paths there. And it can leave the test reviewer out of a story, with a
+reason, and `sdlc freeze` then waits for no review. A staffing that does not
+mention the test reviewer keeps it in.
+
+### Upgrading from the staffing section
+
+Releases up to 0.5.0 configured the agents in a `staffing` section and in
+`reviews.gate7_advisory`. `team` replaced both. A file that still has either
+is refused by every command that loads it, and the refusal,
+[SDLC-E0087](troubleshooting.md#sdlc-e0087), names each old setting it found
+and where that setting went. Move each one as this table says:
+
+| Before | After |
+| --- | --- |
+| `staffing.enabled` set to `true` | nothing: the project manager is on by default |
+| `staffing.enabled` set to `false` | `enabled` set to `false` in `team.agents.project-manager` |
+| `staffing.models` | `team.models` |
+| `staffing.efforts` | `team.efforts` |
+| `staffing.lowest`, an entry for each agent | `lowest` in that agent's own entry, such as `team.agents.verifier.lowest` |
+| `staffing.bring_back`, an entry for each agent | `bring_back` in that agent's own entry |
+| `reviews.gate7_advisory` set to `true` | `team.agents.code-reviewer.can_block` set to `false` |
+| `reviews.gate7_advisory` set to `false` | nothing: it is a leftover that is not refused, and `sdlc doctor` reports it |
+
+Then delete the whole `staffing` section, because an empty `"staffing": {}`
+is still refused, and delete the `gate7_advisory` line. Keep `reviews.policy`
+where it is. A file that turned the project manager off, set a floor for the
+verifier and made the code reviewer advisory now has this:
+
+```json
+"team": {
+  "agents": {
+    "project-manager": { "enabled": false },
+    "verifier":        { "lowest": { "model": "sonnet", "effort": "high" } },
+    "code-reviewer":   { "can_block": false }
+  }
+},
+"reviews": { "policy": "REVIEW.md" }
+```
+
+How you make the edit depends on where you are. Start at case 3 if a command
+has already refused the file, and at case 1 otherwise:
+
+1. **Your file has no `staffing`, and `gate7_advisory` is false or absent.**
+   There is nothing to edit. One thing does change on upgrading: the project
+   manager, which the old default left off, now staffs your next story. To
+   keep it off, add `"project-manager": { "enabled": false }` to
+   `team.agents`.
+2. **A story is in flight.** It is staffed by the project manager from its
+   next gate. Turning the project manager off on trunk reaches only the
+   stories you start from then on.
+3. **Your file has `staffing`, or `gate7_advisory` set to true.** Once the new
+   `sdlc` is installed, every command refuses until a person edits the file,
+   `sdlc stop` among them, so no story can land until then.
+   - **Before you update**, land what is in flight with the `sdlc` you have.
+     Then edit the file on trunk, commit it, and update the command and the
+     plugin, in one sitting.
+   - **Already updated, with nothing in flight**, edit the file on trunk and
+     commit it.
+   - **Already updated, with a story in flight**, edit the file on trunk in
+     your main checkout and commit it there. Leave the file in the story's
+     worktree alone: an edit there only moves the refusal to the landing. In
+     the worktree, run `git rebase --autostash <trunk>`. Every gate before
+     the commit is now
+     [refused because trunk moved](troubleshooting.md#sdlc-e0046), so ask the
+     session to run
+     `sdlc escalate trunk_moved --message "config moved on trunk"`, or run it
+     yourself in the worktree. Then, in your own terminal, run
+     `sdlc approve <ID>` and, from your main checkout, `sdlc start <ID>`,
+     which picks the story up from where trunk is.
+
+Don't reach for `sdlc init --force` to clear the refusal: it writes the whole
+`team` section back at its defaults. To check that the upgrade took, run
+`sdlc doctor`, which should find no problem. A team `sdlc` cannot use, such
+as an agent that does not exist or an `instances` out of range, is refused as
+[SDLC-E0088](troubleshooting.md#sdlc-e0088), and the message lists each
+problem. Update the command and the plugin together, as
+[Updating](installation.md#updating) says.
 
 ## `budget`
 
-This is what one story is expected to cost, and when to say so as it gets close.
+`budget` is what one story is expected to cost, and when to say so as it gets
+close.
 
-| Key | What it means |
-| --- | --- |
-| `per_story_usd` | what one story is expected to cost. `0` turns the budget off and still keeps the total; a negative one is refused |
-| `alert_fractions` | the points along the way to say so, as fractions of the budget |
-| `gate_hours` | optional: hours of the agents' time each gate may take before the loop says so, by gate key, such as `{"plan": 1}`. Absent, or `0` for a gate, is off. A negative number, a value that is not a number, or a key that is not a gate key is refused |
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `per_story_usd` | `60` | what one story is expected to cost, in US dollars. `0` turns the budget off, and the total is still kept |
+| `alert_fractions` | `[0.5, 0.8, 1.0]` | the shares of the budget at which `sdlc` warns you |
+| `gate_hours` | none | hours of the agents' time a gate may take before `sdlc` says so, by gate key. `init` does not write it |
 
-Spend is recorded with [`sdlc cost add`](commands.md#sdlc-cost-add), and shown by `sdlc cost`
-and `sdlc status`. An alert goes to standard error once, on the entry that
-crosses it, and the entry that uses up the budget says so whichever fractions
-are set. A budget never blocks: a story stopped halfway costs more than the overspend.
+```json
+"budget": {
+  "per_story_usd": 40,
+  "alert_fractions": [0.5, 0.9],
+  "gate_hours": { "plan": 1, "implementation": 2 }
+}
+```
 
-`gate_hours` counts the agents' time as [`sdlc trace`](commands.md#sdlc-trace) does in its
-`agents` column: the union of the agents' runs charged to the gate the story was working
-towards, so an agent still running is not counted until it ends, and time spent waiting
-on a person is not counted. When `sdlc gate`, `sdlc review add` or `sdlc status` finds a
-gate with a number past it, the command prints one line on standard error and then does
-exactly what it would have done without the setting: the same decision, the same output
-on standard output, the same exit code. Every gate with a number is checked, so the line
-comes again on every one of those commands for the rest of the story, because the time
-stays charged to the gate after it passes. To silence it, set that gate's number to `0`
-or take the entry out. The first time `sdlc gate` or `sdlc review add` saves after finding
-a gate past its number, a `budget` event goes into the gate record, once for that gate on
-that story, and `sdlc trace` marks the gate. `sdlc status` changes nothing, so it only
-prints, and the next `gate` or `review add` records the event.
+**When you change it.** Spend is recorded with
+[`sdlc cost add`](commands.md#sdlc-cost-add), and shown by `sdlc cost` and
+`sdlc status`. A warning is printed once, by the entry that carries the total
+past a fraction. The entry that uses up the whole budget always says so,
+whatever the fractions are. A fraction of `0` never fires, and one above `1`,
+such as `1.5`, warns once the story is that far over. A negative budget is
+refused.
 
-`gate_hours` never blocks either, for the same reason: stopping a story halfway costs more
-than the overrun, so the loop says so and the gate carries on.
+A budget never blocks: a story stopped halfway costs more than the overspend.
+If a story should stop, that is your call, and
+[Tracking what a story costs](guides/tracking-what-a-story-costs.md) shows the
+warnings and what to do about them.
 
-A value `gate_hours` cannot use is refused by every command that reads the configuration
-with [SDLC-E0045](troubleshooting.md#sdlc-e0045). The hook cannot read such a file either:
-it sets the whole file aside and runs on the defaults, so your own test paths, freeze
-setting and the rest do not apply until it is fixed. `sdlc doctor` names the entry.
+`gate_hours` gives a gate a number of hours, under the gate's key: `dor`,
+`analysis`, `tests_frozen`, `plan`, `design_review`, `implementation`,
+`verification`, `verifier_review`, `code_review`, `commit` or `retro`. It
+counts the time the agents were at work on the gate, as the `agents` column of
+[`sdlc trace`](commands.md#sdlc-trace) does, and not the time the story spent
+waiting for you. Once a gate is past its number, `sdlc gate`,
+`sdlc review add` and `sdlc status` each print one more line saying so, and
+then do exactly what they would have done. The line comes back on every one of
+those commands for the rest of the story. To silence it, set that gate's
+number to `0` or take the entry out. The overrun is also noted once on the
+story's record, and `sdlc trace` marks the gate.
 
-There is no default: `sdlc init` writes no `gate_hours`, and a project sets its own. For a
-starting point, these are the median and upper quartile of the hours each gate took in the
-39 stories of this repository:
+`gate_hours` never blocks either, and for the same reason: stopping a story
+halfway costs more than the overrun.
+
+A key that is not a gate key, a negative number or a value that is not a
+number is [refused](troubleshooting.md#sdlc-e0045), like any setting `sdlc`
+cannot use.
+
+There is no default to start from, so here are the median and the upper
+quartile of the hours each gate took over the 39 stories that built `sdlc`
+itself:
 
 | Gate | Median | Upper quartile |
 | --- | --- | --- |
@@ -1110,284 +1517,271 @@ starting point, these are the median and upper quartile of the hours each gate t
 | `verification` | 0.52 | 1.31 |
 | `code_review` | 0.31 | 0.99 |
 
-These were measured as machine time per gate, which includes sessions left open and idle.
-The agents' time `gate_hours` counts leaves idle sessions out, so the same gates show less
-in `sdlc trace`, and a number taken from this table is a generous start. Yours will
-differ: `sdlc trace <story>` shows the agents' time each gate took in a story of your own,
-which is the figure to set a number against, and `sdlc trace --all` puts the stories side
-by side with their totals.
+These were measured as time on the clock, which includes sessions left open
+and idle. `gate_hours` leaves idle time out, so a number taken from this table
+is a generous start. Yours will differ: `sdlc trace <ID>` shows the agents'
+time each gate took in a story of your own, and `sdlc trace --all` puts your
+stories side by side.
+
+## `loop`
+
+`loop` sets how long the loop keeps trying before it hands the story to you.
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `max_review_rounds` | `2` | how many times one reviewer may block a gate before the gate goes to its [arbiter](the-loop.md#the-arbiter), and how many times the arbiter may before the story is handed to you. A block that cannot stop the gate is not counted, and an agent's own [`max_rounds`](#an-agents-entry) takes its place |
+| `max_rework_rounds` | `3` | how many times one gate may be recorded as failed before the story is handed to you |
+| `max_stop_blocks` | `3` | how many times in a row the hook sends a session back to work when it [stops mid-story](enforcement.md#stopping-mid-story) with nothing recorded, before the story is handed to you |
+
+```json
+"loop": { "max_review_rounds": 3, "max_rework_rounds": 3, "max_stop_blocks": 3 }
+```
+
+**When you change it.** Each is a whole number. A higher limit lets the
+agents try for longer before you hear of it, and costs what those extra
+rounds cost. `0` turns that limit off, so the loop never stops to ask for
+that reason, and a negative number is refused.
+[When a reviewer blocks](guides/when-a-reviewer-blocks.md) shows what a
+hand-over looks like.
+
+## `freeze`
+
+`freeze` changes what the test freeze allows. It has one setting.
+
+### `freeze.allow_new_test_files`
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `allow_new_test_files` | `false` | with `true`, the test author may add a test file after the freeze has been taken |
+
+```json
+"freeze": { "allow_new_test_files": true }
+```
+
+**When you change it.** A new test file is not frozen by being written.
+Either way the story's next gate
+[refuses to pass](troubleshooting.md#sdlc-e0043) while there is a test file
+the freeze does not hold. With the setting on, the test author runs
+`sdlc freeze` again, which adds the file. With it off, `sdlc freeze` does not
+add it, and the way through is
+[yours](guides/when-a-frozen-test-is-wrong.md#adding-a-test-file-after-the-freeze).
+
+Where the test reviewer is staffed, an added file is reviewed with the rest
+before `sdlc freeze` takes it. Until the test reviewer has approved the test
+files as they now are, [the freeze waits](commands.md#sdlc-freeze).
+
+> [!WARNING]
+> Turning this on is a real loosening, because a test written after the code
+> can be written to pass. It does not let the implementer write one. That rule
+> is not a setting.
+
+## `reviews`
+
+`reviews` says where the review policy is, the file every reviewer reads
+first. How much a reviewer's word counts is set for each agent in
+[`team`](#an-agents-entry), with `can_block`.
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `policy` | `REVIEW.md` | the review policy, relative to the repository root. `init` does not write the setting |
+
+### `reviews.policy`
+
+The review policy tells every reviewer which passes to make, what counts as
+important, what is a nit, how many nits to report, and what not to review.
+`init` writes one as `REVIEW.md`. Name `reviews.policy` only to keep the file
+somewhere else:
+
+```json
+"reviews": { "policy": "docs/review-policy.md" }
+```
+
+**When you change it.** Give the path relative to the repository root. It is
+[refused](troubleshooting.md#sdlc-e0045) where it leaves the repository, has
+a `..` in it, ends in `/`, or holds white space, a quote, a backslash, a
+backtick or any of `$`, `;`, `&`, `|`, `<`, `>`, `(` and `)`.
+
+With no file at the path, the project has no review policy, and reviewers
+review as they do without one. `sdlc doctor` does not warn about a missing
+`REVIEW.md`, and does warn about a missing file you named. It warns too where
+the path is a directory, or a link that leads out of the repository, which
+counts as no policy.
+
+No agent [writes the policy](enforcement.md#review-policy-is-not-edited)
+while a story is being worked on, and no story lands a change to it. Commit a
+change on trunk between stories. A story under way keeps the policy it
+started with.
+
+### `reviews.gate7_advisory`
+
+This setting is gone. It moved to `team.agents.code-reviewer.can_block`, which
+takes the opposite value: to make the code reviewer advisory, set
+`"can_block": false` on it. A file with `"gate7_advisory": true` is refused,
+and `"gate7_advisory": false` is a leftover that changes nothing and can be
+deleted. [Upgrading from the staffing section](#upgrading-from-the-staffing-section)
+shows both.
+
+## `backlog`
+
+`backlog` names the file your stories live in. It has one setting.
+
+### `backlog.path`
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `path` | `user_stories.json` | the backlog file, relative to the repository root |
+
+```json
+"backlog": { "path": "docs/stories.json" }
+```
+
+**When you change it.** Move the file in the same commit, between stories.
+The path has to be inside the repository, because the backlog is committed
+with the work and protected while a story runs: an absolute path, or one that
+climbs out with `..`, is refused.
+[Writing stories](guides/writing-stories.md) says what goes in the file.
+
+## `spec`
+
+`spec` names where your project's own specifications live. It has one setting.
+
+### `spec.paths`
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `paths` | `["docs/", "spec/", "README.md"]` | the files and directories the researcher reads at Gate 2, before it writes anything |
+
+```json
+"spec": { "paths": ["docs/", "adr/", "README.md"] }
+```
+
+**When you change it.** A folder of specifications that is not listed is not
+given to the analysis, so add yours here if it has another name.
 
 ## `consolidate`
 
 `consolidate` sets when the loop reminds you to run `/sdlc:consolidate`, the
 skill that turns what several finished stories show into changes to your
-contract and configuration. It has one key.
+contract and your settings.
 
-| Key | What it means |
-| --- | --- |
-| `nudge_after` | how many stories must have finished since the last consolidation before `sdlc status` and `sdlc stop` end with a line saying so. The default is 3, which a file that says nothing of it gets. `0` turns the line, and the `consolidate` field in `sdlc status --json`, off. A negative value is refused ([SDLC-E0045](troubleshooting.md#sdlc-e0045)), and so is one that is not a whole number ([SDLC-E0004](troubleshooting.md#sdlc-e0004)) |
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `nudge_after` | `3` | how many stories must have finished since you last ran `/sdlc:consolidate` before `sdlc status` and `sdlc stop` end with a line saying so. `0` turns the reminder off |
 
 ```json
 "consolidate": { "nudge_after": 5 }
 ```
 
-A story has finished when the backlog says it is `done`, and it counts when it
-finished on a later calendar day than the date in the name of the newest
-`.sdlc/consolidation-<YYYY-MM-DD>.md` in the main checkout, in your computer's
-own time zone. A story that finishes on the day of a consolidation does not
-count, which is what lets that run end the reminder: one that finishes later
-that day is not counted either. With no such file, every finished story counts.
-Only the names of the files are read, never what is in them.
-[Consolidating what the retros say](guides/consolidating-what-the-retros-say.md#the-reminder)
-says more.
+**When you change it.** `init` does not write this section, and left out,
+`nudge_after` is 3. It is a whole number, and a negative one is refused. A
+story counts when it finished on a later day than your last consolidation, so
+a run of the skill ends the reminder at once.
+[The reminder](guides/consolidating-what-the-retros-say.md#the-reminder) says
+how the count is kept.
 
-## `team`
+## `version`
 
-`team` says which agents run, which of them can block a gate, how many instances of a reviewer
-there are, how often a run may fail, and what the project manager may ask for. Every agent is on
-by default, the project manager included: `sdlc:project-manager` says, story by story, which
-agents the story needs and the model and effort each is asked for, and records that as the
-story's staffing. `sdlc init` writes the section with every agent at its default.
+`version` is the version of the file's format, which is `1`. Leave it alone.
+It is how a later release recognises a file written by this one, and how this
+one refuses a file written by a newer release without misreading it.
 
-| Key | What it means |
-| --- | --- |
-| `retries` | how many times a run of one agent may fail at a gate, reported with [`sdlc team failure`](commands.md#sdlc-team-failure), before the story is handed to a person. Default `2`; `0` hands it over at the first failure; above `20` is refused |
-| `models` | the model names a staffing may ask for, **lowest first**. Default `["haiku", "sonnet", "opus"]` |
-| `efforts` | the effort names a staffing may ask for, **lowest first**. Default `["low", "medium", "high", "xhigh", "max"]` |
-| `agents` | one entry per agent, under the name the plugin gives it, with the keys below. An agent with no entry keeps every default |
-
-The model and effort a staffing records are what is asked for. The environment can override
-both, and sdlc does not observe what a delegation is given.
-
-> [!WARNING]
-> Two settings loosen the loop: `enabled` set to `false` takes an agent out of every story, and
-> `can_block` set to `false` lets a gate pass over that reviewer's block. This file can be written
-> by a session on the project between stories, so read a change to either before you commit it.
-
-### An agent's entry
-
-| Key | What it means |
-| --- | --- |
-| `enabled` | whether the agent runs. Default `true`. `false` takes it out of every story: a worker's gate, or the verifier's or the code reviewer's review, is then yours to do by hand, and the loop hands the story to you there with `sdlc escalate work_by_hand`. A disabled reviewer of the tests, the plan or the change is not waited for: with the test reviewer disabled, `sdlc freeze` waits for no review. With the project manager disabled no story is staffed, and every enabled agent takes part in every story |
-| `can_block` | for an agent that reviews, whether its block stops the gate. Default `true` for the architect, security, perf, the verifier, the code reviewer and the test reviewer, and `false` for red-team and the human advocate. `false` makes its review advisory: still waited for, never skipped, and its block does not stop the gate it reviews; on the test reviewer, `sdlc freeze` then waits only until it has reviewed. Its findings are still closed like any other reviewer's: those of the design review before verification and the commit, and those of the code review before the commit. `true` gives a reviewer no more than its row says, so security still blocks only a story recorded as security-sensitive; on red-team or the human advocate, `true` makes a block stop the gate as perf's does |
-| `max_rounds` | how many blocks that stop the gate one reviewer may make before the gate goes to its [arbiter](the-loop.md#the-arbiter), and the arbiter before the story is handed to a person; each instance and its arbiter count their own. Left out, it is `loop.max_review_rounds`; below `1` is refused. It counts only blocks that stop the gate, so it does nothing on an advisory agent, one with `can_block` false, or on one that reviews nothing; `sdlc doctor` says so where it is set on one |
-| `instances` | how many instances of a reviewer review each gate it reviews, from `1` to `16`. Default `1`. The second is `security-2`, the third `security-3`: each is its own run under its own name, and the gate waits for a review from each. On an agent that reviews nothing it does nothing |
-| `lowest` | the lowest `model` and `effort` the project manager may ask for this agent: a model from `models` and an effort from `efforts`. An agent with no `lowest` may be asked for from the first name in each list |
-| `bring_back` | for a reviewer of the code, the paths a change to which brings it back where the staffing left it out |
-
-Each agent has one entry. A second entry for the same agent is refused as
-[SDLC-E0088](troubleshooting.md#sdlc-e0088), not taken in place of the first: JSON keeps the
-last of a repeated key without a word, so a second `perf` entry would quietly undo the first.
-A key repeated inside one entry is not refused: the entry keeps the last value given for it, so
-write each of an agent's settings once.
-
-The tool cannot see that two instances were two runs: one run can record a review as both
-`security` and `security-2`, so instances are worth having only where the session runs each on
-its own. Nothing shows them to be independent; `sdlc trace` shows how many runs there were.
-
-Lowering `instances` drops the reviews and blocks of the instances it removes, and turning the
-project manager back on during a story applies the staffing's rows again, a left-out reviewer's
-block included.
-
-Let's take a look at an entry that keeps a second security review and a floor for the verifier:
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `version` | `1` | says which format the file is in |
 
 ```json
-"team": {
-  "agents": {
-    "security": { "instances": 2, "bring_back": ["internal/hook/", "install.sh"] },
-    "verifier": { "lowest": { "model": "opus", "effort": "high" } }
-  }
-}
+"version": 1
 ```
 
-### Models and efforts
-
-**The first name in each list is the lowest.** sdlc ranks nothing by its name: a
-`lowest` entry, and "from the lowest up" in a refusal, are positions in the
-project's own lists. A list written highest first allows everything, and nothing
-can tell it from one that means it, so
-[`sdlc staffing show`](commands.md#sdlc-staffing-show) prints both lists in
-order. The names are whatever the project's Claude Code takes for a delegation.
-sdlc checks what is asked for against these lists and against nothing else, so a
-name mistyped here is asked for as it is typed.
-
-### Setting a floor with `lowest`
-
-`lowest` sits in an agent's own entry, and any of the thirteen agents may have one: `researcher`,
-`sdet`, `implementer`, `verifier`, `bookkeeper`, `architect`, `security`, `red-team`, `perf`,
-`human-advocate`, `code-reviewer`, `test-reviewer`, `project-manager`. It may give a model, an
-effort or both. An instance has its role's floor.
-
-### Bringing a reviewer back with `bring_back`
-
-`bring_back` sits in the entry of a reviewer of the code: `security`, `perf`, `human-advocate`
-or `code-reviewer`. Each path is a file or a directory relative to the repository root, with `/`
-between its parts and no pattern; it matches by path segment, without regard to case. A path
-brings back every instance of its reviewer. `sdlc staffing show` prints the paths as they were
-read, which is where a path typed wrongly shows: it loads, and matches nothing.
-
-### What a staffing cannot do
-
-What a staffing cannot do is not a setting: the agents that do a gate's work,
-the verifier and the code reviewer are never left out while they are enabled, and neither is
-security on a story the analysis recorded as security-sensitive.
-
-The test reviewer can be left out of a story, with a reason, and `sdlc freeze` then waits for no
-review; a staffing with no row for it keeps it in, and so does a project with the project manager
-disabled.
-
-Two things it can do are worth knowing. The architect can be left out, and nothing brings it back
-at the design review, where there is no change to read. And perf can be left out, with
-`bring_back` all that returns it, so a project with a performance budget lists its hot paths
-there.
-
-A `team` section sdlc cannot use does not load
-([SDLC-E0088](troubleshooting.md#sdlc-e0088)): an agent that does not exist or an instance's name
-as an agent, a blank or repeated name in `models` or `efforts`, an empty list, a `lowest` its list
-does not have, `retries`, `instances` or `max_rounds` outside its range, or a `bring_back` path
-that is not a plain relative one, or on an agent that does not review the code. Two of these go
-further than the settings need, and on purpose. The ranges are there because the hook reads a
-refused file's values all the same, and an `instances` in the billions would run it out of memory.
-A name in `models` or `efforts` that holds a control character is refused because the lists are
-printed to the project manager and to you, where a newline would make a line that looks like the
-tool's own.
-
-### When a setting takes effect
-
-A gate's output says which agents are disabled, and the gate record keeps no history of it: only
-git's history of `.sdlc/config.json` says afterwards what the team was.
-
-A setting reaches the stories started after it is on trunk. With worktrees on, a story reads its
-own worktree's file, cut from trunk when it started, so turning off a failing agent on trunk in
-the middle of a story changes nothing in that story. To change that story's team, end it, commit
-the change on trunk, and start it again.
-
-`sdlc init --force` writes every setting back at its default except the stories, `backlog.path`,
-the trunk branch and `reviews.policy`, so it writes the `team` section back at its defaults too.
-It is not the fix for SDLC-E0087.
-
-### Upgrading from the staffing section
-
-This release replaced the `staffing` section and `reviews.gate7_advisory` with `team`. A file
-that still has either is refused as [SDLC-E0087](troubleshooting.md#sdlc-e0087), by every
-command that loads it, and the message names each old key and the key that replaced it. If a
-story is in flight in a worktree, editing that worktree's file makes the commands work, and then
-the landing refuses the story, since a story cannot carry a change to `.sdlc/`: edit the file on
-trunk, as below.
-
-| Before | After |
-| --- | --- |
-| `"staffing": {"enabled": true}` | delete the whole `"staffing"` section once its other keys have moved: an empty `"staffing": {}` is still refused. The project manager is on by default |
-| `"staffing": {"enabled": false}` | `"team": {"agents": {"project-manager": {"enabled": false}}}`, which keeps the project manager off, as the old default had it |
-| `"staffing": {"models": ["haiku", "sonnet", "opus"]}` | `"team": {"models": ["haiku", "sonnet", "opus"]}` |
-| `"staffing": {"efforts": ["low", "high"]}` | `"team": {"efforts": ["low", "high"]}` |
-| `"staffing": {"lowest": {"verifier": {"model": "sonnet", "effort": "high"}}}` | `"team": {"agents": {"verifier": {"lowest": {"model": "sonnet", "effort": "high"}}}}` |
-| `"staffing": {"bring_back": {"security": ["internal/auth/"]}}` | `"team": {"agents": {"security": {"bring_back": ["internal/auth/"]}}}` |
-| `"reviews": {"gate7_advisory": true}` | `"team": {"agents": {"code-reviewer": {"can_block": false}}}`; delete the `gate7_advisory` line, and keep `policy` if you have one: an empty `"reviews": {}` loads |
-| `"reviews": {"gate7_advisory": false}` | nothing to do: a leftover that is not refused. `sdlc doctor` reports it, and the line can be deleted, keeping `policy` if you have one |
-
-So `staffing.enabled` goes to `enabled` in `team.agents.project-manager`, `staffing.models` to
-`team.models`, `staffing.efforts` to `team.efforts`, `staffing.lowest` and `staffing.bring_back`
-to each agent's own entry, and `reviews.gate7_advisory` to `team.agents.code-reviewer.can_block`,
-with the opposite value. `reviews.policy` stays where it is. Two codes are new:
-[SDLC-E0087](troubleshooting.md#sdlc-e0087), an old setting the team replaced, and
-[SDLC-E0088](troubleshooting.md#sdlc-e0088), a team that cannot be used.
-
-If `sdlc doctor`, or any command, says SDLC-E0087, start at case 3; otherwise start at case 1.
-Then follow each case that applies.
-
-1. **No `staffing`, and `gate7_advisory` false or absent.** No edit. Your next story is staffed by
-   the project manager, which the old default left off, and its run comes before each gate's
-   agents. To keep it off, add `"team": {"agents": {"project-manager": {"enabled": false}}}`.
-2. **A story in flight.** It is staffed by the project manager from its next gate: a story past
-   analysis with no staffing waits for every enabled agent, and the runbook delegates to the
-   project manager first when it resumes. To keep the project manager off for the stories you
-   start from now on, add `"team": {"agents": {"project-manager": {"enabled": false}}}` to
-   `.sdlc/config.json` on trunk. A story already in a worktree of its own reads that worktree's
-   file, and editing it is refused when the story lands, so such a story is staffed from its next
-   gate either way.
-3. **`staffing`, or `gate7_advisory` true.** Once the new binary is installed, every command that
-   loads the file is refused as SDLC-E0087 until a person edits it. `sdlc stop` is one of them: it
-   loads the file of the checkout it runs in, and a landing reads the main checkout's too, so a
-   story cannot land while either still holds an old key. A worktree reads its own file, and a
-   story cannot carry the edit.
-
-   **Before you update**, land what is in flight with the binary you have, then edit
-   `.sdlc/config.json` on trunk as the table says, commit it, and update the binary and the
-   plugin, in one sitting.
-
-   **Already updated, with nothing in flight**, edit `.sdlc/config.json` on trunk as the table
-   says and commit it.
-
-   **Already updated, with a story in flight**, the story cannot land as it is, so:
-   1. edit `.sdlc/config.json` on trunk in the main checkout, and commit it there;
-   2. in the story's worktree, run `git rebase --autostash <trunk>`: before Gate 8 the story's
-      work is not committed, and a plain rebase refuses a tree with changes;
-   3. HEAD has then moved off the story's base, so every gate before the commit is refused as
-      [SDLC-E0046](troubleshooting.md#sdlc-e0046). Ask the session to run
-      `sdlc escalate trunk_moved --message "config moved on trunk"` for the story, or run it
-      yourself in the story's checkout; then, in your own terminal, `sdlc approve <ID>`; then
-      `sdlc start <ID>` from the main checkout, which picks the story up from where trunk is.
-
-To check the upgrade took: `sdlc doctor` exits 0, and its `ok` line names the team only where it
-differs from the defaults; `sdlc staffing show` lists every enabled agent, with the project
-manager's staffing where it is on; and `sdlc status` shows a story in flight with its next gate.
-
-Update the binary and the plugin together, as [Updating](installation.md#updating) says: an old
-hook beside a new command does not know an instance's name.
+**When you change it.** Don't. A number above `1`, or one of `0` or less, is
+[refused](troubleshooting.md#sdlc-e0045). Where a newer `sdlc` wrote the
+file, the fix is to upgrade.
 
 ## Settings read from the environment
 
-A few settings are not in `.sdlc/config.json`, because they belong to the person
-who starts the session and not to the project. They are read from the
-environment Claude Code was started in, and nothing run inside a session
-changes them. `SDLC_ENFORCE` is described under
-[Turning it off](enforcement.md#turning-it-off), and `SDLC_DEBUG`,
-`SDLC_DEBUG_FILE` and `SDLC_TRACE` under
-[Seeing what happened](enforcement.md#seeing-what-happened).
+A few settings are not in the file, because they belong to the person who
+starts the session and not to the project. They are read from the environment
+Claude Code was started in, and nothing run inside a session changes them.
+
+| Variable | What it does |
+| --- | --- |
+| `SDLC_ENFORCE` | set to `0`, disables every rule of the hook: [Turning it off](enforcement.md#turning-it-off) |
+| `SDLC_DEBUG`, `SDLC_DEBUG_FILE`, `SDLC_TRACE` | write a log of what the hook decided, and how long it took: [Seeing what happened](enforcement.md#seeing-what-happened) |
+| `SDLC_HOOK_DEADLINE_MS` | shortens the hook's deadline, as described next |
 
 ### `SDLC_HOOK_DEADLINE_MS`
 
-`SDLC_HOOK_DEADLINE_MS` can only shorten the hook's deadline: the 25 seconds
-after which a call the hook could not check in time is refused, with the rule
-name [`not-checked-in-time`](enforcement.md#not-checked-in-time). It is a whole
-number of milliseconds, above 0 and below 25000.
+The hook gives itself 25 seconds to check a call, and
+[refuses a call](enforcement.md#not-checked-in-time) it could not check in
+that time. `SDLC_HOOK_DEADLINE_MS` can only shorten that deadline. It is a
+whole number of milliseconds, above 0 and below 25000:
 
 ```console
 $ export SDLC_HOOK_DEADLINE_MS=10000
 ```
 
-Any other value leaves the 25 seconds in force: `0`, a negative number, 25000
-or more, and anything not written in digits alone, such as `1.5`, `+5`, `5s`
-or a value with a space in it. Nothing in the session reports a value that was
-not taken. With `SDLC_DEBUG_FILE` set, the hook's log has a line for each call
-saying the fixed deadline is in force. Nothing lengthens the deadline, because
-the 25 seconds are what keeps the hook's answer ahead of Claude Code's own
-timeout.
+Any other value leaves the 25 seconds in force, and nothing in the session
+says the value was not taken. Nothing lengthens the deadline.
 
-A shorter deadline refuses the calls that outlast it, and only those. A call
-the hook checks usually takes it a few milliseconds, and more for a commit,
-whose working tree is measured. A deadline shorter than that refuses calls
-that would have been allowed, and which ones depends on how busy the machine
-is. It turns no rule off. It is there for testing the refusal, and for a person
-who would rather be refused sooner than wait.
+A shorter deadline turns no rule off. It refuses the calls that outlast it,
+and which calls those are depends on how busy your machine is. It is there for
+testing the refusal, and for a person who would sooner be refused than wait.
 
 ## The other half of the contract
 
-`.sdlc/config.json` is what the hooks look for: in a project without it they do
-nothing at all. The other half is a `## SDLC Contract` section in `CLAUDE.md`, or in
-`AGENTS.md` where the project keeps its instructions there,
-on a line of its own. The hooks do not read it, but the agents do, and
-`sdlc doctor` reports a project that has no such section.
+`.sdlc/config.json` holds what a program can check. The other half of your
+project's contract with the loop is prose: a `## SDLC Contract` section in
+`CLAUDE.md`, or in `AGENTS.md` where your project keeps its instructions
+there. The hook does not read it. The agents do, and each part of it has a
+reader:
 
-The contract is prose, not settings, and it is what the design reviewer and the
-code reviewer hold the work to: architecture rules, phase constraints, test
-conventions, allowed dependencies, and the glossary that keeps everyone using
-the project's own words. `sdlc init` appends a template with every field marked
-`TBD`; filling it in is the highest-value thing you can do before your first
-story.
+| Part | Who works from it |
+| --- | --- |
+| Phase constraints | the researcher, the test author, the implementer and the architect |
+| Architecture rules | the implementer, when it plans, and the architect, who blocks a plan that breaks one |
+| Test conventions | the test author |
+| Code conventions | the code reviewer |
+| Domain glossary | the researcher and the human advocate, who flag a name that does not match |
+| Performance budgets | the performance reviewer, which blocks only when one is breached |
+| Security and data rules | the security reviewer |
 
-Once a few stories have finished, `/sdlc:consolidate` reads their retros and the
-log, and proposes changes to both halves from what repeats. It applies only the
-ones you confirm; see
-[Consolidating what the retros say](guides/consolidating-what-the-retros-say.md).
+`sdlc init` appends the section as a template, with most fields marked `TBD`.
+Write each rule as a sentence somebody could check against a diff:
+
+```markdown
+### Architecture rules (the design reviewer blocks on these)
+
+- Dependency direction: `internal/billing` imports nothing under `internal/http`.
+- Errors: billing returns typed errors such as `ErrNonPositiveTotal`; no panics.
+```
+
+You change the contract the way you change a setting: on trunk, between
+stories, with a commit. While a story is running, the hook
+[refuses an agent](enforcement.md#write-protected-path) that tries to write
+the file, so the rules a story is reviewed against cannot be changed by the
+story. Keep the section under about 150 lines, because it is loaded into
+every session.
+
+`sdlc doctor` reports a project that has no such section. A plain `sdlc init`
+does not put it back in a project that is already set up.
+`sdlc init --force` does, and puts your settings back to their defaults as it
+goes, so restore `.sdlc/config.json` from git afterwards.
+
+Once a few stories have finished, `/sdlc:consolidate` reads their retros and
+proposes changes to both halves from what repeats. It applies only the ones
+you confirm.
+[Fill in the contract](guides/adding-to-an-existing-project.md#fill-in-the-contract)
+has more on writing the section, and
+[Consolidating what the retros say](guides/consolidating-what-the-retros-say.md)
+on improving it.
+
+## Where to go next
+
+- [Tuning commands for your stack](guides/tuning-commands-for-your-stack.md):
+  the commands and the test paths, with examples for each stack
+- [Agents](the-agents.md): who the `team` section configures
+- [Human approval gates](guides/human-approval-gates.md): where the loop waits
+  for you, and how to answer
+- [Commands](commands.md): every command and flag, `sdlc doctor` among them
+- [Troubleshooting](troubleshooting.md): every `SDLC-E` code a refused file
+  can carry

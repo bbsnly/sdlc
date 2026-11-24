@@ -205,6 +205,15 @@ func agentsPage(t *testing.T) string {
 	return strings.ReplaceAll(string(raw), "\r\n", "\n")
 }
 
+func contributingPage(t *testing.T) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "CONTRIBUTING.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.ReplaceAll(string(raw), "\r\n", "\n")
+}
+
 func pageSection(t *testing.T, heading string) string {
 	t.Helper()
 	_, secs := splitBody(agentsPage(t))
@@ -215,28 +224,44 @@ func pageSection(t *testing.T, heading string) string {
 	return s.Text
 }
 
-// AC-1: the section replaces Writing your own, and the table of contents follows.
-func TestAC1TheAgentsPageDefinesTheAgentContractInPlaceOfWritingYourOwn(t *testing.T) {
+// contributingSection is what is under a `###` heading of CONTRIBUTING.md's
+// "Writing an agent", up to the next heading of the same or a higher level.
+func contributingSection(t *testing.T, heading string) string {
+	t.Helper()
+	_, secs := splitBody(contributingPage(t))
+	writing, ok := sectionNamed(secs, "Writing an agent")
+	if !ok {
+		t.Fatal("CONTRIBUTING.md has no `## Writing an agent` section")
+	}
+	_, rest, found := strings.Cut(writing.Text, "\n### "+heading+"\n")
+	if !found {
+		t.Fatalf("CONTRIBUTING.md's `## Writing an agent` has no `### %s` section", heading)
+	}
+	body, _, _ := strings.Cut(rest, "\n### ")
+	return body
+}
+
+// AC-1: the section replaces Writing your own. It is for a person who writes an
+// agent, so it sits in CONTRIBUTING.md and the agents page no longer carries it.
+func TestAC1ContributingDefinesTheAgentContractInPlaceOfWritingYourOwn(t *testing.T) {
+	_ = contributingSection(t, "The agent contract")
 	page := agentsPage(t)
 	_, secs := splitBody(page)
-	if _, ok := sectionNamed(secs, "The agent contract"); !ok {
-		t.Error("docs/the-agents.md has no `## The agent contract` section: add it where `## Writing your own` was")
-	}
 	if _, ok := sectionNamed(secs, "Writing your own"); ok {
 		t.Error("docs/the-agents.md still has `## Writing your own`: the agent contract replaces it")
 	}
-	if !strings.Contains(page, "(#the-agent-contract)") {
-		t.Error("the table of contents of docs/the-agents.md does not link `#the-agent-contract`")
-	}
 	if strings.Contains(page, "(#writing-your-own)") {
 		t.Error("the table of contents of docs/the-agents.md still links `#writing-your-own`")
+	}
+	if strings.Contains(page, "(#the-agent-contract)") {
+		t.Error("docs/the-agents.md links `#the-agent-contract`, which moved to CONTRIBUTING.md")
 	}
 }
 
 // AC-1: no model, tier or provider in the section; runtime tools only in the one
 // table that maps each capability to the tool that grants it.
 func TestAC1TheAgentContractNamesNoModelAndRuntimeToolsOnlyInOneTable(t *testing.T) {
-	section := pageSection(t, "The agent contract")
+	section := contributingSection(t, "The agent contract")
 	if m := modelWords.FindString(section); m != "" {
 		t.Errorf("the agent contract section names %q: it names no model, model tier or provider", m)
 	}
@@ -286,7 +311,7 @@ func TestAC1TheAgentContractNamesNoModelAndRuntimeToolsOnlyInOneTable(t *testing
 func TestAC1TheAgentContractSaysANewAgentMustConformAndTheTestsRefuseOneThatDoesNot(t *testing.T) {
 	duty := rpDuty{"that a new agent under plugin/agents must conform and the plugin's tests refuse one that does not",
 		[][]string{{"plugin/agents"}, {"conform"}, {"test"}, {"refuse"}}}
-	if !slices.ContainsFunc(rpSentences(pageSection(t, "The agent contract")), duty.holds) {
+	if !slices.ContainsFunc(rpSentences(contributingSection(t, "The agent contract")), duty.holds) {
 		t.Errorf("the agent contract section does not say %s", duty.name)
 	}
 }
@@ -294,7 +319,7 @@ func TestAC1TheAgentContractSaysANewAgentMustConformAndTheTestsRefuseOneThatDoes
 // AC-1: the section defines everything AC-2 to AC-11 set, naming each key,
 // section and column.
 func TestAC1TheAgentContractDefinesTheFrontmatterTheSectionsTheHandBackAndTheReviewDocument(t *testing.T) {
-	section := fold(pageSection(t, "The agent contract"))
+	section := fold(contributingSection(t, "The agent contract"))
 	var want []string
 	for _, key := range []string{"name", "description", "tools", "model", "maxTurns", "sdlc-kind", "sdlc-gates", "sdlc-team", "skills"} {
 		want = append(want, "`"+key+"`")
@@ -363,27 +388,27 @@ func TestAC15ThePageNoLongerSaysAReviewerRecordsANoteOrThatSomeNeverBlock(t *tes
 	}
 }
 
-// AC-15: What they are told carries what the definitions now share and say.
+// AC-15: What an agent is told (in CONTRIBUTING.md) carries what the definitions now share and say.
 func TestAC15WhatTheyAreToldSaysWhatTheMovedDefinitionsSay(t *testing.T) {
-	told := fold(pageSection(t, "What they are told"))
+	told := fold(contributingSection(t, "What an agent is told"))
 	for _, want := range []string{"`unchecked`", "`addressed_me`", "`approve`", "`block`", "`can_block`"} {
 		if !strings.Contains(told, want) {
-			t.Errorf("What they are told does not mention %s", want)
+			t.Errorf("What an agent is told does not mention %s", want)
 		}
 	}
 	duty := rpDuty{"that a reviewer records approve or block whether or not the project lets its block stop the gate",
 		[][]string{{"approve"}, {"block"}, {"whether or not", "even where", "even when", "whatever"}, {"stop"}}}
-	if !slices.ContainsFunc(rpSentences(pageSection(t, "What they are told")), duty.holds) {
-		t.Errorf("What they are told does not say %s", duty.name)
+	if !slices.ContainsFunc(rpSentences(contributingSection(t, "What an agent is told")), duty.holds) {
+		t.Errorf("What an agent is told does not say %s", duty.name)
 	}
-	if injection := fold(pageSection(t, "Prompt injection")); !strings.Contains(injection, "`addressed_me`") {
+	if injection := fold(contributingSection(t, "Prompt injection")); !strings.Contains(injection, "`addressed_me`") {
 		t.Error("Prompt injection does not say the agents list what addressed them in `addressed_me`")
 	}
 }
 
 // An example the agent contract gives in JSON parses, since a reader copies it.
 func TestAC1AnyJSONExampleInTheAgentContractParses(t *testing.T) {
-	for _, ex := range fencedBlocks(pageSection(t, "The agent contract"), "json") {
+	for _, ex := range fencedBlocks(contributingSection(t, "The agent contract"), "json") {
 		var v any
 		if err := json.Unmarshal([]byte(ex), &v); err != nil {
 			t.Errorf("a ```json example in the agent contract does not parse (%v):\n%s", err, ex)

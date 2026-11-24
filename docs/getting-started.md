@@ -1,42 +1,58 @@
 # Getting started
 
 - [Introduction](#introduction)
+  - [Before you begin](#before-you-begin)
+  - [Letting your agent do the setup](#letting-your-agent-do-the-setup)
 - [Install sdlc](#install-sdlc)
 - [Set up your project](#set-up-your-project)
   - [Fill in the contract](#fill-in-the-contract)
   - [Commit the setup](#commit-the-setup)
   - [Check the setup](#check-the-setup)
 - [Write a story](#write-a-story)
-- [Run the loop](#run-the-loop)
-  - [What happens at each gate](#what-happens-at-each-gate)
+- [Run your first story](#run-your-first-story)
+  - [What you will see](#what-you-will-see)
+  - [When the loop asks you something](#when-the-loop-asks-you-something)
   - [Checking on a story](#checking-on-a-story)
+  - [When the story lands](#when-the-story-lands)
 - [When something goes wrong](#when-something-goes-wrong)
 - [Next steps](#next-steps)
 
 ## Introduction
 
-When you hand a story to a coding agent, getting code written is the easy
-part. The hard part is trusting it: knowing that the tests were written against
-what you asked for, that somebody other than the author read the plan, and that
-nothing was committed before it was checked.
+A coding agent will write code for any story you hand it. Trusting what comes
+back is the hard part. Were the tests written against what you asked for, or
+against what got built? Did anyone but the author read the plan? Was anything
+checked before it was committed?
 
-`sdlc` gives your agent that discipline. It takes one story at a time through
-nine gates, from checking the story is ready to writing up what was learned,
-and a hook holds the agent to each of them.
+`sdlc` settles those questions the same way for every story. It is a command
+and a Claude Code plugin that take one story at a time through nine gates.
+Failing tests are written from your acceptance criteria and frozen before any
+code exists. The plan and the diff are each reviewed by agents that never saw
+the author's reasoning. The commit comes last, and a hook holds the agent to
+every gate along the way.
 
-This page takes you from nothing to your first story going through the loop.
-It takes about ten minutes, and most of that is writing one good acceptance
-criterion. You do not need to understand every gate before you begin. Watching
-your first story go through is the quickest way to learn them.
+On this page you will install `sdlc`, set up a project, write one story and
+send it through the loop. Allow about ten minutes before the story starts, most
+of it spent on one good acceptance criterion. You don't need to understand the
+gates first. Watching a story go through them is the quickest way to learn.
 
-## Install sdlc
+### Before you begin
 
-There are two things to install: the `sdlc` command, and the Claude Code plugin
-that drives it. You will need Claude Code 2.1.309 or newer, git 2.17 or newer
-and, for the one-line install below, Node 18 or newer;
-[Installation](installation.md#what-it-needs) has the full list. The easiest way
-is to give your agent this prompt. Paste it into Claude Code, in a terminal or in
-the Code tab of Claude Desktop, in the project you want to work on:
+You will need:
+
+- Claude Code 2.1.309 or newer, in a terminal or in the Code tab of Claude
+  Desktop
+- git 2.17 or newer, and a project that is a git repository
+- Node 18 or newer, for the one-line install
+
+If you have no Node, or you want the details,
+[Installation](installation.md#what-it-needs) has the full list and every other
+way to install.
+
+### Letting your agent do the setup
+
+You may hand most of this page to your agent. Paste this prompt into Claude
+Code, in the project you want to work on:
 
 ```text
 Set up sdlc: run `npx @bbsnly/sdlc install`, then read
@@ -44,36 +60,39 @@ https://github.com/bbsnly/sdlc/blob/main/docs/getting-started.md and follow it
 all the way through.
 ```
 
-The agent installs the command and works through this page with you. A few
-steps are yours alone, and it will hand those back to you when it reaches them.
+The agent installs the command and works through the rest of the page with
+you. Four things on it are yours alone, and the agent stops and hands each one
+back to you: adding the plugin, deciding what goes in the contract, writing
+your story's acceptance criteria, and typing `/sdlc:next`, which is where the
+agent's part ends.
 
-> [!NOTE]
-> If you are an agent following this page for a person: only they can add the
-> plugin and type `/sdlc:next`. Hand back to them adding the plugin, what goes
-> in the contract, the story's acceptance criteria and `/sdlc:next`, which is
-> where you stop. In a terminal they add the plugin with the `/plugin` commands
-> below; in the Code tab of Claude Desktop those commands do not add it, so
-> point them to the plugin browser, as
-> [Claude Desktop](claude-desktop.md#install-the-plugin-from-the-plugin-browser)
-> says.
+The rest of this page takes the same steps by hand.
 
-If you would rather type the commands yourself, first install the command. If
-`sdlc version` already works in your terminal, the command is installed and you
-can skip to adding the plugin. Otherwise, with Node 18 or newer, one line does
-it on macOS, Linux and Windows alike:
+## Install sdlc
+
+There are two things to install: the `sdlc` command, which keeps the loop's
+records and enforces its rules, and the Claude Code plugin, which brings the
+agents and the `/sdlc:next` skill that drives them.
+
+First, install the command. One line does it on macOS, Linux and Windows:
 
 ```console
 $ npx @bbsnly/sdlc install
 ```
 
-This downloads the native `sdlc` binary built for your machine and checks it
-before installing it. If the installer prints lines to add a directory to your
-`PATH`, add them now, so that your terminal can find `sdlc` in the next step.
-Until you open a new terminal, you can run the binary by its full path:
-`~/.local/bin/sdlc` on macOS and Linux, or
-`%LOCALAPPDATA%\Programs\sdlc\bin\sdlc.exe` on Windows.
+The installer downloads the native `sdlc` binary built for your machine and
+checks it before installing it. Open a new terminal and make sure it is there:
 
-Then, in Claude Code, add the plugin. Only a person can type these commands:
+```console
+$ sdlc version
+```
+
+If that prints a version, the command is installed. If your terminal cannot
+find `sdlc`, look back at what the installer printed. It does not change your
+`PATH`, and where its directory is not on it, it prints the lines to add.
+
+Next, add the plugin. Only a person can do this, so type these two commands
+into Claude Code yourself:
 
 ```text
 /plugin marketplace add bbsnly/sdlc
@@ -82,77 +101,92 @@ Then, in Claude Code, add the plugin. Only a person can type these commands:
 
 The repository is its own marketplace, so there is nothing else to add.
 
-In the Code tab of Claude Desktop, typing `/plugin` does not add the plugin.
-Open Claude Desktop's plugin browser instead, add the marketplace `bbsnly/sdlc`,
-and install the `sdlc` plugin from it. A plugin installed that way fetches its
-own `sdlc` the first time a session starts, so there the `npx` step above is
-optional. Where this page says to run an `sdlc` command and you have no
-terminal, type its slash command where it has one, such as `/sdlc:init` or
-`/sdlc:doctor`, or ask the assistant to run it.
-[Claude Desktop](claude-desktop.md) covers what else differs there.
-
 > [!NOTE]
-> No Node? You may also install with a one-line script for your platform, with
-> `go install`, from a prebuilt archive, or from source.
-> [Installation](installation.md) covers each of them, and shows how to verify
-> a download yourself.
+> In the Code tab of Claude Desktop, typing `/plugin` does not add the plugin.
+> Open Claude Desktop's plugin browser, add the marketplace `bbsnly/sdlc` and
+> install the `sdlc` plugin from it. A plugin installed that way fetches its
+> own `sdlc`, so the `npx` step is optional there.
+> [Running the loop from Claude Desktop](claude-desktop.md#install-the-plugin-from-the-plugin-browser)
+> covers the rest, including what to type where you have no terminal.
 
 ## Set up your project
 
-Next, tell `sdlc` about the project you want to work on. It needs to be a git
-repository. From inside it, run the following, or type `/sdlc:init` in Claude
+With both installed, you can set up the project you want to work on. From
+anywhere inside its repository, run `sdlc init`, or type `/sdlc:init` in Claude
 Code:
 
 ```console
 $ sdlc init
+Set up sdlc in /home/<user>/src/billing
+
+  created  .sdlc/config.json
+  created  .sdlc/templates/story.schema.json
+  created  user_stories.json
+  created  CLAUDE.md
+  created  REVIEW.md
+
+Guessed the commands from a Go project.
+
+Next:
+  1. sdlc doctor              check the guesses
+  2. edit user_stories.json   replace the example with a story of your own
+  3. /sdlc:next               type it in Claude Code to work the first story
 ```
 
-`init` reads your repository, works out what it is built with, and writes the
-few files the loop needs:
+`init` works out what your project is built with (it recognises Go, Rust, Node
+and Python) and fills in the commands that build, test and lint it. Here is
+what each file it wrote is for:
 
-| File | What it is |
+| File | What it is for |
 | --- | --- |
 | `.sdlc/config.json` | the loop's settings, with commands that already match your project |
 | `user_stories.json` | your backlog, with one example story in it |
 | `.sdlc/templates/story.schema.json` | what a story may contain |
-| `CLAUDE.md` | created with a `## SDLC Contract` section, or the section appended if the file exists |
-| `AGENTS.md` | the section appended instead, where the project keeps its instructions there and has no `CLAUDE.md` |
+| `CLAUDE.md` | your project's instructions, now with a `## SDLC Contract` section |
+| `REVIEW.md` | the [review policy](configuration.md#reviewspolicy) every reviewer reads first |
 
-`init` never overwrites your own files, so it is safe to run in a repository
-that already has a `CLAUDE.md` or an `AGENTS.md`. Where there is an `AGENTS.md`
-and no `CLAUDE.md`, `sdlc init` appends the section to `AGENTS.md` and creates
-no `CLAUDE.md`, because Claude Code reads `AGENTS.md` only where there is no
-`CLAUDE.md`. [Adding sdlc to an existing
-project](guides/adding-to-an-existing-project.md#a-project-that-keeps-agentsmd)
-says more.
+`init` never overwrites a file of yours. If you already have a `CLAUDE.md`, it
+appends the contract section and leaves the rest as it was. For a repository
+that already has code, tests and conventions of its own,
+[Adding sdlc to an existing project](guides/adding-to-an-existing-project.md)
+goes through what `init` touches and what it leaves alone.
 
-If `init` says no stack was recognised, the commands in `.sdlc/config.json` are
-empty, and you will need to fill in at least `test` and `lint` yourself.
-[Tuning commands for your stack](guides/tuning-commands-for-your-stack.md) shows
-how.
+If `init` says no stack was recognised, the commands in `.sdlc/config.json`
+are empty, and you will need to fill in at least `test` and `lint` yourself.
+[Tuning commands for your stack](guides/tuning-commands-for-your-stack.md)
+shows how.
 
 > [!NOTE]
-> `init` never touches your own `.gitignore`, because what a project commits is
-> the project's decision. The one it writes under `.sdlc/` keeps only each
-> story's [trace](the-loop.md#the-trace) out of git. To restore the default
-> settings later while keeping your stories, see
-> [`sdlc init`](commands.md#sdlc-init). Setting up a repository
-> that already has code and tests? Read
-> [Adding sdlc to an existing project](guides/adding-to-an-existing-project.md).
+> Does your project keep its instructions in `AGENTS.md`, with no `CLAUDE.md`?
+> Then `sdlc init` appends the contract to `AGENTS.md` and creates no
+> `CLAUDE.md`. Wherever this page says `CLAUDE.md`, read `AGENTS.md`.
+> [Adding sdlc to an existing project](guides/adding-to-an-existing-project.md#a-project-that-keeps-agentsmd)
+> explains why.
+
+The rest of this page follows the three steps `init` printed, and adds two
+before them: filling in the contract, and committing what `init` wrote.
 
 ### Fill in the contract
 
-The `## SDLC Contract` section that `init` added to your `CLAUDE.md` (or your
-`AGENTS.md`) is where
-you tell the reviewers what good looks like in your project. Most fields start
-as `TBD`, and the design reviewer and the code reviewer check the work against
-what you write there. A contract full of `TBD` gives them nothing to hold the
-work to.
+Open `CLAUDE.md` and find the `## SDLC Contract` section. This is where you
+tell the reviewers what good looks like in your project. Most of its fields
+start as `TBD`, and the design reviewer and the code reviewer check the work
+against what you write there. A contract full of `TBD` gives them nothing to
+hold the work to.
 
-You do not need to fill in all of it today. Three fields earn their keep first:
-the architecture rules, the test conventions and the glossary. [Adding sdlc to
-an existing project](guides/adding-to-an-existing-project.md#fill-in-the-contract)
-says what to write in each field.
+You don't need to fill in all of it today. Start with the architecture rules,
+the test conventions and the glossary, and write each rule as a sentence
+somebody could check against a diff:
+
+```markdown
+### Architecture rules (the design reviewer blocks on these)
+
+- Dependency direction: `internal/billing` imports nothing under `internal/http`.
+- Errors: billing returns typed errors such as `ErrNonPositiveTotal`; no panics.
+```
+
+[Fill in the contract](guides/adding-to-an-existing-project.md#fill-in-the-contract)
+says which agent reads each part of it.
 
 ### Commit the setup
 
@@ -163,34 +197,37 @@ $ git add .sdlc user_stories.json CLAUDE.md REVIEW.md
 $ git commit -m "Set up the sdlc loop"
 ```
 
-Where `init` wrote the section to `AGENTS.md`, add `AGENTS.md` in place of
-`CLAUDE.md`.
-
 > [!WARNING]
-> Do not skip this commit. Each story is worked on in a worktree of its own (a
-> second checkout that git makes), cut from the commits on trunk, your main
-> branch, so only what is committed is there. A story started
-> before the commit is refused with
-> [SDLC-E0053](troubleshooting.md#sdlc-e0053).
+> Don't skip this commit. Each story is worked in a worktree of its own, a
+> second checkout that git cuts from the commits on trunk, the branch your
+> finished work lands on. What you have not committed is not there, so `sdlc`
+> [refuses to start a story](troubleshooting.md#sdlc-e0053) until you have.
 
 ### Check the setup
 
-Now check that everything is in order, in a terminal or with `/sdlc:doctor` in
-Claude Code:
+Now make sure everything is in order. Run `sdlc doctor`, or type `/sdlc:doctor`
+in Claude Code:
 
 ```console
 $ sdlc doctor
 ```
 
-`doctor` looks at the handful of things that stop the loop working, such as
-git, the configuration, the backlog and whether `sdlc` is on your `PATH`. Every
-problem it reports comes with what to do about it.
+`doctor` checks the handful of things that stop the loop working: git, the
+configuration, the backlog, the contract, the commands `init` guessed, and
+whether `sdlc` is on your `PATH`. When all is well, its last line reads:
+
+```text
+Everything checks out.
+```
+
+If it finds a problem, the fix is printed directly beneath it.
 
 ## Write a story
 
-A story says what you want built and how you will know it is done. Stories live
-in your backlog file, which `init` created as `user_stories.json` at the root
-of the repository. Let's take a look at an example:
+A story says what you want built and how you will know it is done. Your stories
+live in the backlog, `user_stories.json`, at the root of the repository. Open
+it and replace the example `init` left there with a story of your own. Let's
+take a look at a small one:
 
 ```json
 {
@@ -204,12 +241,10 @@ of the repository. Let's take a look at an example:
       "acceptance_criteria": [
         {
           "id": "AC-1",
-          "type": "WHEN",
           "text": "WHEN a request carries a session token whose expiry is in the past, the API shall respond 401 and shall not read the session store."
         },
         {
           "id": "AC-2",
-          "type": "IF-THEN",
           "text": "IF the token cannot be parsed, THEN the API shall respond 401 with no detail about why."
         }
       ]
@@ -218,121 +253,179 @@ of the repository. Let's take a look at an example:
 }
 ```
 
-The acceptance criteria are the important part. Each one should describe
-something you could observe from outside, such as a response, a returned value
-or a stored record, and not how the code produces it. The loop turns every
-criterion into a failing test before any code is written, so a criterion that
-cannot be tested has nowhere to go. The capitals are deliberate: `WHEN` and
-`IF ... THEN` are two of a handful of sentence patterns, and
-[Writing stories](guides/writing-stories.md) lists them all.
+The `status` of `ready` is what tells the loop this story may be started, and
+where several are ready, the lowest `priority` goes first.
 
-Don't worry about getting this perfect the first time. If a criterion cannot be
-turned into a test, the first gate will say so and stop, which is the cheapest
+The acceptance criteria are the part to spend your time on. The loop turns
+every one of them into a failing test before any code is written, so each
+should describe something you could observe from outside: a response, a
+returned value, a stored record. "The API shall respond 401" can be tested.
+"The handler shall use `TokenValidator`" only says how the code is built.
+
+The capitals are deliberate. `WHEN` and `IF ... THEN` are two of a handful of
+sentence patterns, and [Writing stories](guides/writing-stories.md) lists them
+all.
+
+Don't worry about getting this perfect the first time. If a criterion cannot
+be turned into a test, the first gate says so and stops, which is the cheapest
 place in the whole loop to find out.
 
-To see your backlog, and what is holding each story back, run:
+When you have saved the file, ask `sdlc` what it makes of your backlog:
 
 ```console
 $ sdlc story list
+> AUTH-3  ready   1  Reject expired sessions
+
+> is what `sdlc start` would pick.
 ```
 
-> [!NOTE]
-> A bare `sdlc start` takes a story only when its `status` is `ready` and the
-> stories it depends on are done; a `todo` story starts only when you name it.
-> [Writing stories](guides/writing-stories.md) covers every status, how the next
-> story is chosen, and how to write criteria the first gate accepts.
+The `>` marks the story the loop will take next. Where a story is waiting on
+another, its line says so. You don't need to commit the backlog before you
+carry on: the loop reads it from your checkout.
 
-## Run the loop
+## Run your first story
 
-You are ready to run your first story. In Claude Code, from your project, type:
+You are ready to run the story. Open Claude Code in your project and type:
 
 ```text
 /sdlc:next
 ```
 
-The skill picks up the next `ready` story, or
-resumes one already under way, and works it through the gates one at a time. It
-hands each gate to the agent whose job it is, and records every outcome before
+Nothing happens until you do: only a person can start the loop. The skill
+takes the next `ready` story and works it through the gates one at a time. It
+hands each gate to the agent whose job it is, and records the outcome before
 the next gate begins.
 
-Nothing happens until you type the command: in Claude Code, only a person can
-start the skill. Along the way you will be asked to decide things. That is
-deliberate. The loop stops and asks when the story does not settle something,
-and never guesses. [Human approval gates](guides/human-approval-gates.md) shows
-what you will see and how to answer.
+### What you will see
 
-> [!NOTE]
-> The agents are told to work only on a gate of a story you started and to stop
-> on anything else, but nothing enforces that. If you are working from a clone
-> of this repository and not an installed plugin, start the session with
-> `claude --plugin-dir /path/to/sdlc/plugin`.
+Here is what happens to your story, gate by gate:
 
-### What happens at each gate
-
-Here is what you will see as your story goes through:
-
-1. **Gate 1** checks that your acceptance criteria are testable, and picks the
-   story.
+1. **Gate 1** checks that your acceptance criteria can be tested.
 2. **Gate 2** sends a researcher to read the story against your codebase and
    write down what it touches and what could go wrong.
-3. **Gate 3** turns each criterion into a test that fails, then freezes every
-   test file. From here on, nobody edits them.
-4. **Gate 4** writes a plan and puts it in front of five reviewers.
-5. **Gate 5** implements the plan until the frozen tests pass.
+3. **Gate 3** turns each criterion into a test that fails, then freezes the
+   tests. From here on, nobody edits them.
+4. **Gate 4** writes a plan and puts it in front of up to five reviewers.
+5. **Gate 5** writes the code, until the frozen tests pass.
 6. **Gate 6** sends a verifier that has seen none of it to hunt for tests that
    pass without the behaviour being there.
-7. **Gate 7** reviews the diff in a context that never saw the reasoning.
+7. **Gate 7** reviews the diff in a context that never saw the reasoning
+   behind it.
 8. **Gate 8** makes the commit, and only after everything before it has
    passed.
-9. **Gate 9** writes the retro and lands the story on trunk (the skill runs
-   `sdlc stop` for you).
+9. **Gate 9** writes the retro, an account of what was learned, and lands the
+   story on trunk.
 
-The work happens away from your own checkout. Each story gets a worktree at
-`.sdlc/worktrees/<ID>` on a branch named `story/<ID>`, and trunk only moves
-when the finished story lands at Gate 9.
+None of this happens in your own checkout. Each story gets a worktree at
+`.sdlc/worktrees/<ID>`, on a branch named `story/<ID>`, and trunk does not move
+until the finished story lands.
+
+[The loop](the-loop.md) describes each gate in full: what it is for, who does
+the work and what it produces.
+
+### When the loop asks you something
+
+The loop does not guess. When your story leaves a question open, or a reviewer
+keeps blocking, it escalates: it hands the story to you and stops. You will see
+something like this as the last thing the session prints:
+
+```text
+AUTH-3  waiting for a person: spec_unclear
+  AC-2 says no detail: is an empty body right, or a fixed message?
+
+The iteration has ended. A person reads the work and answers in Claude Code or in their own terminal:
+  /sdlc:approve AUTH-3, or sdlc approve AUTH-3
+  sdlc approve AUTH-3 --reject "why"
+```
+
+Nothing has gone wrong. The work so far is in the story's worktree for you to
+read, and that is also where you answer, in a terminal of your own:
+
+```console
+$ cd .sdlc/worktrees/AUTH-3
+$ sdlc approve AUTH-3
+```
+
+To send the work back instead, give the reason with `--reject`. Either way,
+open Claude Code in your project and type `/sdlc:next AUTH-3` afterwards, and
+the story carries on from the gate it stopped at. Name the story: a plain
+`/sdlc:next` in your project begins the next `ready` story instead. In Claude
+Code opened in the story's own worktree, a plain `/sdlc:next` is enough.
 
 > [!NOTE]
-> [The loop](the-loop.md) describes each gate in full: what it is for, who
-> does it and what it produces. To learn what the landing checks, and what to
-> do when trunk has moved on, see
-> [Done when it lands](the-loop.md#done-when-it-lands).
+> The answer is yours alone. The hook refuses `sdlc approve` from an agent,
+> because an agent that could answer would be approving its own work.
+> [Human approval gates](guides/human-approval-gates.md) shows every place the
+> loop can stop for you, and how to answer each.
 
 ### Checking on a story
 
-Once a story is under way, you may ask where it has got to at any point:
+You may ask where a story has got to at any point. In your project,
+`sdlc status` names the story under way and the worktree that holds it. For the
+detail, ask from inside that worktree:
 
 ```console
+$ cd .sdlc/worktrees/AUTH-3
 $ sdlc status
 $ sdlc review list
 ```
 
-`status` shows the story in progress and the gate it has reached. `review list`
-names the [review policy](configuration.md#reviewspolicy) every reviewer reads, then
-shows what each reviewer said. Before a story is started, `status` names the
-story that is next up, and `review list` has nothing to show and says so with
-[SDLC-E0011](troubleshooting.md#sdlc-e0011).
+There, `status` shows each gate the story has passed and the one it is on, and
+`review list` shows what every reviewer said. Neither changes anything, so both
+are safe to run at any time. From your own checkout, where nothing is running,
+`sdlc review list` needs the story named: `sdlc review list --story AUTH-3`.
+
+### When the story lands
+
+Gate 9 ends with the landing. The skill runs `sdlc stop` for you, trunk moves
+forward to the story's commits, and the story's worktree and branch are
+removed. Nothing is pushed: that part is yours.
+
+Two things are left in your checkout for you to commit. One is your backlog,
+where the story is now `done`. The other is the story's own directory under
+`.sdlc/stories/`, which holds its record and the documents the gates produced:
+the analysis, the plan, every review and the retro, all as text you can read.
+
+To see what a story went through on its way to trunk, run `sdlc log`.
+[Reviewing what landed on trunk](guides/reviewing-what-landed-on-trunk.md)
+shows how to read it, and
+[Done when it lands](the-loop.md#done-when-it-lands) says what the landing
+checks. Then write your next story, and type `/sdlc:next` again.
 
 ## When something goes wrong
 
-Every failure carries a code, what happened, why, and what to do about it. To
-read more about any code, look it up in
-[Troubleshooting](troubleshooting.md).
+Every refusal from `sdlc` has the same shape: what happened, why, and what to
+do about it. This is the one you would see if you had skipped the setup
+commit:
 
-If the loop refuses something, read the refusal before working around it. It
-names the sanctioned route, and that route is usually one command.
-[Why was I refused?](guides/why-was-i-refused.md) walks through reading one.
+```text
+sdlc: the story's worktree could not be made: trunk, "main", has no .sdlc/config.json committed
+
+  why  a new worktree has only what trunk commits, and the loop in it reads its configuration from there
+  fix  commit .sdlc/config.json and CLAUDE.md to trunk, then start again, or set git.worktrees to false in this checkout's .sdlc/config.json; an assistant stops and tells the person
+
+  SDLC-E0053  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0053
+```
+
+Read the `fix` line before you try anything else. It names the way through,
+and that is usually one command. The last line is the error's code, with a
+link to its entry in [Troubleshooting](troubleshooting.md), which says more.
+
+The hook refuses things as well, when an agent tries something the loop's
+rules do not allow. [Why was I refused?](guides/why-was-i-refused.md) walks
+through reading one of those.
 
 ## Next steps
 
 Now that your first story is under way, you may be wondering what to read
-next. If you would like to understand how the loop works, start here:
+next. To understand how the loop works, start here:
 
 - [The loop](the-loop.md): what each gate is for and what it produces
 - [Agents](the-agents.md): who does the work at each gate
 - [Enforcement](enforcement.md): what the hook holds the agent to, and why
 
-If you would rather get on with your own project, these guides cover the jobs
-you are most likely to meet first:
+To get on with your own project, these guides cover the jobs you are most
+likely to meet first:
 
 - [Writing stories](guides/writing-stories.md)
 - [Tuning commands for your stack](guides/tuning-commands-for-your-stack.md)

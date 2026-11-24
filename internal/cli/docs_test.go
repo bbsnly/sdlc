@@ -35,6 +35,17 @@ func page(t *testing.T, name string) string {
 	return string(raw)
 }
 
+// contributing is CONTRIBUTING.md, where what a person who writes an agent
+// needs to know lives, and not the agents page a person who uses sdlc reads.
+func contributing(t *testing.T) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "CONTRIBUTING.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
+}
+
 // .claude-code-version was written in the first commit and read by nothing:
 // no CI step installed it, no test asserted it, and CONTRIBUTING.md described
 // a SDLC_ALLOW_CLI_DRIFT flag that did not exist. Meanwhile the README said

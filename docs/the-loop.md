@@ -1,1225 +1,1043 @@
 # The loop
 
 - [Introduction](#introduction)
-- [The shape of it](#the-shape-of-it)
-- [From start to end](#from-start-to-end)
-  - [The staffing](#the-staffing)
-- [Gate 1 — `dor`, definition of ready](#gate-1--dor-definition-of-ready)
-- [Gate 2 — `analysis`](#gate-2--analysis)
-- [Gate 3 — `tests_frozen`](#gate-3--tests_frozen)
-- [Gate 4 — `plan`, then `design_review`](#gate-4--plan-then-design_review)
-- [Gate 5 — `implementation`](#gate-5--implementation)
-- [Gate 6 — `verification`, then `verifier_review`](#gate-6--verification-then-verifier_review)
-- [Gate 7 — `code_review`](#gate-7--code_review)
-- [Gate 8 — `commit`](#gate-8--commit)
-- [Gate 9 — `retro`](#gate-9--retro)
+  - [The words these pages use](#the-words-these-pages-use)
+- [A story from start to end](#a-story-from-start-to-end)
+  - [Where a story stands](#where-a-story-stands)
+- [The gates, one by one](#the-gates-one-by-one)
+  - [Gate 1: check the story is ready](#gate-1-check-the-story-is-ready)
+  - [Gate 2: analyse the story](#gate-2-analyse-the-story)
+  - [Gate 3: freeze the tests](#gate-3-freeze-the-tests)
+  - [Gate 4: plan, and review the plan](#gate-4-plan-and-review-the-plan)
+  - [Gate 5: write the code](#gate-5-write-the-code)
+  - [Gate 6: verify](#gate-6-verify)
+  - [Gate 7: review the code](#gate-7-review-the-code)
+  - [Gate 8: commit](#gate-8-commit)
+  - [Gate 9: write the retro, and land](#gate-9-write-the-retro-and-land)
+  - [Who runs the commands](#who-runs-the-commands)
+- [Where you come in](#where-you-come-in)
+- [Two kinds of decision](#two-kinds-of-decision)
 - [Rework](#rework)
   - [The arbiter](#the-arbiter)
-- [Two kinds of decision](#two-kinds-of-decision)
+- [The scout rule](#the-scout-rule)
+- [The review policy](#the-review-policy)
 - [Why approvals go stale](#why-approvals-go-stale)
-- [Where everything lives](#where-everything-lives)
 - [More than one checkout](#more-than-one-checkout)
-  - [Starting a story in a worktree](#starting-a-story-in-a-worktree)
-  - [Running stories in parallel](#running-stories-in-parallel)
-  - [Claims and release](#claims-and-release)
+  - [Working several stories at once](#working-several-stories-at-once)
+  - [Which checkout holds a story](#which-checkout-holds-a-story)
   - [Done when it lands](#done-when-it-lands)
   - [Parallel stories and `CODEMAP.md`](#parallel-stories-and-codemapmd)
   - [Removing a worktree](#removing-a-worktree)
-  - [Upgrading, and unusual repositories](#upgrading-and-unusual-repositories)
+  - [With worktrees turned off](#with-worktrees-turned-off)
+- [Where everything lives](#where-everything-lives)
+  - [The trace](#the-trace)
+- [Where to go next](#where-to-go-next)
 
 ## Introduction
 
-The loop takes one story at a time through nine gates. If you have
-read [Getting started](getting-started.md), you have already seen it run. This
-page explains how it works, so that what the tool does and refuses to do feels
-less like magic.
+The loop is what happens to a story between the moment you type `/sdlc:next`
+and the moment its commits are on trunk. It takes one story through nine
+gates, in order, and each gate has to pass before the next one begins.
 
-Each section below says what a gate is for, who does it, what it produces, and
-what the tool refuses if you try to pass it without doing it. Don't worry if
-the names are new: start with [From start to end](#from-start-to-end), which
-follows one story, and come back to a gate's section when you meet it.
+Three ideas run through all nine. The tests are written from your acceptance
+criteria and frozen before any code exists, so the code is held to what you
+asked for. Every piece of work is checked by an agent that never saw the
+reasoning behind it. And nothing is taken on trust: a gate passes only when the
+work it stands for is really there, and `sdlc` refuses to record it otherwise.
 
-Each gate leaves a record in the story's gate record, under a key such as `dor`
-or `plan`. There are eleven keys, because Gates 4 and 6 each record the work and
-then the review of it: the plan and its design review, and the verification and
-the verdict on it. Below, a gate is one of the nine and a key is one of the
-eleven.
+You don't need this page to run a story.
+[Getting started](getting-started.md) is enough for that. Read this one when
+you want to know what the loop is doing while you wait, why it stopped, or how
+far to trust what came out of it. It follows a story gate by gate, says what
+each gate may ask of you, and then explains the rules that hold the gates
+together: who decides what, rework, findings, stale approvals and the
+landing.
 
-A few more words are used with a fixed meaning throughout:
+### The words these pages use
 
-- **freeze**: the content hashes in `.sdlc/state/tests.lock`. Frozen tests are
-  the ones the implementer cannot touch, and only a person unfreezes them.
-- **escalate**: hand the story to a person and end the iteration. The story is
-  then `awaiting_human`.
-- **blocking** and **advisory**: whether a reviewer's `block` stops the gate. An
-  advisory review is still required, never skipped.
-- **a person**: whoever is at the keyboard. `approve`, `unfreeze` and `ack` are
-  theirs alone, and so are a few more commands: see
-  [a person's decisions](enforcement.md#a-persons-decisions-refused-in-every-session).
-  Their own terminal is one outside Claude Code: a window they opened
-  themselves. A `!` line typed in Claude Code run from a terminal, a terminal
-  or `tmux` that Claude Code started, and anything a model's tool runs have
-  Claude Code's environment variables, and the person's commands refuse
-  themselves there with [SDLC-E0079](troubleshooting.md#sdlc-e0079). In Claude
-  Code and in Claude Desktop the slash commands are the way; in Claude
-  Desktop a `!` line is too. The hook runs a slash command typed there only
-  where the `AI_AGENT` label and three more variables say that it is a hook
-  Claude Code runs itself for a session a person attends. They were read in
-  Claude Code 2.1.321 in Claude Desktop, on 2026-11-13; that release and later
-  ones that keep them are expected to work, and on an earlier one the command
-  may not run, which the hook says.
-- **nested session**: a Claude Code session started from another session's
-  tool call, such as `claude -p` run in a model's Bash.
-- **the conversation** (also called the assistant): the main Claude Code
-  session that runs the skill and hands each gate to an agent.
+A few words carry a fixed meaning on every page:
 
-## The shape of it
+- **A gate** is one of the nine numbered checkpoints a story passes through.
+  Each one is recorded as passed or failed, with a note.
+- **The conversation** is the Claude Code session you typed `/sdlc:next` into.
+  It runs the loop and hands each gate to the agent whose job it is.
+- **The hook** is the part of `sdlc` that Claude Code runs before anything an
+  agent does. It refuses what the loop's rules do not allow, and
+  [Enforcement](enforcement.md) lists those rules.
+- **The freeze** is the record of every test file as it stood when Gate 3
+  passed. Frozen tests cannot be edited by any agent, and only a person lifts a
+  freeze.
+- **Trunk** is the branch your finished work lands on. Your project may call it
+  `main`, and `sdlc` uses your name for it in what it prints.
+- **To escalate** is to hand the story to a person and stop. The story then
+  waits for your answer, for as long as you need.
+- **Blocking** and **advisory** say whether a reviewer's block stops its gate.
+  An advisory review is still required: the gate waits for it, and its findings
+  count.
+- **A person** is whoever is at the keyboard. Some decisions are a person's
+  alone, such as approving a story or lifting a freeze, and the hook refuses
+  them from an agent.
+- **To land** is to move trunk forward to a finished story's commits. A story
+  is done when it lands.
+- **The team** is the agents your project runs, set in the
+  [`team`](configuration.md#team) section of `.sdlc/config.json`: whether each
+  takes part, whether a reviewer's block can stop a gate (`can_block`), and how
+  many instances of a reviewer there are.
+- **An instance** is one more review by the same reviewer, under a name of its
+  own. With two instances of the security reviewer, a gate waits for
+  `security` and for `security-2`.
+- **The staffing** is, for one story, which of those agents it needs, and the
+  model and effort each is asked for. It is not the plan, which says how the
+  change is made and not who makes it.
 
-Every gate follows the same shape, and the shape is the point:
+## A story from start to end
 
-1. Work is delegated to an agent that starts from a fresh context (a Gate 4
-   reviewer or the Gate 6 verifier looking again is resumed; see
-   [why approvals go stale](#why-approvals-go-stale)).
-2. The agent stores what it produced **through the tool**, never as a file it
-   writes itself.
-3. The outcome is recorded, and the tool refuses to record a pass unless the
-   work is actually there.
+You type `/sdlc:next`. The loop takes the next story marked `ready` and makes
+it a worktree: a second checkout of your repository at `.sdlc/worktrees/<ID>`,
+on a new branch named `story/<ID>`. Everything that follows happens there, so
+your own checkout is left alone.
 
-Nothing is taken on trust, including the assistant running the loop. A summary
-saying a document exists is not the document.
+The story is checked for readiness and analysed. Tests are written that fail,
+and then frozen. A plan is written and reviewed. The code is written until the
+frozen tests pass, then verified, then reviewed. Only then is it committed. A
+retro is written, and the story lands on trunk.
 
-## From start to end
-
-A person types `/sdlc:next`. The story is checked for readiness, analysed, and
-given tests that fail and are then frozen. A plan is written and reviewed, the
-code is written until the frozen tests pass, and it is verified and reviewed
-again. Then it is committed, and a retro is written. If anything is wrong the
-loop goes back to the gate that can fix it. If it cannot fix it, it escalates:
-it hands the story to a person and waits
-([Human approval gates](guides/human-approval-gates.md) shows what you then
-see). By default each story is worked in a
-checkout of its own, a worktree, and `sdlc stop` lands the finished story on
-trunk (see [more than one checkout](#more-than-one-checkout)).
-
-Here is the same journey, gate by gate. Solid arrows are the way through;
-dotted ones are the ways back. Rounded boxes are what only a person does: the
-hook refuses `approve`, `unfreeze` and `ack` from an agent, as it does the other
-[decisions that are a person's](enforcement.md#a-persons-decisions-refused-in-every-session).
+When something is wrong, the loop goes back to the gate that can fix it. When
+it cannot fix it, it escalates. In this picture the solid arrows are the way
+through, the dotted ones are the ways back, and the rounded boxes are yours:
 
 ```mermaid
 flowchart TD
-    start["/sdlc:next runs sdlc start<br/>it takes the next runnable story<br/>and makes its worktree from trunk"]
+    start(["You type /sdlc:next"])
 
     subgraph define["Define what to build"]
-        g1["<b>Gate 1 · dor</b><br/>the conversation checks every criterion is testable<br/>+ human advocate, if the project asks for it"]
-        g2["<b>Gate 2 · analysis</b><br/>researcher ×1<br/>ANALYSIS.md, THREATS.md, security-sensitive or not"]
-        g3["<b>Gate 3 · tests_frozen</b><br/>SDET ×1<br/>failing tests, TEST-PLAN.md, then the freeze"]
+        g1["<b>Gate 1</b><br/>check the story is ready"]
+        g2["<b>Gate 2</b><br/>analyse the story"]
+        g3["<b>Gate 3</b><br/>write failing tests, review them, then freeze them"]
     end
 
     subgraph design["Design"]
-        g4a["<b>Gate 4 · plan</b><br/>implementer ×1<br/>PLAN.md"]
-        g4b["<b>Gate 4 · design_review</b><br/>5 reviewers in parallel: architect, security,<br/>red team, perf, human advocate"]
+        g4a["<b>Gate 4</b><br/>write the plan"]
+        g4b["<b>Gate 4</b><br/>up to five reviewers read the plan"]
     end
 
     subgraph build["Build and check"]
-        g5["<b>Gate 5 · implementation</b><br/>implementer ×1<br/>the code, until the frozen tests pass"]
-        g6["<b>Gate 6 · verification, verifier_review</b><br/>verifier ×1<br/>VERIFICATION.md and a blocking verdict"]
-        g7["<b>Gate 7 · code_review</b><br/>4 reviewers in parallel: code reviewer,<br/>security, perf, human advocate"]
+        g5["<b>Gate 5</b><br/>write the code until the frozen tests pass"]
+        g6["<b>Gate 6</b><br/>verify"]
+        g7["<b>Gate 7</b><br/>up to four reviewers read the diff"]
     end
 
     subgraph finish["Finish"]
-        g8["<b>Gate 8 · commit</b><br/>the conversation commits the story"]
-        g9["<b>Gate 9 · retro</b><br/>bookkeeper ×1<br/>RETRO.md, CODEMAP.md"]
+        g8["<b>Gate 8</b><br/>commit"]
+        g9["<b>Gate 9</b><br/>write the retro, then land on trunk"]
     end
 
-    done["the story is done<br/>from its own worktree, sdlc stop lands it on trunk first"]
+    done(["The story is done<br/>you commit its record, and push"])
 
     start --> g1 --> g2 --> g3 --> g4a --> g4b --> g5 --> g6 --> g7 --> g8 --> g9 --> done
 
-    g4b -.->|a blocking reviewer blocks| g4a
+    g4b -.->|a reviewer blocks| g4a
     g6 -.->|the verifier blocks| g5
-    g7 -.->|a blocking reviewer blocks| g5
+    g7 -.->|a reviewer blocks| g5
 
-    esc{{"Escalate: the story waits for a person"}}
+    esc{{"The loop escalates: the story waits for you"}}
     g1 -.->|a criterion cannot be tested| esc
-    g2 -.->|a product question| esc
-    g3 -.->|a frozen test is wrong| esc
+    g2 -.->|a question only you can answer| esc
+    g5 -.->|a frozen test is wrong| esc
     g7 -.->|rework that does not converge| esc
-    g8 -.->|a high-risk story| esc
+    g8 -.->|a story you asked to see first| esc
 
-    approve(["sdlc approve ID, then sdlc start ID<br/>the story resumes at the gate it stopped at"])
-    unfreeze(["sdlc unfreeze --reason<br/>the story goes back to Gate 3"])
-    esc --> approve
-    approve -.->|when a frozen test was wrong| unfreeze
-    unfreeze -.-> g3
-
-    ack(["sdlc log, then sdlc ack<br/>read what landed on trunk"])
-    done --> ack
+    answer(["You answer, then type /sdlc:next again<br/>the story carries on at the gate it stopped at"])
+    esc --> answer
 ```
 
-Read the table a row at a time: each row is a gate, with the keys it records,
-who does the work, who reviews it, what it produces and where a person may be
-needed. The sections after it say the same in full.
+Thirteen agents do the work between them, and
+[Agents](the-agents.md#who-does-what) introduces each one. A story that needs
+no rework runs an agent eighteen times: the project manager twice, one agent
+each at Gates 2, 5, 6 and 9, two at Gate 3, six at Gate 4 and four at Gate 7.
+Rework adds to that, and a reviewer the staffing leaves out takes one away.
 
-| Gate | Record keys | Who does the work | Who reviews it | Produces | Where a person comes in |
-| --- | --- | --- | --- | --- | --- |
-| 1 | `dor` | the conversation | `sdlc:human-advocate`, advisory, only with `human_gates.dor_advocate_check` | nothing | a criterion that cannot be tested |
-| 2 | `analysis` | `sdlc:researcher` | none | `ANALYSIS.md`, `THREATS.md`, and whether the story is security-sensitive | product questions, once |
-| 3 | `tests_frozen` | `sdlc:sdet` | none | the failing tests, `TEST-PLAN.md`, the freeze | `sdlc unfreeze`, when a frozen test is wrong |
-| 4 | `plan`, `design_review` | `sdlc:implementer` | `sdlc:architect` blocks; `sdlc:security` blocks when the story is security-sensitive; `sdlc:perf` blocks only on a stated budget; `sdlc:red-team` and `sdlc:human-advocate` are advisory | `PLAN.md`, up to five reviews | a reviewer that keeps blocking |
-| 5 | `implementation` | `sdlc:implementer` | none | the code | a broken freeze |
-| 6 | `verification`, `verifier_review` | `sdlc:verifier` | the verifier's own verdict blocks | `VERIFICATION.md` | a verifier that keeps blocking |
-| 7 | `code_review` | nobody: the diff from Gate 5 is reviewed | `sdlc:code-reviewer` blocks unless its `can_block` is false; `sdlc:security`, `sdlc:perf` and `sdlc:human-advocate` as at Gate 4 | up to four reviews | a reviewer that keeps blocking |
-| 8 | `commit` | the conversation | none | the commit | `sdlc approve`, for a story the project pauses, by its risk tier (`high` by default) or a path its change touches |
-| 9 | `retro` | `sdlc:bookkeeper` | none | `RETRO.md`, and `CODEMAP.md` for anything new | `sdlc log` and `sdlc ack`, once the story is on trunk |
+Here is the same journey as a table:
 
-### The staffing
+| Gate | What happens | Who does it | What it leaves you to read | `sdlc status` calls it |
+| --- | --- | --- | --- | --- |
+| 1 | the criteria are checked: can each be tested? | the conversation | nothing | `dor` |
+| 2 | the story is read against your code | the researcher | `ANALYSIS.md`, `THREATS.md` | `analysis` |
+| 3 | a failing test is written for each criterion, the tests are reviewed, and then they are frozen | the test author, then the test reviewer | `TEST-PLAN.md`, the tests, and the review | `tests_frozen` |
+| 4 | a plan is written, then reviewed | the implementer, then up to five reviewers | `PLAN.md`, and the reviews | `plan`, then `design_review` |
+| 5 | the code is written until the frozen tests pass, and then your build, tests and checks are run | the implementer, then `sdlc` | the code | `implementation` |
+| 6 | the work is verified by an agent that saw none of it | the verifier | `VERIFICATION.md`, and its verdict | `verification`, then `verifier_review` |
+| 7 | the diff is reviewed | up to four reviewers | the reviews | `code_review` |
+| 8 | the story is committed | the conversation | the commit, on `story/<ID>` | `commit` |
+| 9 | the retro is written, and the story lands | the bookkeeper, then `sdlc stop` | `RETRO.md` | `retro` |
 
-The staffing is, for one story, which agents the story needs and the model
-and effort each is asked for, with a reason for each. It is recorded in the
-story's gate record by `sdlc:project-manager`, which is on unless
-`team.agents.project-manager.enabled` is false in the
-[`team`](configuration.md#team) section, and a gate then waits only for the
-reviewers the story needs.
+### Where a story stands
 
-The team is the agents a project runs, set in `team`: whether each is enabled,
-whether a reviewer's block can stop a gate (`can_block`), and how many instances
-of a reviewer there are. An instance is one more review by the same reviewer at
-each gate it reviews, under its own name: with `"instances": 2` on security, the
-gate waits for `security` and for `security-2`. It is not the plan: the plan is Gate 4's
-document, and says how the change is made, not who makes it.
-[Agents](the-agents.md#the-staffing) says how it is chosen and where to read it.
+To see how far a story has got, run `sdlc status` in its worktree. This story
+has passed Gate 7 and is about to be committed:
 
-Thirteen agents take part. With the project manager disabled, a story that needs no rework
-runs agents sixteen times: one each at Gates 2, 5, 6 and 9, two at Gate 3, six at Gate 4 and
-four at Gate 7, plus the human advocate at Gate 1 when the project asks for it.
-With it enabled, `sdlc:project-manager` runs twice more, after Gates 1 and 2, and each
-reviewer it leaves out is one run fewer at Gate 4, Gate 7 or both. Every one
-starts from a fresh context, and none reads another's work at the same gate. The
-exceptions are a Gate 4 reviewer asked to look again at a revised plan, and the
-Gate 6 verifier asked to look again after a rework, which are resumed instead. Each
-is given its own findings and their closings, not everyone's, and the change since
-its last review, which shows what the others' findings changed. The independence that
-remains is the first look. A gate that keeps failing hands the story to a
-person after [`loop.max_rework_rounds`](configuration.md#loop) failures. A
-reviewer that keeps blocking sends the gate to its [arbiter](#the-arbiter)
-after `loop.max_review_rounds` blocks, and the arbiter's own limit hands the
-story over.
+```console
+$ cd .sdlc/worktrees/AUTH-3
+$ sdlc status
+AUTH-3  in progress  Reject expired sessions
 
-## Gate 1 — `dor`, definition of ready
+  dor              pass  criteria are testable
+  analysis         pass  no trust boundary
+  tests_frozen     pass  2 criteria, 1 failing test
+  plan             pass  2 steps
+  design_review    pass  five reviews
+  implementation   pass  frozen tests pass
+  verification     pass  every command green
+  verifier_review  pass  verified
+  code_review      pass  four reviews
 
-**Who:** the conversation. **Produces:** nothing. Gate 1 is also called `dor`,
-definition of ready, and "Select" in the README's table.
+  tests  1 test file frozen at 2026-11-24T09:15:19Z
+  cost   $0.00 of $60.00 (0%)
 
-The story is selected and its acceptance criteria are read as a test author
-would read them. A criterion that describes an implementation rather than an
-observable behaviour fails the gate here, which is the cheapest place in the
-loop to find out.
+  staffing  recorded: every agent is needed
 
-**Refused without it:** a pass for a story with no acceptance criteria.
+  next   commit
+  pause  the commit will not pause: the story's risk tier is low, which pre_commit_pause_tiers does not pause; pre_commit_pause_paths lists no path
 
-A bare `sdlc start` takes only a story marked `ready`: it passes over a `todo`
-story, because the person has not said its criteria are settled. Naming a
-`todo` story with `sdlc start <ID>` starts it as before, and this gate decides
-whether it is ready.
+  backlog  1 ready · 1 in progress
+  held     AUTH-3  in "/home/<user>/src/billing/.sdlc/worktrees/AUTH-3", this checkout
 
-A new story starts only from a trunk fit to start from (the worktree is
-explained under [more than one checkout](#more-than-one-checkout)). `sdlc start` refuses a
-trunk behind `origin` when [`git.remote`](configuration.md#git) is on, and a
-trunk that fails `commands.smoke` in the story's new worktree. With
-[`git.worktrees`](configuration.md#git) off, where the story begins in the
-checkout itself, it also refuses another branch and uncommitted work that
-belongs to no story. A story picked up again is not held to any of it: its own
-work is in the tree.
+A person types /sdlc:next in Claude Code to carry on, or runs `sdlc stop` to put it down.
+```
 
-With [`human_gates.dor_advocate_check`](configuration.md#human_gates) on,
-`sdlc:human-advocate` reads the story first, as the person it is for would, and
-the gate waits for its review. The review is advisory, and it goes stale if the
-story changes after it. Like every reviewer, it reads
-[the review policy](#the-review-policy) first.
+Each line at the top is a gate's outcome and the note recorded with it. There
+are eleven of those lines for nine gates, because Gates 4 and 6 each record the
+work and then the review of it: the plan and its design review, the
+verification and the verifier's verdict. `next` is the gate the loop takes up
+when you type `/sdlc:next`, and `pause` says whether the commit will
+[wait for you](#gate-8-commit).
 
-## Gate 2 — `analysis`
+## The gates, one by one
 
-**Who:** `sdlc:researcher`. **Produces:** `ANALYSIS.md`, `THREATS.md`.
+Every gate has the same shape. The work is handed to an agent that starts from
+a fresh context. The agent stores what it produced through `sdlc`, never as a
+loose file. Then the outcome is recorded, and `sdlc` refuses to record a pass
+unless the work is there. A summary saying a document exists is not the
+document.
 
-The story is read against the codebase before anything is written: what exists,
-what it touches, what the current behaviour actually is with `file:line`, and
-what could go wrong at each trust boundary it crosses. It also decides whether
-the story is security-sensitive, which is what makes the security reviewer
-blocking at Gates 4 and 7.
+### Gate 1: check the story is ready
 
-Nothing is guessed at, because everything downstream is built on this. The
-researcher marks each open question `product` or `implementation`, against the
-[two kinds](#two-kinds-of-decision), with the line of the definition it rests
-on and a recommendation. The runbook records every implementation question
-with `sdlc decide --by researcher`. Where a product question is left, the gate
-fails and the story is escalated once as `product_decision`, listing every
-product question with two or three options and a recommendation each, so that
-the person answers them all in one sitting.
+The conversation reads each acceptance criterion as a test author would. A
+criterion that describes how the code is built, and not a behaviour somebody
+could observe, fails the gate here. That is the cheapest place in the whole
+loop to find out. [Writing stories](guides/writing-stories.md) shows how to
+write criteria that pass.
 
-**Refused without it:** a pass with either document missing.
+When it begins a new story, a plain `/sdlc:next` takes only one marked `ready`.
+It passes over a `todo` story, because you have not yet said its criteria are
+settled. To start one anyway, name it: `/sdlc:next <ID>`.
 
-## Gate 3 — `tests_frozen`
+A new story starts from the commits on trunk, so trunk has to be fit to start
+from. `sdlc` refuses to begin a story whose worktree it cannot make, or one
+whose `commands.smoke` fails in the new worktree. With `remote` turned on under
+[`git`](configuration.md#git), it also refuses while trunk is behind `origin`.
+A story you are picking up again is held to none of that.
 
-**Who:** `sdlc:sdet` writes them; `sdlc:test-reviewer` reviews them. **Produces:**
-`TEST-PLAN.md`, the tests, the test reviewer's review, and the freeze.
+Once the story is found ready, the project manager records its
+[staffing](the-agents.md#the-staffing): which agents this story needs. It looks
+again after Gate 2, when more is known.
 
-Each acceptance criterion becomes a test that fails now, for the reason the
-criterion names. The test plan maps every criterion to the test that covers it
-and says why each fails today.
-
-Before the freeze, `sdlc:test-reviewer` reads the new tests against the criteria,
-`ANALYSIS.md`, `THREATS.md` and `TEST-PLAN.md`, runs them, and approves or blocks.
-A block goes back to `sdlc:sdet` to correct the tests and the test plan, and the
-reviewer is asked again, up to its `max_rounds` (`loop.max_review_rounds` where it
-has none). At that limit the tests go to its [arbiter](#the-arbiter),
-`test-reviewer-arbiter`, whose review then stands for it, and only the arbiter's
-own limit hands the story to a person. Where the test reviewer is staffed,
-`sdlc freeze` waits for the approve of the review that stands for it, its own or
-its arbiter's, and refuses until then, with
-[SDLC-E0029](troubleshooting.md#sdlc-e0029) where that review is missing, is not
-an approve, or is of tests that have changed since, and with
-[SDLC-E0030](troubleshooting.md#sdlc-e0030) where it is a block. It is staffed unless
-the staffing leaves it out, with a reason: with the project manager disabled, or a
-staffing that has no row for it, the freeze waits for it. Where its `can_block` is
-false, the freeze waits only until it has reviewed, and a disabled test reviewer is
-not waited for.
-
-The approve is of the test files by name and content: every file `paths.tests`
-matches, trunk's included. A test changed, added or renamed after it makes it
-stale, and so does a rebase that brings in a test trunk changed, so the reviewer
-reads the tests again before the freeze is taken.
-
-Then `sdlc freeze` records the sha256 of every test file. From this moment
-nobody edits them: not the implementer, not the agent that wrote them, not the
-conversation. `sdlc unfreeze --reason "..."` lifts it, puts the reason on the
-record, and sends the story back to this gate. A person runs it in their own
-terminal, because the hook refuses it from an agent.
-[When a frozen test is wrong](guides/when-a-frozen-test-is-wrong.md) walks
-through it. Where `test-reviewer-arbiter` has reviewed, it reviews the corrected
-tests after an unfreeze, and the test reviewer is refused there: an unfreeze
-answers no `review_not_converging` hand-over, so the test reviewer has its turn
-again only once a person answers one raised by `test-reviewer` or
-`test-reviewer-arbiter` at `tests_frozen`.
-
-A project can set `commands.freeze_check`, which `sdlc freeze` runs first on the
-test files that are new or changed. The freeze is taken only if it passes, so the
-test author corrects what the check finds now, and not after the plan and its
-reviews at the cost of a person's unfreeze.
-
-The first freeze of a story then runs `commands.test_files` over the same new and changed test
-files, from the repository root, with their list in the file `SDLC_TEST_FILES` names; where
-`commands.test_files` is empty it runs the whole `commands.test`. A test written before its code
-fails until the code exists, so `sdlc freeze` refuses where the run passes, and where it could not
-run at all (the shell's 126 or 127), and takes the freeze where it fails. Everything the run printed
-is in `.sdlc/stories/<ID>/freeze-run.log`. The test author runs its own tests the same narrow way
-while it writes them; the whole `commands.test` is not its to run. A freeze that only adds files
-under [`freeze.allow_new_test_files`](configuration.md#freezeallow_new_test_files) runs the check
-alone. The runbook runs `sdlc freeze` in the background and waits for it in bounded calls until it
-exits.
-
-The freeze belongs to the iteration. It survives `sdlc stop` and a new session,
-so resuming a story finds its tests still locked; it is lifted when the story
-finishes, so the next story freezes its own.
-
-**Refused without it:** a pass with no test plan, no freeze, a freeze belonging
-to another story, or a frozen file that has changed or vanished.
-
-This is the gate the rest of the loop rests on. An agent that can edit its own
-acceptance tests will eventually do so, usually because it is the shortest path
-to green, and every gate after that means nothing.
-
-## Gate 4 — `plan`, then `design_review`
-
-**Who:** `sdlc:implementer` writes it; `sdlc:architect`, `sdlc:security`,
-`sdlc:red-team`, `sdlc:perf` and `sdlc:human-advocate` review it.
-**Produces:** `PLAN.md` and up to five reviews.
-
-The plan is the smallest change that makes the frozen tests pass, in steps
-somebody else could follow, with the alternative that was rejected and why.
-
-The reviewers run in parallel and do not read each other's work: reviewers that
-run in sequence only agree with the earlier ones. The architect
-blocks; security blocks when the story is security-sensitive; perf never has to
-approve, but its block stops the gate, because it blocks only on a performance
-budget the contract states. Red-team and human-advocate report but cannot stop
-the gate, and none of the five can be skipped (unless the project's staffing
-leaves one out for this story, see [The staffing](#the-staffing)).
-
-Each finding a reviewer lists is closed before the story moves on ([the scout
-rule](#the-scout-rule)). A nit in a file the story changes is fixed in the same rework pass, or
-declined with a reason. A wave with only nits is closed by the implementer fixing them and only
-the reviewers who raised them looking again, not the whole set.
-
-**Refused without it:** a pass with the plan missing, a reviewer that has not
-reported, a blocking reviewer that has not approved, a block from perf, or an
-approval of a plan that has since changed.
-
-## Gate 5 — `implementation`
-
-**Who:** `sdlc:implementer`. **Produces:** the code.
-
-The plan is carried out one step at a time, running `commands.test_files` over the story's tests
-after each. The implementer cannot touch any test file, and cannot add a new one. It closes each
-design review finding with `sdlc finding close`: fixed, declined with a reason, or, for something
-outside the story's files that cannot wait, referred with a reason.
-
-`sdlc gate implementation pass` then runs the commands the landing runs: `build`, `test`, `lint`,
-`fmt_check`, `coverage` and `mutation`, those that are set, in that order, at the root of the
-story's worktree, each held to the landing's rule and thresholds. One run of them shares one new
-directory, `SDLC_RUN_DIR`, so that `coverage` reads what `test` left there rather than running the
-suite again. The gate takes the tree hash before the run, the one reviews are stamped with, and
-records each command's name, exit status and duration against it. A command that fails, misses
-its threshold or prints no figure refuses the gate with
-[SDLC-E0095](troubleshooting.md#sdlc-e0095), names the command and its status, puts all it
-printed in `.sdlc/stories/<ID>/implementation-run.log` and shows the last 20 lines; the refusal is
-recorded as a fail of the gate, and counts towards
-[`loop.max_rework_rounds`](configuration.md#loop) as one. A command that could not be started, a
-command that wrote a file of the tree it ran on, or a story that changed while it ran, refuses with
-the same code and records nothing. The runbook runs the gate in the background and waits for it in
-bounded calls, then reads its output and `sdlc status --json`; every rework that changes the tree
-records the gate again, which runs the commands on the new tree and leaves the gates before it
-standing.
-
-Two things the check after the run does not see: an edit made and put back while the run is in
-progress, and a file a command adds and that is later deleted. Until it is deleted, an added
-file that git does not ignore makes the result no longer current, so the verifier and the landing
-run the commands themselves. Keep build output under a path git ignores or under
-`$SDLC_RUN_DIR`.
-
-**Refused without it:** a pass when the freeze is gone or broken, or one whose commands did not
-all pass.
-
-## Gate 6 — `verification`, then `verifier_review`
-
-**Who:** `sdlc:verifier`. **Produces:** `VERIFICATION.md` and a blocking verdict.
-
-A verifier that has not seen the implementer's reasoning re-derives what each acceptance
-criterion should mean, compares that with the frozen tests, runs every command
-the project configures, and hunts by hand for the thing tests cannot catch: an
-implementation that passes them without the behaviour being there. It asks
-`sdlc status --json` itself whether the result the implementation gate recorded is for the tree
-hash and the commands as they are now; where it says `current: true`, the verifier cites those
-results as run by sdlc and does not run them again, and where it does not, it runs them. A result
-run by sdlc is not proof the environment the commands started with was not chosen, so the gaming
-check still applies. It checks
-every gaming vector the red team named at Gate 4. Before it approves, it checks the findings
-ledger: every design review finding closed, each fix in the diff, each decline's reason sound, and
-nothing the diff touches referred. After a block, the implementer closes its findings, Gate 5
-is recorded again, and the same verifier is resumed to look again, given how each of its
-findings was closed and the files the rework changed.
-
-**Refused without it:** a pass with the verification document missing, a broken
-freeze, a design review finding still open
-([`SDLC-E0092`](troubleshooting.md#sdlc-e0092)) or referred in a file the story
-changes ([`SDLC-E0091`](troubleshooting.md#sdlc-e0091)), findings an older `sdlc`
-dropped from the record ([`SDLC-E0093`](troubleshooting.md#sdlc-e0093)), or a
-verifier that blocked or has not approved the current tree.
-
-## Gate 7 — `code_review`
-
-**Who:** `sdlc:code-reviewer`, plus `sdlc:security`, `sdlc:perf` and
-`sdlc:human-advocate`. **Produces:** up to four reviews.
-
-The diff is reviewed in a context that never saw the reasoning that produced it.
-That is the whole value: a reviewer that inherited the justification cannot
-notice what only makes sense if you already knew why. Each finding is closed as at Gate 4: a
-nit in a file the story changes is fixed in the same rework pass or declined with a reason, and a
-wave with only nits is closed by the implementer and the reviewers who raised them.
-
-**Refused without it:** the same conditions as the design review, against the
-tree rather than the plan.
-
-## Gate 8 — `commit`
-
-**Who:** the conversation. **Produces:** the commit.
-
-`git commit` is refused by the hook until every gate above has passed, and the
-refusal names the one that has not. With [`git.worktrees`](configuration.md#git)
-on, the commit is made in the story's worktree, on `story/<ID>`, and trunk does
-not move until the story lands at the end of Gate 9
-([more than one checkout](#more-than-one-checkout)). The pass then says
-`committed on story/<ID> in <start>..<end>` rather than `landed in`.
-
-The gate also asks the verifier and the code reviewer about the tree as it is
-now, not as it was when they approved. An approval goes stale the moment the
-code changes, and the window between the code review and the commit is the one
-place that would otherwise not be checked.
-
-A story whose risk tier the project pauses (`high`, by default), or whose change
-touches a path `pre_commit_pause_paths` lists, waits here for a person as well.
-The change is measured from where the story's branch left trunk, untracked
-files included, and the refusal names the tier or each file with the glob it
-matched. The conversation hands it over with `sdlc escalate` and stops, and the
-commit is refused until somebody has approved the work as it stands. Neither
-the story's tier nor its own copy of `.sdlc/config.json` takes a pause away,
-and what cannot be read pauses too. See
-[`human_gates`](configuration.md#human_gates). A project that keeps
-`pre_commit_pause_tiers` at `["high"]` has every high-tier story pause here as
-before, and a path only adds to that. Where the story pauses, the pass also
-fixes the commits of a story in its own worktree: the gate passed again with
-other commits, and a landing with other commits, each need a person's answer
-([what your approval covers](guides/human-approval-gates.md#what-your-approval-covers)).
-
-A pass with no pause for a person writes a `landed_without_pause` event on the
-record, naming the story's tier and saying that no file matched
-`pre_commit_pause_paths`, and [`sdlc log`](commands.md#sdlc-log) shows it as a
-`no pause` line until `sdlc ack` marks it read. Before the gate,
-[`sdlc status`](commands.md#sdlc-status) says whether the commit will pause, and
-why.
-
-The pass also refuses a story whose commits add the markers of an unresolved
-conflict, naming the files and the lines ([`SDLC-E0080`](troubleshooting.md#sdlc-e0080)),
-and records nothing. The change it looks at runs from where the story started
-to HEAD: the commit its worktree was cut from, or the trunk commit it sits on
-afterwards; with `git.worktrees` off, the commit HEAD was on when code review
-first passed. The paths where the lines are meant to be come from this
-checkout's `.sdlc/config.json`, and the stop reads trunk's. With
-`git.worktrees` off nothing lands through a stop, so this is the only look, and
-it does not refuse a diff driver whose name it cannot override, as the stop
-does. Where the record names no commit that code review began from, or git
-cannot read it, it looks from the commit the record holds as where the iteration
-started instead, and only where neither can be read does it look at nothing and
-log why.
-
-Passing the gate records the commits the story landed in, as a range: the ones
-since code review first passed that the loop watched the session land, as far as
-the hook could tell a command was a commit. A person's commit made in that
-window is left out. [`sdlc gate`](commands.md#sdlc-gate-gate-status) has what
-the pass prints.
+**What it may ask of you.** If a criterion cannot be tested, the loop hands the
+story to you. Settle the criterion in your backlog, then answer.
 
 > [!NOTE]
-> The range is not proof, and not complete. Where no single range holds only
-> the watched commits (somebody else's sits between two of the story's), the
-> gate records no range, and says so, rather than one that would hold theirs.
-> Where the hook watched nothing, the range runs from HEAD when code review
-> first passed to HEAD when the commit gate last passed, as it always did, and
-> can hold anybody's commits. A commit the hook did not watch is missing from
-> it, and history rewritten under the loop can put a person's commit in it.
-> [Reviewing what landed on trunk](guides/reviewing-what-landed-on-trunk.md#ranges-to-read-with-care)
-> says what to read with care.
+> You may have the human advocate read every story at this gate, as the person
+> the story is for would read it. Turn on `dor_advocate_check` under
+> [`human_gates`](configuration.md#human_gates), and the gate waits for its
+> review.
 
-A hash the note names has to be inside the range
-([`SDLC-E0049`](troubleshooting.md#sdlc-e0049)). The end goes when the commit
-gate stops standing, and the next pass records its answer again. The start
-stays: a finished story reopened later keeps it, so its range can also span
-everything that landed on trunk in between, unless the story was put onto a
-later trunk commit, where the range starts at that commit.
+### Gate 2: analyse the story
 
-**Refused without it:** a pass while anything is uncommitted, with a broken
-freeze, with a design or code review finding still open
-([`SDLC-E0092`](troubleshooting.md#sdlc-e0092)) or referred in a file the story
-changes ([`SDLC-E0091`](troubleshooting.md#sdlc-e0091)), with findings an older
-`sdlc` dropped from the record ([`SDLC-E0093`](troubleshooting.md#sdlc-e0093)),
-with code that has changed since the reviewers saw it, or, where the tier or a
-listed path pauses the story, with work no person has approved.
+The researcher reads your story against the codebase before anybody writes
+anything. It records what exists, what the story touches, what the code does
+today, and what could go wrong wherever the story crosses a trust boundary. It
+stores two documents: `ANALYSIS.md` and `THREATS.md`.
 
-## Gate 9 — `retro`
+It also decides whether the story is security-sensitive. That decision is what
+lets the security reviewer stop Gates 4 and 7, and until it is made the story
+is treated as sensitive.
 
-**Who:** `sdlc:bookkeeper`. **Produces:** `RETRO.md`.
+Everything after this gate is built on the analysis, so the researcher
+guesses at nothing. It lists each question your story leaves open, says
+whether the question is about the product or about how to build it, and
+recommends an answer. The loop settles the second kind itself and puts each
+answer on the record for you to read afterwards.
+[Two kinds of decision](#two-kinds-of-decision) says how the two are told
+apart.
 
-What deviated from the plan, what sent the story back and where it could have
-been caught one gate earlier, and what this story actually demonstrated. It
-lists the referred findings for the person to read, and opens no story.
+**What it may ask of you.** A question about the product stops the loop here,
+once. The story is handed to you with every such question listed, each with
+two or three options and a recommendation, so that you can answer them all in
+one sitting.
 
-**Refused without it:** a pass with the retro missing.
+### Gate 3: freeze the tests
 
-Passing it is also what finishes the story. With `git.worktrees` off, or for a
-story worked in the checkout that started it, no gate is left unpassed, so the
-story's status becomes `done` in the backlog. End the iteration with
-`sdlc stop`, and the next `sdlc start` takes the next story rather than
-reopening this one, because it refuses to start a finished story at all. You
-commit the backlog change along with the retro.
+The test author turns each acceptance criterion into a test that fails now,
+for the reason the criterion names. `TEST-PLAN.md` maps every criterion to the
+test that covers it, and says why each fails today.
 
-In a story's worktree the story is done when it lands. The bookkeeper does not
-edit `CODEMAP.md` there: it stores the sections it adds or replaces with
-`sdlc codemap write`, and the session runs `sdlc stop` in the worktree, which
-lands the story's commits on trunk and then puts the sections there in a
-commit of their own
-([parallel stories and `CODEMAP.md`](#parallel-stories-and-codemapmd)). Until
-it does, `sdlc start` there says the story waits to land, and `sdlc status` says
-so too. The record and the backlog change wait in the main checkout for a person
-to commit them.
+Before anything is frozen, the test reviewer reads the new tests against the
+criteria, the analysis and the test plan. It runs them, and it approves or
+blocks. A block goes back to the test author, who corrects the tests, and the
+reviewer looks again. Where the story is staffed with a test reviewer, the
+freeze waits for its approval. Its approval is of the test files as they
+stand, so a test changed or added afterwards is read again before the freeze
+is taken.
 
-## The review policy
+Then the tests are frozen. `sdlc freeze` first runs the new and changed tests
+with `commands.test_files`, your
+[narrow test command](configuration.md#the-narrow-test-command). A test
+written before its code has to fail, so the freeze is refused where that run
+passes. Then it records every test file as it stands, and from that
+moment nobody edits them: not the implementer, not the test author, and not
+the conversation. A frozen test that has changed or vanished stops every gate
+after this one, and so does a test file that appears later.
+[Tell sdlc which files are tests](guides/tuning-commands-for-your-stack.md#tell-sdlc-which-files-are-tests)
+shows how to check what the freeze covers.
 
-Every reviewer reads one file first: `REVIEW.md` at the repository root, or wherever
-[`reviews.policy`](configuration.md#reviewspolicy) puts it. It says which passes to make, what counts
-as important, what is a nit, how many nits to report and what not to review. A pass in the policy is
-one reading of the work with one question in mind, and not a gate's outcome. A block has to name at
-least one important finding ([SDLC-E0086](troubleshooting.md#sdlc-e0086)), so a round is spent on
-what matters.
+This is the gate the rest of the loop rests on. An agent that can edit its own
+acceptance tests will sooner or later do so, because it is the shortest way to
+green, and every gate after that would mean nothing.
 
-A person changes the policy by hand: they commit it on trunk between stories, and a running story
-keeps the copy it was cut from. To apply a change to the story in front of you, end the story, commit
-on trunk and start again. No agent writes it, and no story lands a change to it.
+The freeze belongs to the story, not to the session. It survives a stop and a
+new session, and it is lifted when the story is done.
 
-## The scout rule
+> [!NOTE]
+> The test reviewer is on by default, and its block stops the freeze. The
+> project manager may leave it out of a story, and you may turn it off or make
+> it advisory for every story, in its `test-reviewer` entry under
+> [`team`](configuration.md#an-agents-entry).
+> [`sdlc freeze`](commands.md#sdlc-freeze) says what the freeze waits for.
 
-A story leaves what it touches better than it found it. A finding raised in its reviews is fixed
-in the story or declined with a reason on the record, never deferred to a later story, and a
-defect noticed in a file the story changes is fixed there too.
+**What it may ask of you.** Only a person lifts a freeze. If a frozen test
+turns out to be wrong, the loop hands the story to you, and
+[When a frozen test is wrong](guides/when-a-frozen-test-is-wrong.md) walks
+through `sdlc unfreeze`, which records your reason and sends the story back to
+this gate. A test reviewer that keeps blocking does not come to you: its
+[arbiter](#the-arbiter) rules first.
 
-The loop holds the rule in three places:
+### Gate 4: plan, and review the plan
 
-- **The findings ledger.** A reviewer lists each finding it counts with `--finding`, and each is
-  closed with `sdlc finding close` as `--fixed`, `--declined` or `--referred`, the last two
-  with a reason. An open design review finding stops `sdlc gate verification pass`, and an open
-  design or code review finding stops `sdlc gate commit pass`.
-- **The verifier,** which checks the ledger against the diff before it approves, and reads the
-  review documents where an older `sdlc` dropped a reviewer's findings between its rounds.
-- **The retro,** which lists the referred findings for the person and opens no story.
+The implementer writes `PLAN.md`: the smallest change that makes the frozen
+tests pass, in steps somebody else could follow, with the alternative it
+rejected and why.
 
-The words it uses:
+Then up to five reviewers read the plan: the architect, the security reviewer,
+the red team, the performance reviewer and the human advocate. They run side by
+side and do not read each other's work, because reviewers who run one after
+another tend to agree with whoever went first.
 
-- A **finding** is one thing a review lists, numbered F-1, F-2 and so on by gate and role,
-  across the reviewer's rounds.
-- A **closing** is how a finding was dealt with: fixed, declined, or referred. A later closing
-  replaces an earlier one, and both stay on the record.
-- **Referred** is a closing, not an escalation. It is for something outside the story's files that
-  cannot wait; it changes no story's state, and the person reads it when the story ends.
-  [Escalating](#introduction) hands the whole story to a person instead.
-- The **ledger** is the findings and their closings on the story's record, which
-  `sdlc status --json` lists under `findings`.
+Not all of them can stop the gate. The architect can. The security reviewer
+can when the story is security-sensitive. The performance reviewer can only
+over a budget your contract states. The red team and the human advocate advise.
+[Which reviewers can stop a gate](the-agents.md#which-reviewers-can-stop-a-gate)
+shows how to see this for the story in front of you, and how to change it.
 
-Two things only a reader can judge: whether a `--fixed` is true, and whether a decline's reason
-holds. The reviewer who raised the finding judges both when it looks again, and so does the
-verifier.
+The gate does not pass until every reviewer the story needs has reported on
+the plan as it now stands, and every blocking reviewer has approved it.
 
-## Rework
+**What it may ask of you.** Nothing, as a rule. A block sends the plan back to
+the implementer and the loop tries again. When the same reviewer has blocked
+twice, its [arbiter](#the-arbiter) rules on what is still open. The story
+comes to you only when the arbiter cannot settle it either, and
+[When a reviewer blocks](guides/when-a-reviewer-blocks.md) shows what to do
+then.
 
-A gate that fails is recorded as failed, and the loop goes back rather than
-around:
+### Gate 5: write the code
 
-```console
-$ sdlc gate design_review fail --note "architect blocked: AC-3 has no step"
-```
+The implementer carries the plan out one step at a time, running the story's
+tests with `commands.test_files` after each. It cannot touch a test file, and
+it cannot add one. It also answers the reviewers of the plan: each of their
+findings is fixed, or declined with a reason, as
+[the scout rule](#the-scout-rule) asks.
 
-There is no flag that skips a gate, and a pass cannot be recorded out of order.
-When a reviewer blocks, the way past is the same reviewer looking again. Its new
-verdict replaces the old one, because a gate reads the latest.
+When the frozen tests pass, the gate is recorded with
+`sdlc gate implementation pass`, and recording it is where your whole project
+is checked. `sdlc` itself runs the commands you configured:
+`build`, `test`, `lint`, `fmt_check`, `coverage` and `mutation`, those that
+are set, in that order. Each has to pass, and `coverage` and `mutation` have
+to reach their [thresholds](configuration.md#thresholds). What passed is
+recorded against the files exactly as they stood, so that nobody has to run
+the same commands on the same files again.
 
-Rework does not go round for ever. A gate recorded as failed
-[`loop.max_rework_rounds`](configuration.md#loop) times hands the story to a
-person: the rework is not converging, and another round would meet the same
-wall. A reviewer that blocks `loop.max_review_rounds` times sends the gate to
-[its arbiter](#the-arbiter), and the arbiter that blocks as many times hands the
-story over. The count starts again once the person has answered. The failure
-that reaches the limit is recorded together with the hand-over, or the command
-is refused and records neither. A gate refused by its checks records nothing; the
-implementation gate refused because a command it ran failed is recorded as the
-fail that it is.
+A command that fails
+[fails the gate](troubleshooting.md#sdlc-e0095). The refusal names the
+command and shows the last lines it printed, the rest is kept in
+`.sdlc/stories/<ID>/implementation-run.log`, and the implementer goes back to
+work. Every rework that changes a file records the gate again, which runs the
+commands on the files as they now are.
 
-Recording a gate again, pass or fail, reopens every gate after it: each goes
-back to `pending`, with a note saying why, and has to be passed again. A new
-plan cannot inherit the design review of the old one. The command names the
-gates it reopened. [When a reviewer
-blocks](guides/when-a-reviewer-blocks.md) shows a rework round from the
-reviewer's side.
+> [!NOTE]
+> Keep what your build writes under a path git ignores. A file that a command
+> leaves in the worktree, and git does not ignore, puts the recorded result
+> out of date, and then the verifier and the landing run everything again.
 
-This holds after the story is finished, too. Recording a gate as failed on a
-story already marked `done` puts it back to `in_progress`: being done is a
-reading of the gate record, not a door that locks behind you. It is also the
-only way back in, which is what keeps reopening a decision somebody made rather
-than a side effect of running a command.
+**What it may ask of you.** If the implementer finds that a frozen test
+contradicts a criterion, it stops and says so, and the story comes to you. It
+is not allowed to make the test agree with the code. A failing command counts
+towards [`loop.max_rework_rounds`](configuration.md#loop), so a gate that has
+failed three times comes to you as well, as [Rework](#rework) describes.
 
-### The arbiter
+### Gate 6: verify
 
-A disagreement between a reviewer and the work it reviews is settled by the
-loop, not by a person. The reviewer's stopping block that reaches its limit,
-`loop.max_review_rounds` or its own `team.agents.<agent>.max_rounds`, sends the
-gate to an **arbiter**: a fresh instance of the same role, recorded as
-`<role>-arbiter`, or `security-2-arbiter` for an instance. `sdlc review add`
-names it, and `sdlc staffing show --gate` lists it in the reviewer's place, one
-step above the reviewer in `team.efforts`, or in `team.models` where effort is
-already at its ceiling. The runbook gives it the open findings, their closings
-and the reviewer's documents. It rules on each finding, fixed or declined with a
-reason, and each ruling is closed with `sdlc finding close` and recorded with
-`sdlc decide`.
+The verifier has seen none of the implementer's reasoning. It works out what
+each criterion should mean before it reads a test, and compares that with the
+frozen tests. It does not run your commands a second time: while the result
+Gate 5 recorded is for the files as they are now, it works from that result
+and marks it `run by sdlc` in its report. It runs the commands itself only
+where the files have changed since. Then
+it hunts by hand for the one thing tests cannot catch: code that passes them
+without the behaviour being there. It checks each way of gaming the tests
+that the red team named at Gate 4.
 
-The arbiter's review stands for its role at that gate in place of the
-reviewer's latest, at the gate, in `sdlc review list` (as `reviewed_by`), in the
-staffing and in the hook's check of a commit. It stands from its first review
-until a person answers a `review_not_converging` hand-over that a block of that
-role, or of its arbiter, raised at that gate. An answer to another role's
-hand-over, or to another gate's, does not end it. Nor does a pre-commit
-approval, an answer to a failing gate, a failing agent, a stalled loop or work
-done by hand. Every escalation an answer resolves is read, so a hand-over
-stacked on top of a review's hides it from none.
+It stores `VERIFICATION.md` and gives a verdict, and its verdict can stop the
+gate. Before it approves, it also checks that every finding from the design
+review was closed, and closed honestly.
 
-From the reviewer's limit-th block, and while its arbiter's review stands, the
-reviewer itself is refused at that gate, and the arbiter is refused before
-that block: one of the two is always the one taken. Between that block and the
-arbiter's first review, nothing stands yet, and the reviewer's blocks are
-counted since a person last answered for the story: any answer, to a stalled
-loop, a failing gate or another role's hand-over at the same gate, starts the
-count again, takes the reviewer, and leaves the arbiter refused until the limit
-comes round again. Only once the arbiter has reviewed does the boundary above
-hold. The arbiter's own limit-th
-stopping block, under the same setting, hands the story to a person as
-`review_not_converging`. A role the project disables has no arbiter, and its
-reviewer's limit hands over as before; an arbiter whose review already stood
-when the role was disabled keeps its turn, so one of the two is still taken.
-The trace records an arbiter's run as asked for the step above, and says
-nothing where a run could have been either.
+**What it may ask of you.** Nothing, as a rule. A block sends the story back
+to Gate 5. Once the implementer has answered and Gate 5 is recorded again, the
+same verifier is resumed, and is shown how each of its findings was closed
+and which files the rework changed.
 
-Two things rest on the runbook rather than on the binary, and are accepted:
+### Gate 7: review the code
 
-- **That the arbiter is a fresh instance.** It runs as its role's agent, and
-  nothing a model cannot forge says which instance recorded a review. The
-  trace's agent ids show it afterwards.
-- **A model's own `review_not_converging`.** A session that raises
-  `sdlc escalate review_not_converging` straight after a stopping block of the
-  role or its arbiter makes a person's answer to it end that dispute. That is
-  usually the agent that recorded the block, or the main conversation where the
-  hook, which records an agent's end only as far as it can, did not record that
-  agent's end. It gives what the arbiter's own limit gives, sooner, and still
-  takes a person's answer. `sdlc escalate` cannot refuse the kind: it keeps
-  every reason it has ever accepted, and the criterion that brought the arbiter
-  in asks it to.
+The diff is reviewed in a context that never saw how it was written. That is
+the whole value of the gate. A reviewer who inherited the argument for a change
+cannot notice what only makes sense if you already knew why.
 
-## Two kinds of decision
+The code reviewer reads it, and so do the security reviewer, the performance
+reviewer and the human advocate, each for what it looked for in the plan. The
+gate passes on the same terms as Gate 4, with the story's files in place of the
+plan.
 
-Every question the loop meets is one of two kinds, and the kind says who
-answers it. Nothing in code sorts them: the agents judge each question against
-these two definitions, and the person reads every decision afterwards.
+**What it may ask of you.** Nothing, as a rule. A block sends the story back
+to Gate 5, and it comes to you only when neither the rework nor the
+reviewer's [arbiter](#the-arbiter) settles it.
 
-A **product decision** is one about what the story's user sees or can do; about
-which of two readings of a criterion is meant, where the readings change that;
-about what is in or out of the story's scope; or about anything the project's
-`## SDLC Contract` reserves to a person. It is the person's. The loop stops for
-it once per story: the runbook escalates `product_decision` with every product
-question of the story, each with two or three options and a recommendation, so
-that the person answers them all in one sitting. `spec_unclear` and
-`design_decision` are for a product decision too, and for nothing else.
+### Gate 8: commit
 
-An **implementation decision** is every other one: how an edge case behaves,
-whether a suspected bug is real, which of two designs meets the criteria, what
-kind of test to write, an internal name, and, where the contract allows it,
-which open-source dependency to use. The loop makes it and never escalates it.
-The agent that raised it recommends one option and says why, and the runbook
-applies that recommendation, or the [arbiter's](#the-arbiter) ruling where a
-reviewer and the work disagree, and records it:
+The conversation commits the story in its worktree, on `story/<ID>`. Trunk
+does not move yet.
 
-```console
-$ sdlc decide US-001 --question "..." --option "..." --option "..." --chosen "..." --reason "..." --by researcher
-```
+The hook refuses `git commit` until every gate before this one has passed, and
+the refusal names the gate that has not. The gate also asks again whether the
+verifier and the code reviewers approved the files as they are now, and not as
+they were when they looked. An approval of files that have since changed
+[is not counted](#why-approvals-go-stale), and the stretch between the code
+review and the commit is the one place it would otherwise go unnoticed.
 
-`sdlc decide` puts a `decision` event on the story's gate record, with the
-question, the options, the one chosen, the reason, who decided and the gate,
-and writes it into `.sdlc/stories/<ID>/DECISIONS.md` in the order made. A
-decision changes no gate, review, freeze, staffing or approval, and it answers
-nothing a person was asked. `sdlc log` lists each decision with its story, and
-`sdlc status` counts them as `decisions_unread` until your `sdlc ack` covers the
-story's commit. You read every one afterwards, and can open a story to change
-one.
+**What it may ask of you.** A story you chose to see first waits here for
+your approval. You choose in two ways: by risk tier, and by the files a
+story's change touches. `sdlc init` sets the first up for stories marked
+`"risk_tier": "high"`, and you may add paths, such as your authentication
+code, whose every change you want to see whatever its tier. The refusal names
+the tier, or each file with the pattern it matched. Keeping
+`pre_commit_pause_tiers` at `["high"]`, the default, keeps every high-tier
+story pausing here, and `pre_commit_pause_paths` only adds to that. Nothing
+the story does takes a pause away, and where `sdlc` cannot read what it needs
+to decide, it pauses.
+[The pause before the commit](guides/human-approval-gates.md#the-pause-before-the-commit)
+shows how to answer it, and [`human_gates`](configuration.md#human_gates) how
+to change which stories wait.
 
-`--by` names the agent whose recommendation or ruling was applied, as the
-runbook reports it, not the session that ran the command. Any session may give
-any name the loop knows, and a person's name is refused. No gate reads it, and
-the trace shows which session ran the command, so this is accepted.
+`sdlc status` says before this gate whether the commit will pause, and why.
+A story that is committed with no pause is marked as such, and
+[`sdlc log`](commands.md#sdlc-log) shows it on a `no pause` line until you
+run `sdlc ack`. Nothing is committed unseen without your being told.
 
-Each agent says in its Rules, in these words, which of its own questions it
-recommends on. On a product decision it stops and hands back `blocked`, with
-two or three options and its recommendation in `blocked_on`, and the runbook
-takes that as no failure but escalates it as `spec_unclear` (which reading of a
-criterion is meant) or `design_decision`. The researcher does not stop: it marks
-each product question, counts it and finishes the analysis, so that Gate 2
-escalates every one at once as `product_decision`.
+### Gate 9: write the retro, and land
 
-## Who runs the commands
+The bookkeeper writes `RETRO.md`: where the work departed from the plan, what
+sent the story back and where that could have been caught a gate earlier, and
+what the story showed that nobody knew before. It also writes the story's
+sections of `CODEMAP.md`, the map of your codebase that the next story's
+researcher reads first.
+
+Then the conversation runs `sdlc stop` in the story's worktree, and the story
+lands: trunk moves forward to its commits, and the worktree and its branch are
+removed. [Done when it lands](#done-when-it-lands) says what is checked first.
+
+**What it may ask of you.** Two things are left in your project for you to
+commit: the backlog, where the story is now `done`, and the story's directory
+under `.sdlc/stories/`. Nothing is pushed, so that is yours as well.
+
+### Who runs the commands
+
+Your build, your tests and your checks are run at several gates, and the loop
+takes care not to run the same thing on the same files twice. The narrow
+command, `commands.test_files`, runs only the story's own tests. The whole
+suite, `commands.test`, is left to `sdlc`:
 
 | Gate | Command | Who runs it | When |
 | --- | --- | --- | --- |
-| 3 | `commands.test_files` | the test author, `sdlc:sdet` | on its own tests, as it writes them |
-| 3 | `commands.test_files` | the test reviewer, where it is staffed | on the new and changed tests, before `sdlc freeze` |
-| 3 | `commands.test_files` (or `commands.test`) and `commands.freeze_check` | sdlc | at `sdlc freeze` |
-| 4 and 5 | `commands.test_files` | the implementer | after each step |
-| 5 | `commands.test`, with `build`, `lint`, `fmt_check`, `coverage` and `mutation` | sdlc | at `sdlc gate implementation pass`, and after every rework |
-| 6 | the same | the verifier | only where `sdlc status --json` reports no current result |
-| 9 | the same | sdlc | at `sdlc stop`, where the tree or a command differs from the result recorded |
+| 3 | `commands.test_files` | the test author (`sdet`) | on its own tests, as it writes them |
+| 3 | `commands.test_files` | the test reviewer, where the story has one | on the new and changed tests, before the freeze |
+| 3 | `commands.freeze_check`, then `commands.test_files`, or `commands.test` where that is empty | `sdlc` | when `sdlc freeze` runs |
+| 4 and 5 | `commands.test_files` | the implementer | before it plans, and after each step |
+| 5 | `commands.test`, with `build`, `lint`, `fmt_check`, `coverage` and `mutation` | `sdlc` | when the implementation gate is recorded, and again after every rework |
+| 6 | the same | the verifier | only where the files have changed since Gate 5 recorded its result |
+| 9 | the same | `sdlc` | at the landing, where the files or a command differ from that result |
+
+[`commands`](configuration.md#commands) lists every command, with the ones
+that run outside the gates: `smoke` when a story starts, and `fmt_file` on
+each file an agent writes.
+
+## Where you come in
+
+Most of a story needs nothing from you. These are the places that do, and each
+has a guide of its own:
+
+| When | What you do | The guide |
+| --- | --- | --- |
+| To begin, and to carry on | type `/sdlc:next`; only a person can start the loop | [Getting started](getting-started.md#run-your-first-story) |
+| The loop escalates | read the work, then answer with `sdlc approve` | [Human approval gates](guides/human-approval-gates.md) |
+| The story leaves a question about the product open | choose an option for each question, then answer | [Two kinds of decision](#two-kinds-of-decision) |
+| A reviewer and its arbiter both keep blocking | decide who is right, then answer | [When a reviewer blocks](guides/when-a-reviewer-blocks.md) |
+| A frozen test is wrong | lift the freeze with `sdlc unfreeze` | [When a frozen test is wrong](guides/when-a-frozen-test-is-wrong.md) |
+| A story you asked to see is ready to commit | read it, then approve it or send it back | [The pause before the commit](guides/human-approval-gates.md#the-pause-before-the-commit) |
+| The story has landed | commit the backlog and the story's directory, and push | [When the story is finished](guides/stopping-and-resuming-a-story.md#when-the-story-is-finished) |
+| Afterwards | read what landed with `sdlc log`, the decisions the loop made among it, and mark it read with `sdlc ack` | [Reviewing what landed on trunk](guides/reviewing-what-landed-on-trunk.md) |
+
+Approving, lifting a freeze and acknowledging what landed are yours alone. The
+hook refuses each of them from an agent, because an agent that could answer for
+you would be approving its own work.
+[Where to type your answer](guides/human-approval-gates.md#where-to-type-your-answer)
+shows where a person's commands are typed.
+
+Your answer has to reach agents that never see your conversation, so a
+decision you only type into the chat is gone by the next gate.
+[Write your decision down](guides/human-approval-gates.md#write-your-decision-down)
+says where each kind of decision goes.
+
+## Two kinds of decision
+
+Every question the loop meets while it works a story is one of two kinds, and
+the kind says who answers it.
+
+A **product decision** is yours. It is a decision about any of these:
+
+- what the story's user sees or can do;
+- which of two readings of a criterion is meant, where the readings change
+  what the user sees or can do;
+- what is in the story's scope, and what is out of it;
+- anything the `## SDLC Contract` in your `CLAUDE.md` reserves to a person.
+
+The loop stops for these, and it tries to stop only once. At Gate 2 the story
+is handed to you with every product question the analysis found, each with two
+or three options and a recommendation, so that you answer them all in one
+sitting. An agent that meets one later stops there and hands it to you in the
+same form.
+
+An **implementation decision** is every other one: how an edge case behaves,
+whether a suspected bug is real, which of two designs meets the criteria, what
+kind of test to write, an internal name, and, where your contract allows it,
+which open-source dependency to use. The loop makes these itself and never
+stops for one. The agent that raised the question recommends an answer and
+says why, and the loop applies it. Where a reviewer and the work it reviews
+disagree, the [arbiter](#the-arbiter) rules.
+
+Each decision the loop makes is written down as it is made, with
+[`sdlc decide`](commands.md#sdlc-decide-id): the question, the options that
+were weighed, the one chosen, the reason, and the agent whose recommendation
+it was. A story's decisions are kept in `.sdlc/stories/<ID>/DECISIONS.md`, in
+the order they were made, and `sdlc log` lists them with the story once it
+has landed:
+
+```text
+  decided    analysis by researcher: "Is a token that expires this very second expired?" -- chose "expired", because "the check runs after the instant it names"
+```
+
+You read every one afterwards. `sdlc status` counts the decisions you have
+not yet acknowledged, and `sdlc ack` marks them read with the rest of what
+landed. A decision changes no gate, no review and no approval, and it answers
+nothing you were asked. If you disagree with one, send the story back, as
+[Rework](#rework) shows.
+
+> [!NOTE]
+> Nothing in `sdlc` sorts a question into its kind. The agents judge each one
+> against the two definitions above, which is why every decision is put in
+> front of you afterwards.
+
+## Rework
+
+When a gate fails, the loop goes back and never around. There is no flag that
+skips a gate, and a pass cannot be recorded out of order. When a reviewer
+blocks, the only way past is the same reviewer looking again at revised work.
+Its new verdict replaces the old one.
+
+A failed gate is recorded as failed, with a note that says why. Recording a
+gate again, as passed or as failed, reopens every gate after it. Each has to be
+passed again, because a new plan cannot inherit the design review of the old
+one. The command names the gates it reopened:
+
+```console
+$ sdlc gate code_review fail --story AUTH-3 --note "the 401 body is not empty"
+AUTH-3  code_review  fail
+  the 401 body is not empty
+  reopened: commit, retro
+```
+
+This is also how you send work back yourself, and it holds for a story that has
+finished. Being done is a reading of the gates, not a door that locks behind
+you: record a gate of a finished story as failed, and the story is in progress
+again from that gate.
+[Reopen a finished story](guides/stopping-and-resuming-a-story.md#reopen-a-finished-story)
+walks through it.
+
+Rework does not go round for ever. When the same gate has failed three times,
+the rework is not converging, and another round would meet the same wall.
+`sdlc` hands the story to you, and the count starts again once you have
+answered. When the same reviewer has blocked twice, the gate goes to that
+reviewer's [arbiter](#the-arbiter) first, and the story comes to you only if
+the arbiter blocks twice as well. Both limits are yours to change, under
+[`loop`](configuration.md#loop).
+
+### The arbiter
+
+A reviewer and the work it reviews can disagree for good: the reviewer blocks,
+the work is revised, and the reviewer blocks again. The loop settles that
+itself before it asks you.
+
+When a reviewer's block reaches its limit, the gate goes to an **arbiter**.
+The arbiter is a fresh agent of the reviewer's own kind, which has seen none
+of the argument, and it is asked for one step higher than the reviewer was:
+the next effort in your list, or the next model where the effort is already
+the highest. It is given the findings still open, how each was closed, and
+the reviewer's reviews. It rules on each finding, fixed or declined with a
+reason, and each ruling is recorded as one of the loop's
+[decisions](#two-kinds-of-decision), for you to read afterwards.
+
+From its first review, the arbiter's review stands in the reviewer's place at
+that gate, and the reviewer is refused there. `sdlc review list` says whose
+review it is:
+
+```text
+  design_review   architect       blocking  approve (by architect-arbiter, round 1)
+```
+
+The arbiter has the same limit as the reviewer. Only when it has blocked that
+many times too is the story handed to you, as rework that does not converge.
+Your answer to that hand-over gives the reviewer its turn again.
+
+Every reviewer whose block can stop a gate has an arbiter: the test reviewer
+at Gate 3, the reviewers of the plan at Gate 4, the verifier at Gate 6 and
+the reviewers of the code at Gate 7. With two instances of a reviewer, each
+has its own. A reviewer you have disabled has none, and its limit hands the
+story to you as before.
+
+> [!NOTE]
+> `sdlc` cannot see that the arbiter really was a fresh agent. It records the
+> review under the arbiter's name, and [`sdlc trace`](commands.md#sdlc-trace)
+> shows afterwards which agents ran.
+
+## The scout rule
+
+A story leaves what it touches better than it found it. A finding raised in its
+reviews is fixed in the story, or declined with a reason on the record. It is
+never put off to a later story, and a defect noticed in a file the story
+changes is fixed there too.
+
+Each thing a reviewer wants changed is a numbered **finding**: `F-1`, `F-2` and
+so on. The reviewer lists each one with `--finding` as it records its review.
+The implementer then closes each with `sdlc finding close`, in one of three
+ways:
+
+- `--fixed`: the story now does what the finding asked.
+- `--declined`, with a reason: the story will not, and here is why.
+- `--referred`, with a reason: the finding is about something outside the
+  story's files that cannot wait, so it is passed to you.
+
+Referring a finding is not escalating. The story carries on, and you read the
+finding when the story ends. `sdlc` refuses to refer a finding about a file the
+story itself changes.
+
+The findings and how each was closed make up the story's **ledger**. While the
+story is under way, `sdlc status` in its worktree lists the findings still
+open, and those declined or referred. Once it has landed, `sdlc log` keeps
+every one, with how it was closed. The loop holds the rule in three places:
+
+- **The gates.** A design review finding that is still open stops Gate 6 from
+  passing, and an open finding from either review stops the commit.
+- **The verifier.** Before it approves, it checks the ledger against the diff:
+  every fix is really in the code, and every reason for declining is sound.
+- **The retro.** It lists the referred findings for you to read. It opens no
+  story for them, because that is your decision.
+
+Two things only a reader can judge: whether a fix is real, and whether a reason
+for declining holds. `sdlc` checks neither. The reviewer who raised the finding
+judges both when it looks again, and so does the verifier.
+
+## The review policy
+
+Every reviewer reads one file before anything else: `REVIEW.md` at the root of
+your repository, which `sdlc init` wrote for you. It says what counts as
+important, what is only a nit, how many nits a review may report, and what is
+not worth reviewing at all.
+
+The policy keeps a round of rework for things that matter. A block has to name
+at least one important finding, and a review that found only nits is an
+approval with the nits listed.
+
+The policy is yours. No agent may write it, and no story can land a change to
+it. To change it, edit it in your project and commit it to trunk between
+stories. A story already under way keeps the copy its worktree was cut from.
+[`reviews.policy`](configuration.md#reviewspolicy) says how to keep the file
+somewhere else.
 
 ## Why approvals go stale
 
-A review is stamped with what was in front of it: the story's entry in the
-backlog at Gate 1, the plan's content at Gate 4, the whole working tree for the
-verifier's review and the code review. Change the plan, or touch a line of code,
-and every approval of the old one becomes stale and the gate says so.
+An approval is of something in particular. Change that thing, and the approval
+no longer counts:
 
-The loop's own directory is left out of that tree hash. Recording a review
-writes a file under `.sdlc/`, so counting it would make every review stale the
-instant it was filed.
+| The review | What it approved |
+| --- | --- |
+| the human advocate's, at Gate 1 | the story as your backlog has it |
+| the test reviewer's, at Gate 3 | every test file, by its name and what is in it |
+| the reviews of the plan, at Gate 4 | the plan |
+| the verifier's and the code reviewers', at Gates 6 and 7 | every file in the story's worktree that git tracks or would track |
 
-The `status` and `updated` fields of each story in the backlog are left out
-too. `sdlc` writes them as a story starts, waits for a person and resumes, and none of that
-is the work a reviewer approved. Everything else in the backlog counts: change a
-story's title or its acceptance criteria after the review, and the review is
-stale.
+Revise the plan, or touch one line of code, and every approval of the old
+version becomes **stale**. The gate says so, and it will not pass until each
+reviewer has given a verdict on the work as it now stands. `sdlc review list`
+marks a stale review with the words `what was reviewed has changed since`.
 
-At Gate 4, what makes a review stale is unchanged, and so is what clears it: the
-stamp is still taken when the review is recorded, and the gate still waits for
-each reviewer's verdict on the plan as it now stands. Only what the reviewer is
-shown changes. A reviewer asked to look again is resumed and given what
-[`sdlc artifact diff plan --since <role>`](commands.md#sdlc-artifact-diff-plan)
-prints, the path to `PLAN.md`, and its own findings with their closings. It reads
-the diff for what changed and the plan for how that fits the rest.
+This is deliberate. A reviewer who approved a plan that no longer exists has
+said nothing about the one that does.
 
-Where the diff is refused, because the review's revision was not kept or no longer
-matches its name, that reviewer starts afresh and reads the whole plan, as it does
-if it cannot be resumed. A plan stored before this version has no kept revision, so
-a story in flight across an upgrade has one round of whole-plan reviews.
+Some things never make an approval stale. Recording a gate, a review or a cost
+does not. Stopping a story and picking it up again does not, and neither does
+your answer to a hand-over.
 
-## Where everything lives
+Editing a criterion in your backlog is a different case, and worth knowing
+about. The story's files are in its worktree and your backlog is in your
+project, so a criterion you change after the reviews does not make the
+verifier's or the code reviewers' approvals stale. If you change what a story
+asks for once its tests are frozen, send it back yourself: lift the freeze, or
+record the gate it should return to as failed, as [Rework](#rework) shows.
 
-Once you have run a story, you may wonder where its files went. This is the
-layout of `.sdlc/`:
+A reviewer asked to look again at a revised plan does not start afresh. It is
+resumed, and it is shown what changed since it last looked, which is what
+`sdlc artifact diff plan` prints, together with its own findings and how each
+was closed. What makes a review stale stays the same: the gate still waits for
+every reviewer's verdict on the plan as it stands. Where no difference can be
+given, the reviewer reads the whole plan again. The verifier is resumed in
+the same way when it looks again after a rework.
 
-```text
-.sdlc/
-  .gitignore                     keeps every story's trace.jsonl out of git
-  config.json                    the settings
-  state/
-    active                       the story being worked on
-    tests.lock                   the freeze: every test file, by content
-    trace-read.json              how far the hook has read each session's transcript
-  stories/
-    AUTH-3/
-      gate-record.json           every gate, event and review, in order
-      trace.jsonl                what the story cost, as the hook measured it
-      ANALYSIS.md                gate 2
-      THREATS.md                 gate 2
-      TEST-PLAN.md               gate 3
-      PLAN.md                    gate 4
-      plans/
-        <sha256>.md              a kept revision of the plan, named by its hash
-      VERIFICATION.md            gate 6
-      RETRO.md                   gate 9
-      reviews/
-        design_review-architect-1.md
-        code_review-code-reviewer-1.md
-  worktrees/
-    .gitignore                   keeps the worktrees out of git status
-    AUTH-3/                      the story's own checkout, on story/AUTH-3
-```
-
-The stories directory is all text in your repository, which is what makes it
-reviewable; a worktree is a whole checkout. Claims, which say which checkout
-holds a story, live in your git directory instead
-([more than one checkout](#more-than-one-checkout)). Whether you commit `.sdlc/`
-is your decision. The loop writes no `.gitignore` of yours: the one in
-`.sdlc/worktrees/` ignores only that directory, and `.sdlc/.gitignore` only the
-traces.
-
-### The trace
-
-A story's trace is `trace.jsonl` in its directory: one JSON object a line, each
-a *trace record*, which the hook appends as the story runs and the commit gate
-appends once. It is what [`sdlc trace`](commands.md#sdlc-trace) reads, and it is
-not the gate record: a line of `gate-record.json`'s history is an *event*. Two
-events go with it, `agent_start` and `agent_end`, which the hook writes into the
-gate record when a subagent starts and stops, with the agent's type and id, so
-that a story's time can be split between its agents.
-
-No prompt, response, hand-back text, command argument, file path or error message
-is kept. What is kept is times, counts, exit codes and short names and labels:
-agent types and ids, model names, tool names, the program a command starts with,
-rule ids and `SDLC-E` codes, and the effort, permission mode, prompt id and the
-kind of an API error the host reports. The trace is in the story's directory, so
-every agent can read it; only sdlc writes it
-([`trace-is-written-by-the-tool`](enforcement.md#trace-is-written-by-the-tool)).
-
-Every line carries `v` (the format, 1), `at` (UTC, to the millisecond) and
-`kind`, which is one of these:
-
-| Kind | Written when | Its fields |
-| --- | --- | --- |
-| `agent_run` | a subagent stops | `agent_type`, `agent_id`, `start` and `end`; `effort` and `permission_mode` as the host reported them; `asked_model` and `asked_effort`; `models`, `responses`, `peak_context` and `tools` from the agent's transcript; `status`, `done` or `blocked`, from its hand-back |
-| `turn` | the main conversation's turn ends | `prompt_id`, `effort`, `models`, `responses`, `peak_context`, `tools`, and `background_tasks`, the background tasks Claude Code listed when the turn ended, by type |
-| `handback` | an agent calls the hand-back tool | `agent_type`, `agent_id` and `status`, `done` or `blocked` |
-| `refusal` | the hook refuses a tool call | `rule`, `agent_type`, `tool`, and `code` where the refusal has one |
-| `shell` | a shell command ends | `agent_type`, `duration_ms`, `background`, `class` (`test`, `build`, `lint`, `git`, `sdlc` or `other`), `program`, and for a test run `outcome` (`pass`, `fail`, `interrupted` or `unknown`) and `exit_code` |
-| `diff` | the commit gate passes | `files`, `added` and `removed`, and the same for the frozen tests alone: `test_files`, `test_added`, `test_removed` |
-| `notification` | the host asks a person for permission, or says it is idle | `agent_type`, `notification_type` (`permission_prompt` or `idle_prompt`) |
-| `api_error` | a turn ends on an error from the model provider | `agent_type`, `error`, one of the kinds Claude Code 2.1.311 reports, such as `rate_limit` or `overloaded` |
-| `compaction` | the host compacts a conversation | `agent_type`, `trigger` (`auto` or `manual`) |
-| `truncated` | the trace reaches its limit | `size` |
-
-`models` is tokens by model name, each `input`, `cache_read`, `cache_written` and
-`output`; `responses` is how many answers the model gave; `peak_context` is the
-largest context one of them was given; `tools` is calls by tool name. An
-`agent_type` left out means the main conversation.
-
-`asked_model` and `asked_effort` are what the story's staffing asked for that
-agent, after any `sdlc staffing assign` a person made, and not what ran: what
-ran is in `models` and `effort`. They are left out for an agent outside the
-loop, such as `Explore`.
-
-The trace is bounded so that a story that runs for weeks still reads in a
-moment. A line is at most 4,096 bytes; `models` keeps four models and `tools`
-sixteen tools, the largest, with the rest added up under `other`, and
-`background_tasks` eight types; an id is at most 128 characters, a prompt id 64
-and any other label 32.
-The whole trace stops at 4 MiB: the record that would take it past is replaced
-by a `truncated` record, and nothing is written after it. `sdlc trace` says so.
-
-Some things to know when you read one:
-
-- A turn's counts start where the last turn's stopped, which the hook keeps in
-  `.sdlc/state/trace-read.json`. The first turn of a session that picks a story
-  up partway counts the session's earlier responses too. A turn whose part of
-  the transcript holds a line not in the shape the hook reads is recorded
-  without counts: the lines before that one are never counted, and the lines
-  after it are counted in the next turn. A part larger than 64 MB is recorded
-  without counts too, and the next turn starts after it.
-- A story already under way when you upgrade is traced from its next record, so
-  its earlier gates read 0 in what is recorded, not "not recorded".
-- A story worked before tracing has no trace at all; `sdlc trace` shows what its
-  gate record holds and says the rest predates tracing.
-- Recording never refuses anything and never changes the hook's answer: a record
-  that cannot be written is a line in the debug log. When nothing is recorded,
-  see [`sdlc trace` shows nothing was
-  recorded](troubleshooting.md#sdlc-trace-shows-nothing-was-recorded).
-- A command that gets past the shell rules can add records and agent events
-  ([Not held](enforcement.md#not-held)). A forged agent run changes the
-  figures, never a gate, and Not held says how to check the agent events
-  against what ran.
-
-The traces are kept out of git: `sdlc init` writes `.sdlc/.gitignore` holding
-`/stories/*/trace.jsonl`, and `sdlc start` writes it in a project initialised
-before tracing that has none. Commit it once, with the story's own commit or as
-a commit of your own on trunk between stories, and never on trunk while a story
-is being worked on: that is HEAD moving under the story
-([SDLC-E0046](troubleshooting.md#sdlc-e0046)). If you want the traces in git,
-leave the file empty and commit that: sdlc never writes over a file that is
-there, but every `sdlc start` writes it again where it has been deleted.
+The same check runs twice more. The commit is refused if a file has changed
+since the verifier and the code reviewers approved, and so is the landing.
+[Why the other reviewers look again](guides/when-a-reviewer-blocks.md#why-the-other-reviewers-look-again)
+shows a stale review as you will see it.
 
 ## More than one checkout
 
-By default each story is worked in a checkout of its own, a git worktree, so
-that your own checkout is left alone. This section explains how the checkouts
-relate, how a story lands on trunk, and how to clean up a worktree. Read it when
-you work several stories at once, or from several checkouts.
+Each story is worked in a checkout of its own, so that your own checkout is
+left alone while the loop runs. This section explains how the checkouts relate,
+how to work several stories at once, and how a finished story reaches trunk.
 
-A repository can have more than one **checkout**: the **main checkout**, the one
-`git clone` or `git init` made, and any number of **linked worktrees** made from
-it with `git worktree add`. Every checkout of one repository works the same
-backlog and the same record of each story, and those are kept in the main
-checkout. A command run in a linked worktree reads and writes them there, and
-the copies git checked out in the worktree are never read or written. What is
-under `.sdlc/state` is each checkout's own: the story it is running, the
-session working it, its freeze and its Stop guard's count. So is
-`.sdlc/config.json`, which each checkout reads for itself, trunk included.
+Your project is the **main checkout**: the one `git clone` or `git init` made.
+When a story starts, `sdlc` makes it a **worktree** at `.sdlc/worktrees/<ID>`,
+on a new branch `story/<ID>` cut from the tip of trunk. The story starts from
+trunk's commits and not from your files, so your checkout may be on any branch
+with anything uncommitted in it.
 
-### Starting a story in a worktree
+The two hold different things:
 
-Several checkouts can each work a story they hold at once, and with
-[`git.worktrees`](configuration.md#git) on, the default, `sdlc start` makes the
-checkout for each new story itself: a linked worktree at `.sdlc/worktrees/<ID>`
-in the main checkout, on a new branch `story/<ID>` cut from the tip of the local
-trunk branch. It makes the worktree and runs `commands.smoke` in it before it
-records anything, so a start that fails leaves no claim behind, and takes the
-worktree and the branch away again or says what it could not, such as a file
-something still has open on Windows
-([`SDLC-E0053`](troubleshooting.md#sdlc-e0053),
-[`SDLC-E0041`](troubleshooting.md#sdlc-e0041)). The one other check is that
-trunk is not behind `origin` when `git.remote` is on
-([`SDLC-E0040`](troubleshooting.md#sdlc-e0040)). The main checkout can be on any
-branch, with anything uncommitted in it: the story starts from trunk's commits,
-not from the main checkout's files.
+| In the story's worktree | In your project |
+| --- | --- |
+| the code and the tests the story changes | the backlog |
+| the story's commits, on `story/<ID>` | the story's documents and reviews, in `.sdlc/stories/<ID>/` |
+| the test freeze | every other story's worktree |
 
-The story's worktree holds the story. Its `.sdlc/state` is where the story
-runs, every gate and every agent works there, and the story is committed there,
-on `story/<ID>`; trunk does not move. The backlog and the story's record stay in
-the main checkout, as they do for every checkout. `sdlc start` prints the
-worktree's path and its branch, and `/sdlc:next` works the story there
-whichever checkout the session that started it was opened in. Started by hand
-from another checkout, the story is worked by opening Claude Code in its
-worktree and typing `/sdlc:next` there: `/sdlc:next` in a new session in the
-checkout start ran in begins the next story instead. A second session that starts from the main
-checkout begins the next story in a second worktree while the first is worked.
+A new worktree has only what trunk commits. If your project needs
+dependencies installed before it builds,
+[Give a new worktree what it needs](guides/tuning-commands-for-your-stack.md#give-a-new-worktree-what-it-needs)
+shows how to have that done at the start of every story.
 
-### Running stories in parallel
+> [!WARNING]
+> Change your settings, your backlog and your review policy in your project,
+> on trunk, and never in a story's worktree. `sdlc`
+> [refuses to land](troubleshooting.md#sdlc-e0055) a story whose commits change
+> anything under `.sdlc/`, the backlog or the review policy. Change the
+> contract in `CLAUDE.md` on trunk as well: a story's worktree keeps the copy
+> it was cut from, and a change on trunk reaches the stories you start after it.
 
-A person who wants several stories worked at once opens a Claude Code session for
-each story and names the story in it: `/sdlc:next <ID>` in a session in the main checkout, or
-`sdlc start <ID>` in a terminal, which makes the story's worktree, and then a
-session opened in that worktree, where `/sdlc:next` works the story. Each session
-claims its own story. sdlc approves no tool for these sessions, so each asks as
-any interactive session does.
+### Working several stories at once
 
-With `git.worktrees` false, a new story begins on trunk, in the checkout that
-has trunk checked out, and `sdlc start` first checks that trunk is fit to start
-from ([`SDLC-E0038`](troubleshooting.md#sdlc-e0038) to
-[`SDLC-E0041`](troubleshooting.md#sdlc-e0041)). Either way, a linked worktree
-made by hand works the stories it already holds, and a story under way that a
-person released to it, which `sdlc start` picks up rather than begins.
+Several stories can be worked at the same time, each in its own worktree. To
+do that, open a Claude Code session for each story and name the story in it:
+type `/sdlc:next <ID>` in a session opened in your project, or run
+`sdlc start <ID>` in a terminal and then open a session in the worktree it
+makes, where `/sdlc:next` alone works the story. Each session asks for
+permissions as any Claude Code session does: `sdlc` approves no tool on your
+behalf.
 
-### Claims and release
+A plain `/sdlc:next` typed in a new session in your project never goes back to
+a story already under way. It begins the next `ready` story, in another
+worktree. To return to a story from your project, name it:
 
-The checkout that starts a story **holds** it, and a **claim** says so: a small
-file, `<git-dir>/sdlc/claims/<ID>.json`, in the git directory every checkout of
-the repository shares, where git never shows it, commits it or pushes it. It names
-the story and the checkout's path, and nothing else. A story stays held while it
-is stopped part-way or waiting for a person, and the claim goes when the story is
-done or dropped.
+```text
+/sdlc:next AUTH-3
+```
 
-Another checkout's `sdlc start` passes over a story that is held, and a story
-that depends on one waits as it would on any story not done. Naming a held story
-to `sdlc start`, `gate`, `artifact write`, `review add`, `cost add`, `freeze`,
-`unfreeze`, `escalate` or `approve` in another checkout is refused, and the
-refusal names the checkout that holds it
-([`SDLC-E0050`](troubleshooting.md#sdlc-e0050)). A held story moves only when a
-person **releases** it with [`sdlc release`](commands.md#sdlc-release), after
-which `sdlc start` picks it up in any checkout; what the old checkout had not
-committed stays there. A checkout that is gone holds its story until then
-([`SDLC-E0051`](troubleshooting.md#sdlc-e0051)).
+A story that depends on another waits until that one has landed.
+[Make one story wait for another](guides/writing-stories.md#make-one-story-wait-for-another)
+shows how to say so in the backlog.
 
-A story held in its own worktree under `.sdlc/worktrees/` is the one exception
-for `sdlc start`. A plain `sdlc start` in another checkout passes it over, as
-any held story; named, `sdlc start <ID>` in any other checkout, the main
-checkout included, picks it up there, in its worktree, and so does
-`sdlc start` run in the worktree itself. Picked up in another Claude
-Code session, the story is taken over, as `/sdlc:next` takes a story over in
-one checkout: the new session is the one held to it, and the `sdlc` commands of
-the session that was working it are refused from then on
-([`SDLC-E0048`](troubleshooting.md#sdlc-e0048)). With `SDLC_DEBUG_FILE` set,
-`sdlc start` logs the takeover with both sessions' ids
-([seeing what happened](enforcement.md#seeing-what-happened)).
+### Which checkout holds a story
+
+The checkout that starts a story **holds** it, which for a new story is its
+own worktree. A story stays held while it is stopped part-way or waiting for
+you, until it is done or dropped. `sdlc status` in your project names each
+story that is held, and where.
+
+Holding is what keeps two sessions off the same story. Picking a story up by
+name works from anywhere, because `/sdlc:next <ID>` finds its worktree. Any
+other command that would change a held story from another checkout is
+[refused](troubleshooting.md#sdlc-e0050), and the refusal names the checkout to
+use. If a second Claude Code session picks a story up, it takes the story over:
+the new session is the one working it, and the first session's `sdlc` commands
+on it are [refused](troubleshooting.md#sdlc-e0048) from then on.
+
+You will rarely need to move a story. When you do, most often because its
+worktree was deleted by hand,
+[Move a story to another checkout](guides/stopping-and-resuming-a-story.md#move-a-story-to-another-checkout)
+shows how to release it.
 
 ### Done when it lands
 
-A story worked in its worktree is not done when its
-last gate passes. It is done when it **lands**: when trunk moves to the story's
-commits by fast-forward, which `sdlc stop` does in the story's worktree once
-every gate has passed. Until then trunk does not have it, and a story that
-depends on it waits.
+A story is not done when its last gate passes. It is done when it **lands**:
+when trunk moves forward to the story's commits. `sdlc stop` does that in the
+story's worktree once every gate has passed, and `/sdlc:next` runs that stop
+for you at the end of Gate 9. Until then trunk does not have the story, and a
+story that depends on it waits.
 
-Stories land one at a time. A stop that finds another story landing says which,
-waits up to eight minutes for it, and then carries on from trunk as that landing
-left it; `sdlc status`, in any checkout, names the story landing and every stop
-that waits. Where the stop holding the lock is not running, the line says so and
-when its lock is taken, two minutes after it was last refreshed, and the stop
-waiting takes it then: nothing is removed by hand. A stop cut short while it
-waits has changed nothing and can be run again at once. The landing checks, in order:
+Trunk moves by fast-forward and never by a merge commit. Before it moves, the
+stop checks that the story is still what the gates passed:
 
-- the worktree is clean and on `story/<ID>`, with no rebase or merge part-way;
-- the commits that would land are the story's alone, with no merge among them,
-  change nothing under `.sdlc/` or in the backlog, and leave the root
-  `CODEMAP.md` a plain file;
-- the story's commits add no unresolved conflict: the change from where the story
-  started to its tip adds no set of conflict markers (an opening line, an
-  optional base line, a separator line and a closing line, in that order, among
-  the lines it added to one file), bar in the paths that trunk's
-  [`paths.conflict_markers_intended`](configuration.md#pathsconflict_markers_intended)
-  lists ([`SDLC-E0080`](troubleshooting.md#sdlc-e0080)). It is asked of the
-  story as it stands, of the story as the stop puts it onto a trunk that moved,
-  and again after the commands. A story that trunk already holds is not asked:
-  what is on trunk is not the stop's to refuse. The commit gate asks it too, of
-  the same change, with this checkout's list;
-- trunk has not moved past the story. Where it has only moved on, as it does
-  each time another story lands, `sdlc stop` puts the story's commits onto
-  trunk as it is then, itself. Where they do not apply, it abandons that, leaves
-  the branch where it was, names the files in conflict and refuses with
-  [`SDLC-E0075`](troubleshooting.md#sdlc-e0075): resolving a conflict is a
-  person's. A trunk that was rewritten is a person's too
-  ([`SDLC-E0054`](troubleshooting.md#sdlc-e0054));
-- the frozen tests are as the freeze holds them, and no test file is there that
-  the freeze does not hold. Once the story sits on a later trunk commit than the
-  one it was cut from, a test file that only trunk changed in between is not
-  held against the story: one the story's commits do not touch and that is,
-  byte for byte on disk, the file trunk commits, or one the freeze held that
-  trunk removed. The command that accepts one says how many and names them, and
-  the record keeps the trunk commit they were compared with. A test file the
-  story's own commits added, changed or took away is refused as it always was,
-  whether or not trunk's branch has since come to point at one of those commits,
-  and so is a frozen test that the story and trunk both changed, even in
-  different places
-  ([`SDLC-E0043`](troubleshooting.md#sdlc-e0043),
-  [`SDLC-E0025`](troubleshooting.md#sdlc-e0025)). The story's own commits are
-  every commit on its branch that trunk did not hold from before: those a
-  person made by hand and those a rebase made again, as well as those the loop
-  watched. The story's record keeps a list of them (`forks`), which every
-  `sdlc gate` run adds to, and a record with no list has no test file taken as
-  trunk's; what the list does not reach is under
-  [Not held](enforcement.md#not-held). In a checkout that converts
-  line endings (`core.autocrlf`) the file on disk is not byte for byte what
-  trunk commits, so there a test file trunk gained is still refused;
-- the change is the one the reviewers saw. Where the stop itself put the story
-  onto a trunk that moved, the reviews stand, and with them a person's approval
-  before the commit, for as long as the result is the reviewed change line for
-  line: the story's lines in the same files, and nothing else different but what
-  trunk changed. A change that differs needs the reviews again
-  ([`SDLC-E0029`](troubleshooting.md#sdlc-e0029)) and, where the story waits for
-  a person, the approval again
-  ([`SDLC-E0037`](troubleshooting.md#sdlc-e0037)). A story rebased any other way
-  is measured as it always was, with the lines around its change, and where it
-  waits for a person it is approved again;
-- where the story waits for a person, the story's commits are the ones the
-  commit gate recorded, with at most commits of the root `CODEMAP.md` alone on
-  top, or the stop's own replay of them with every author and message kept. A
-  commit amended or added since is approved again
-  ([`SDLC-E0037`](troubleshooting.md#sdlc-e0037));
-- the configured commands pass on the tree that is about to be trunk, as
-  trunk's committed configuration has them
-  ([configuration](configuration.md#commands)). Where Gate 5 recorded a result for
-  that very tree, with trunk's commands and thresholds, and the story was not rebased, the
-  landing lands on that result and runs nothing again, and says so in one line naming the tree;
-  otherwise it runs them, says why first, and records what it ran. A command that fails there
-  lands nothing, and the story stays with its session to rework
-  ([`SDLC-E0055`](troubleshooting.md#sdlc-e0055)).
+- **The worktree is clean.** It is on `story/<ID>`, with nothing uncommitted
+  and no rebase or merge left part-way.
+- **The commits are the story's alone.** There is no merge commit among them,
+  they change nothing under `.sdlc/`, in the backlog or in the review policy,
+  and they add no unresolved conflict markers.
+- **Trunk has only moved forward.** If another story landed first, the stop
+  puts this story's commits onto the new trunk itself. If they do not apply, it
+  puts the branch back where it was, names the files in conflict and refuses:
+  resolving a conflict is yours. So is a trunk that was rewritten.
+- **The frozen tests are as they were frozen.** A test file that only trunk
+  changed in the meantime is not held against the story. A test file the
+  story's own commits added, changed or took away is refused, whether or not
+  trunk's branch has since come to point at one of those commits. Every commit
+  on the story's branch that trunk did not already have is the story's own, one
+  you made by hand and one a rebase made again included.
+- **The change is the one the reviewers saw.** Where the stop itself put the
+  story onto a newer trunk, the reviews stand, and so does your approval before
+  the commit, as long as the result is the reviewed change line for line. Any
+  other difference needs the reviews again, and your approval again if the
+  story waited for it.
+- **Your commands pass on what is about to become trunk.** Where Gate 5
+  recorded a result for exactly those files, with the commands and thresholds
+  trunk has, and the story was not put onto a newer trunk, the stop lands on
+  that result and runs nothing again. It says so in one line. Otherwise it
+  says why, and runs your configured commands on those files. A command that
+  fails lands nothing, and the session reworks the story.
 
-Then trunk moves, by fast-forward and never by merge, and nothing is pushed.
-The record names the commits that reached trunk, the story becomes `done`, its
-claim and its freeze are let go, and its worktree and branch are removed. The
-record and the backlog change are written in the main checkout and wait there
-for a person to commit them. A refusal leaves trunk where it was, and says so.
-One that comes after the story was put onto trunk leaves the story's branch
-there, on top of trunk, with a `replayed` event on the record, and the next
-stop starts from it. `sdlc stop` run in the story's worktree with no iteration
-running lands a finished story too, after a person has answered an escalation.
+Then trunk moves. The story becomes `done`, its test freeze is lifted, and its
+worktree and branch are removed. Nothing is pushed. The backlog and the story's
+record are changed in your project and wait there for you to commit them.
+[When the story is finished](guides/stopping-and-resuming-a-story.md#when-the-story-is-finished)
+shows what the stop prints.
 
-Putting the story onto trunk is a rebase. It makes the story's commits again,
-unsigned. It runs the filters the repository's configuration names, with the
-privileges of whoever runs the stop. It overwrites an ignored file at a path
-trunk has come to track. And an attribute that names `merge=union` for a path,
-committed in `.gitattributes` or written in the repository's own
-`info/attributes`, joins both sides' added lines there with no conflict.
+A landing that is refused leaves trunk where it was, and says what to do.
+Stories land one at a time, so a stop that finds another story landing waits
+for it, for up to eight minutes. Where a refusal says to stop again, because
+another story is still landing, because trunk moved while the landing ran, or
+because the stop was cut short, the session stops again, up to three times,
+before it hands the story to a person. A conflict comes to you at once.
 
-A stop that is killed while it lands, and not while it waits, can leave a
-rebase part-way in the story's worktree, or trunk already moved with the record
-not yet saying so. Nothing is lost in either case: stop again, and the stop
-says what it found ([`SDLC-E0055`](troubleshooting.md#sdlc-e0055)) or records
-the story as landed.
-
-A session stops again up to three times before it hands the story to a person
-with `sdlc escalate`, naming the last code and how many stops it ran, where the
-stop is refused because another story is still landing
-([`SDLC-E0006`](troubleshooting.md#sdlc-e0006)), because trunk moved while the
-landing ran and the refusal says to stop again
-([`SDLC-E0054`](troubleshooting.md#sdlc-e0054)), or where the stop was cut
-short. Reviews gone stale ([`SDLC-E0029`](troubleshooting.md#sdlc-e0029)) are
-run again, and a command that failed ([`SDLC-E0055`](troubleshooting.md#sdlc-e0055))
-is the story's to rework. A conflict
-([`SDLC-E0075`](troubleshooting.md#sdlc-e0075)) and any other code go to a
-person at once.
+There is one thing to know about a story that is put onto a newer trunk. Its
+commits are made again there, with the same authors and messages, and the new
+commits are not signed. [`sdlc stop`](commands.md#landing-a-story-from-its-worktree)
+has every line a landing can print, and
+[Troubleshooting](troubleshooting.md#sdlc-e0055) has every way one can be
+refused.
 
 ### Parallel stories and `CODEMAP.md`
 
-Every story's bookkeeper has something for the root `CODEMAP.md`, and two
-stories that each edited the file in their own branch met at the same lines:
-the second to land stopped on a conflict only a person could resolve. So a
-story worked in its own worktree does not edit the file. The order is:
+Every story has something to add to `CODEMAP.md`, the map of your codebase at
+the root of the repository. If two stories each edited that file on their own
+branch, the second to land would stop on a conflict only you could resolve. So
+a story in a worktree does not edit the file at all:
 
-1. **The bookkeeper stores sections.** At the retro it runs
-   `sdlc codemap write` with the sections the story adds or replaces, each a
-   directive line, a `##` heading and the lines under it
-   ([commands](commands.md#sdlc-codemap-write)). A section is whole, and is
-   named by its heading. The set is kept in the repository's git directory;
-   nothing in the worktree changes, and storing again replaces it.
-2. **`sdlc stop` lands the story.** Its own commits reach trunk as they always
-   did, and the story is done.
-3. **The stop then changes the map on trunk.** Still holding the lock every
-   landing holds, it reads trunk's `CODEMAP.md` as the landing left it, puts
-   each added section at the end and each replaced one in the place of the
-   section by that heading, and makes one commit of its own, `docs: map <ID>`,
-   that changes no other path. Trunk moves to it and the story's record names
-   it as `codemap_commit`. The second of two stories is applied to the map the
-   first one left, so both land with nobody asked.
+1. At the retro, the bookkeeper stores the sections the story adds or replaces
+   with `sdlc codemap write`. Nothing in the worktree changes.
+2. `sdlc stop` lands the story's own commits.
+3. The stop then puts the stored sections into trunk's `CODEMAP.md`, in a
+   commit of its own that touches no other file, with the message
+   `docs: map <ID>`.
 
-The sections are text a model wrote, and they reach trunk with no reviewer: the
-commit's message says so, the commit is not signed, and no hook of the
-repository runs for it. They are held to a narrow form when they are stored and
-again when they are applied, and applied whole or not at all. A section that is
-not what the bookkeeper read is refused by name, never merged: an added one
-whose heading trunk's map already has, or a replaced one whose text on trunk
-changed since the story began. Two stories that replace the same section are
-that case: the first one's text reaches trunk, and the second one's does not.
+The second of two stories is applied to the map the first one left, so both
+land without anybody being asked.
 
-Where the step cannot be made, **the landing stands**. The stop exits 0, prints
-[`SDLC-E0076`](troubleshooting.md#sdlc-e0076) as a warning with what was in the
-way, and keeps the sections: the kept change the messages speak of is the
-stored set, the same file. Every `sdlc` command then says the story's map
-change is waiting, until a person runs `/sdlc:remap <ID>`, or `sdlc remap <ID>` in their own terminal.
-The plain form makes the change where it still applies. `--replace` puts the
-kept sections over what trunk holds under their headings, and `--drop` discards
-them with no commit. The command is a person's because it chooses between two
-texts nobody reviewed, and the hook refuses it to every session
-([`remap-is-a-human-decision`](enforcement.md#remap-is-a-human-decision)). An
-assistant reports the warning and runs nothing more: the story is done.
+That commit is text an agent wrote, and it reaches trunk without a review,
+because the map is written after the last one. Its message says so, and it is
+not signed. [The map commit](guides/reviewing-what-landed-on-trunk.md#the-map-commit)
+shows how to find it when you review the story.
 
-A stored set belongs to the attempt that stored it. `sdlc release` drops it,
-and so does an `sdlc start` that begins the story afresh; a stop that is
-refused leaves it, so a reworked story lands with the set stored before unless
-its bookkeeper stores again ([commands](commands.md#sdlc-codemap-write)).
+Sometimes the sections no longer fit: trunk's map already has a section by a
+heading the story adds, or a section the story replaces has changed on trunk
+since the story began. The stop does not merge them. The story still lands,
+and after the lines that report the landing, the stop prints a warning:
 
-A story with nothing stored lands with no commit added. A story worked in the
-checkout that started it has no landing, so its bookkeeper edits `CODEMAP.md`
-in place, as before.
+```text
+sdlc: AUTH-4 has landed, and its change to CODEMAP.md is not on main
 
-A change to `CODEMAP.md` committed on a story's own branch is still carried to
-trunk with the story, and two of those still conflict as any file does
-([`SDLC-E0075`](troubleshooting.md#sdlc-e0075)). A project that keeps such
-commits can mark `CODEMAP.md` in `.gitattributes` with git's built-in union
-merge, `CODEMAP.md merge=union`, which the stop's replay honours. That is the
-project's choice, and `sdlc` does not write it.
+  why  the sections do not apply to the map as it is: the map already has a section "internal/session", which was to be added. The landing stands, and the change is kept at "/home/<user>/src/billing/.git/sdlc/codemap/AUTH-4.md"
+  fix  a person, in the main checkout, chooses, typing the slash command in Claude Code or the terminal command in their own terminal: "/sdlc:remap AUTH-4 --replace", or "sdlc remap AUTH-4 --replace" puts the kept sections over what main holds under those headings; "/sdlc:remap AUTH-4 --drop", or "sdlc remap AUTH-4 --drop" discards the kept change, for after they have edited CODEMAP.md themselves; and "/sdlc:remap AUTH-4", or "sdlc remap AUTH-4" makes the change once main's sections are again what the bookkeeper read; an assistant says so and runs none of these
 
-`CODEMAP.md` counts in the tree hash Gate 5 records its commands' result against, so a branch
-that carries a commit of it has its commands run again at the landing.
+  SDLC-E0076  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0076
+```
+
+Nothing about the landing needs doing again. The story's sections are kept,
+and the choice between them and what trunk holds is yours, because nobody
+reviewed either text. Read the kept file, then type one of these in Claude
+Code, in your project:
+
+```text
+/sdlc:remap AUTH-4 --replace
+/sdlc:remap AUTH-4 --drop
+```
+
+`--replace` puts the story's sections over what trunk has under those
+headings, and `--drop` discards them. Until you have chosen, every `sdlc`
+command reminds you that the change is waiting.
+[`sdlc remap`](commands.md#sdlc-remap-story) describes each form.
 
 ### Removing a worktree
 
-Each worktree is a whole checkout. The landing removes
-the story's own, with the files git ignored in it, and its branch; it keeps one
-holding changes nobody committed, or one a person locked, names it, and the
-story is still done. Any other stays until a person removes it. In the main
-checkout, with trunk checked out:
+The landing removes a story's worktree and its branch for you. It keeps a
+worktree that holds changes nobody committed, and says so. A worktree is also
+left behind when a story is dropped part-way.
+
+To see which worktrees are left and what each one holds, run `sdlc doctor` in
+your project. It names every worktree that no story holds any more, and says
+what to do with each, in order. To remove one whose work you no longer want,
+run these in your project, with trunk checked out:
 
 ```console
-$ git worktree remove .sdlc/worktrees/US-001
-$ git branch -d story/US-001
+$ git worktree remove .sdlc/worktrees/AUTH-3
+$ git branch -d story/AUTH-3
 ```
 
-`git worktree remove` refuses a worktree with changes nobody committed: look at
-them first with `git -C .sdlc/worktrees/US-001 status`, and check that no
-`sdlc start` is running for the story. `git branch -d` refuses a branch whose
-commits trunk does not have, and those commits are the story's work: never use
-`git branch -D`. A worktree whose directory was deleted by hand is cleared with
-`git worktree prune`. A worktree on no branch, as a rebase stopped part-way
-leaves it, can hold commits no branch has, and `git worktree remove` loses them
-without asking: finish or abort the rebase first. `sdlc doctor` names each
-story worktree no claim holds, and says whether its HEAD has commits trunk does
-not, on its branch or on no branch;
-[`SDLC-E0053`](troubleshooting.md#sdlc-e0053) has the rest.
+Both commands refuse rather than lose work. `git worktree remove` refuses a
+worktree with uncommitted changes, and `git branch -d` refuses a branch whose
+commits trunk does not have. Those commits are the story's work, so look before
+you reach for `git branch -D`.
 
-Do not tidy the main checkout with `git clean -x`. `.sdlc/worktrees/` ignores
-itself, which is what keeps it out of `git status`, and `git clean -x` with `-f`
-given twice removes every story worktree in it, with the work nobody committed
-there.
+> [!WARNING]
+> Don't tidy your project with `git clean -x`. `.sdlc/worktrees/` is ignored by
+> git, which is what keeps it out of `git status`, and `git clean -x` with `-f`
+> given twice removes every story's worktree, with whatever was not yet
+> committed in it.
 
-### Upgrading, and unusual repositories
+### With worktrees turned off
 
-An iteration that was running when this release was installed has no claim.
-The checkout whose `.sdlc/state/active` names it holds it, as before, and the
-first `sdlc` command there that writes records the claim. Where more than one
-checkout names the same story that way, which a worktree cut from a commit
-carrying `.sdlc/state` does, none of them holds it: each is refused until a
-person runs `sdlc stop` in all but the one they are working in. With a linked
-worktree about, an `active` naming a story nobody holds, such as one a person
-set to `blocked` by hand, is passed over by `sdlc start`; in a repository with
-one checkout it is resumed as it always was.
+Everything above is the default. With `git.worktrees` set to false under
+[`git`](configuration.md#git), stories are worked in your project itself, one
+at a time, and a few things change:
 
-A repository with no main checkout to keep the backlog in (a worktree of a
-bare clone, or of one made with `git init --separate-git-dir`) is refused
-([`SDLC-E0052`](troubleshooting.md#sdlc-e0052)). Every checkout runs the
-`sdlc` on your `PATH`, so every one of them runs the same release.
-[Enforcement](enforcement.md#a-repository-with-more-than-one-checkout) says how
-the hook holds a session to its own checkout.
+- A story begins on trunk, in your own checkout. `sdlc` refuses to start one
+  while the checkout is on another branch, or has uncommitted changes outside
+  the backlog and `.sdlc/`.
+- The story's commits are made straight onto trunk, so nothing lands. The
+  story is `done` as soon as its last gate passes.
+- The bookkeeper edits `CODEMAP.md` in place, and you commit the backlog
+  change along with the retro.
 
-A story's commit gate and the stop that lands it have to be run by the same
-release. A commit gate from this release records a story rebased onto a later
-trunk commit as measured from that commit, which a stop from an earlier release
-reads as a story that was never rebased: it lands it without running the
-configured commands on the tree that lands. `sdlc version` names the release a
-command runs. Where two releases meet on one story, as when `sdlc` is updated
-between the commit gate and the stop, or two machines share the repository, run
-the commit gate again with the release that will stop the story.
+[With worktrees turned off](guides/stopping-and-resuming-a-story.md#with-worktrees-turned-off)
+covers stopping and resuming in that mode.
+
+## Where everything lives
+
+Once you have run a story, you may wonder where its files went. Everything a
+story leaves behind is under `.sdlc/` in your project, as plain text:
+
+```text
+.sdlc/
+  config.json                    your settings
+  .gitignore                     keeps each story's trace out of git
+  templates/
+    story.schema.json            what a story in your backlog may contain
+  stories/
+    AUTH-3/
+      gate-record.json           the story's record: every gate, review and decision
+      ANALYSIS.md                Gate 2
+      THREATS.md                 Gate 2
+      TEST-PLAN.md               Gate 3
+      freeze-run.log             what the tests printed when they were frozen
+      PLAN.md                    Gate 4
+      plans/                     each revision of the plan that was stored
+      reviews/
+        tests_frozen-test-reviewer-1.md
+        design_review-architect-1.md
+        code_review-code-reviewer-1.md
+      implementation-run.log     what your commands printed at Gate 5
+      VERIFICATION.md            Gate 6
+      RETRO.md                   Gate 9
+      DECISIONS.md               every decision the loop made for the story
+      trace.jsonl                what the story cost, as measured on your machine
+      .gitignore                 keeps the two logs out of git
+  worktrees/
+    AUTH-3/                      the story's own checkout, while it is under way
+```
+
+Each review is one file, named for its gate, its reviewer and its round, so a
+second look by the architect is `design_review-architect-2.md`. You don't
+read `gate-record.json` yourself: `sdlc status` and `sdlc log` read it for you.
+
+The story's directory is worth committing once the story has landed. It is the
+history of how the change was made, and it is what makes a story reviewable
+months later.
+[What to commit from here on](guides/adding-to-an-existing-project.md#what-to-commit-from-here-on)
+says which of these paths belong in git and which look after themselves.
+
+### The trace
+
+While a story runs, `sdlc` measures it: how long each gate took, which agents
+ran, how many tokens each used, and which commands were run. That measurement
+is the story's trace, `trace.jsonl`, and you read it with
+[`sdlc trace`](commands.md#sdlc-trace).
+[See where the time and tokens went](guides/tracking-what-a-story-costs.md#see-where-the-time-and-tokens-went)
+shows how.
+
+The trace holds times, counts, exit codes and short names: an agent's type, a
+model's name, a tool's name, the program a command starts with. It holds no
+prompt, no response, no command arguments, no file paths and no error
+messages.
+
+It is kept out of git, because it is a measurement of your machine and not
+part of the story. It also stops growing at 4 MiB, so that a story that runs
+for weeks still reads in a moment, and `sdlc trace` says so when that happens.
+
+The trace is a measurement, not evidence. No gate reads it, so nothing in it
+can pass or fail a story.
+
+## Where to go next
+
+- [Agents](the-agents.md): who does the work at each gate, and how to change
+  the team
+- [Enforcement](enforcement.md): what the hook holds an agent to, and what it
+  cannot hold
+- [Human approval gates](guides/human-approval-gates.md): every reason the
+  loop stops for you, and how to answer
+- [When a reviewer blocks](guides/when-a-reviewer-blocks.md) and
+  [When a frozen test is wrong](guides/when-a-frozen-test-is-wrong.md): the two
+  stops you are most likely to meet
+- [Stopping and resuming a story](guides/stopping-and-resuming-a-story.md):
+  putting a story down, and what happens when it is finished
+- [Commands](commands.md) and [Configuration](configuration.md): every command
+  and every setting

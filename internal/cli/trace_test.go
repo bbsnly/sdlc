@@ -809,24 +809,22 @@ func TestAC25TheDocsDescribeTheTrace(t *testing.T) {
 			t.Errorf("AC-25 docs/commands.md does not say %q", want)
 		}
 	}
-	loop := page(t, "the-loop.md")
-	start := strings.Index(loop, "## Where everything lives")
+	start := strings.Index(commands, "### Reading the trace file")
 	if start < 0 {
-		t.Fatal(`docs/the-loop.md has no "Where everything lives"`)
+		t.Fatal(`docs/commands.md has no "Reading the trace file"`)
 	}
-	where := loop[start:]
+	where := commands[start:]
 	if next := strings.Index(where[3:], "\n## "); next >= 0 {
 		where = where[:next+3]
 	}
 	for _, want := range []string{"trace.jsonl", "agent_start", "agent_end", "agent_run", "turn", "refusal", "shell", "diff",
 		"notification", "api_error", "compaction", "truncated", "4 MiB"} {
 		if !strings.Contains(where, want) {
-			t.Errorf("AC-25 docs/the-loop.md's \"Where everything lives\" does not name %q", want)
+			t.Errorf("AC-25 docs/commands.md's \"Reading the trace file\" does not name %q", want)
 		}
 	}
-	config := page(t, "configuration.md")
-	if !strings.Contains(loop+config, "asked_model") || !strings.Contains(loop+config, "asked_effort") {
-		t.Error("AC-25 neither docs/the-loop.md nor docs/configuration.md says what asked_model and asked_effort mean")
+	if !strings.Contains(where, "asked_model") || !strings.Contains(where, "asked_effort") {
+		t.Error("AC-25 docs/commands.md's \"Reading the trace file\" does not say what asked_model and asked_effort mean")
 	}
 	enforcement := page(t, "enforcement.md")
 	for _, want := range []string{"trace.jsonl", "`trace-is-written-by-the-tool`", "sdlc trace"} {

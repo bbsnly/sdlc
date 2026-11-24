@@ -795,7 +795,7 @@ func TestAC13TheDocsDescribeTheLedgerTheClosingsAndTheRefusals(t *testing.T) {
 			[]string{"sdlc finding close", "open", fdOpenCode}},
 		{"the-loop.md", page(t, "the-loop.md"),
 			[]string{"--finding", "sdlc finding close", "--fixed", "--declined", "--referred", "ledger"}},
-		{"the-agents.md", page(t, "the-agents.md"),
+		{"CONTRIBUTING.md", contributing(t),
 			[]string{"--finding", "sdlc finding close", "--fixed", "--declined", "--referred", "scout rule"}},
 	} {
 		flat := strings.ToLower(fdFlat(c.text))

@@ -1,4993 +1,1690 @@
 # Enforcement
 
 - [Introduction](#introduction)
-- [What this is, and what it is not](#what-this-is-and-what-it-is-not)
-- [When any of it applies](#when-any-of-it-applies)
-  - [`not-checked-in-time`](#not-checked-in-time)
-- [Rules on writing files](#rules-on-writing-files)
-  - [`claude-config-is-the-persons`](#claude-config-is-the-persons)
-  - [`agents-config-is-the-persons`](#agents-config-is-the-persons)
-  - [`instructions-above-the-project`](#instructions-above-the-project)
-  - [`write-outside-repository`](#write-outside-repository)
-  - [`write-protected-path`](#write-protected-path)
-  - [`backlog-is-not-edited`](#backlog-is-not-edited)
-  - [`review-policy-is-not-edited`](#review-policy-is-not-edited)
+- [What sdlc stops, and what it leaves to you](#what-sdlc-stops-and-what-it-leaves-to-you)
+  - [When any of it applies](#when-any-of-it-applies)
+  - [A person's decisions, refused in every session](#a-persons-decisions-refused-in-every-session)
+  - [How a command is read](#how-a-command-is-read)
+  - [A path outside the repository](#a-path-outside-the-repository)
+- [Decisions that are yours](#decisions-that-are-yours)
+  - [`approval-is-a-human-decision`](#approval-is-a-human-decision)
+  - [`unfreeze-is-a-human-decision`](#unfreeze-is-a-human-decision)
+  - [`acknowledgement-is-a-human-decision`](#acknowledgement-is-a-human-decision)
+  - [`remap-is-a-human-decision`](#remap-is-a-human-decision)
+  - [`release-is-a-human-decision`](#release-is-a-human-decision)
+  - [`assignment-is-a-human-decision`](#assignment-is-a-human-decision)
+  - [`stop-is-a-human-decision`](#stop-is-a-human-decision)
+  - [`slash-command-is-a-human-decision`](#slash-command-is-a-human-decision)
+- [The tests](#the-tests)
+  - [`frozen-test-is-not-edited`](#frozen-test-is-not-edited)
+  - [`frozen-test-through-the-tool`](#frozen-test-through-the-tool)
+  - [`no-new-test-after-the-freeze`](#no-new-test-after-the-freeze)
+  - [`implementer-does-not-write-tests`](#implementer-does-not-write-tests)
+- [Each agent's job](#each-agents-job)
+  - [`orchestrator-delegates`](#orchestrator-delegates)
+  - [`sdet-writes-tests-only`](#sdet-writes-tests-only)
+  - [`researcher-writes-analysis-only`](#researcher-writes-analysis-only)
+  - [`reviewer-reviews`](#reviewer-reviews)
+  - [`bookkeeper-writes-the-retro-and-the-map`](#bookkeeper-writes-the-retro-and-the-map)
+  - [`review-is-recorded-by-its-reviewer`](#review-is-recorded-by-its-reviewer)
+  - [`staffing-is-recorded-by-the-project-manager`](#staffing-is-recorded-by-the-project-manager)
+  - [`project-manager-only-staffs`](#project-manager-only-staffs)
+- [The loop's records](#the-loops-records)
+  - [`loop-state-through-the-tool`](#loop-state-through-the-tool)
   - [`gate-record-is-written-by-the-tool`](#gate-record-is-written-by-the-tool)
   - [`review-is-written-by-the-tool`](#review-is-written-by-the-tool)
   - [`gate-artifact-is-written-by-the-tool`](#gate-artifact-is-written-by-the-tool)
   - [`trace-is-written-by-the-tool`](#trace-is-written-by-the-tool)
   - [`decisions-are-written-by-the-tool`](#decisions-are-written-by-the-tool)
-  - [`frozen-test-is-not-edited`](#frozen-test-is-not-edited)
-  - [`no-new-test-after-the-freeze`](#no-new-test-after-the-freeze)
-  - [`implementer-does-not-write-tests`](#implementer-does-not-write-tests)
-  - [`sdet-writes-tests-only`](#sdet-writes-tests-only)
-  - [`researcher-writes-analysis-only`](#researcher-writes-analysis-only)
-  - [`reviewer-reviews`](#reviewer-reviews)
-  - [`bookkeeper-writes-the-retro-and-the-map`](#bookkeeper-writes-the-retro-and-the-map)
-  - [`orchestrator-delegates`](#orchestrator-delegates)
-- [Rules on shell commands](#rules-on-shell-commands)
-  - [How a command is read](#how-a-command-is-read)
-  - [A path outside the repository](#a-path-outside-the-repository)
-  - [`loop-state-through-the-tool`](#loop-state-through-the-tool)
-  - [`protected-path-through-the-tool`](#protected-path-through-the-tool)
-  - [`frozen-test-through-the-tool`](#frozen-test-through-the-tool)
-  - [`archive-members-unknown`](#archive-members-unknown)
-  - [`directory-entries-unknown`](#directory-entries-unknown)
-  - [`unfreeze-is-a-human-decision`](#unfreeze-is-a-human-decision)
-  - [`approval-is-a-human-decision`](#approval-is-a-human-decision)
-  - [`acknowledgement-is-a-human-decision`](#acknowledgement-is-a-human-decision)
-  - [`remap-is-a-human-decision`](#remap-is-a-human-decision)
-  - [`release-is-a-human-decision`](#release-is-a-human-decision)
-  - [`stop-is-a-human-decision`](#stop-is-a-human-decision)
-  - [`review-is-recorded-by-its-reviewer`](#review-is-recorded-by-its-reviewer)
-  - [`assignment-is-a-human-decision`](#assignment-is-a-human-decision)
-  - [`slash-command-is-a-human-decision`](#slash-command-is-a-human-decision)
   - [`recorded-event-comes-from-the-host`](#recorded-event-comes-from-the-host)
-  - [`staffing-is-recorded-by-the-project-manager`](#staffing-is-recorded-by-the-project-manager)
-  - [`project-manager-only-staffs`](#project-manager-only-staffs)
+  - [`commands-run-as-configured`](#commands-run-as-configured)
+- [Your configuration and instructions](#your-configuration-and-instructions)
+  - [`write-protected-path`](#write-protected-path)
+  - [`protected-path-through-the-tool`](#protected-path-through-the-tool)
+  - [`backlog-is-not-edited`](#backlog-is-not-edited)
+  - [`review-policy-is-not-edited`](#review-policy-is-not-edited)
+  - [`claude-config-is-the-persons`](#claude-config-is-the-persons)
+  - [`agents-config-is-the-persons`](#agents-config-is-the-persons)
+  - [`instructions-above-the-project`](#instructions-above-the-project)
+  - [`write-outside-repository`](#write-outside-repository)
+- [Commits, branches and checkouts](#commits-branches-and-checkouts)
   - [`commit-gate`](#commit-gate)
   - [`commit-in-another-checkout`](#commit-in-another-checkout)
+  - [`branch-through-the-tool`](#branch-through-the-tool)
   - [`worktree-through-the-tool`](#worktree-through-the-tool)
   - [`worktree-setting-through-the-tool`](#worktree-setting-through-the-tool)
-  - [`branch-through-the-tool`](#branch-through-the-tool)
-  - [`git-command-cannot-be-read`](#git-command-cannot-be-read)
+- [Keeping the rules on](#keeping-the-rules-on)
   - [`enforcement-stays-on`](#enforcement-stays-on)
-  - [`commands-run-as-configured`](#commands-run-as-configured)
   - [`story-stays-in-its-session`](#story-stays-in-its-session)
-  - [Claude config through the shell](#claude-config-through-the-shell)
+- [When a command cannot be checked](#when-a-command-cannot-be-checked)
+  - [`not-checked-in-time`](#not-checked-in-time)
   - [`command-too-deep-to-read`](#command-too-deep-to-read)
+  - [`git-command-cannot-be-read`](#git-command-cannot-be-read)
+  - [`archive-members-unknown`](#archive-members-unknown)
+  - [`directory-entries-unknown`](#directory-entries-unknown)
   - [`too-many-links`](#too-many-links)
   - [`path-too-long`](#path-too-long)
-- [A repository with more than one checkout](#a-repository-with-more-than-one-checkout)
-  - [Not held: the known gaps](#not-held)
 - [Stopping mid-story](#stopping-mid-story)
 - [Rules the command enforces](#rules-the-command-enforces)
+- [What sdlc does not stop](#what-sdlc-does-not-stop)
+  - [When the hook cannot do its job](#when-the-hook-cannot-do-its-job)
+  - [Not held](#not-held)
+  - [Report a hole](#report-a-hole)
 - [Turning it off](#turning-it-off)
 - [Seeing what happened](#seeing-what-happened)
+- [Where to go next](#where-to-go-next)
 
 ## Introduction
 
-The loop is a set of rules, and rules that are only asked for are advice. So
-that the rules hold, a hook watches what the assistant working your story tries
-to do, and refuses the few things that would get round a gate.
+The loop is a set of rules, and a rule an agent is only asked to keep is
+advice. So `sdlc` enforces them. While a story is being worked on, a hook looks
+at every file the agent is about to write and every shell command it is about
+to run, and refuses the few that would get round a gate: committing early,
+editing a frozen test, approving its own work.
 
-Most of the time you will meet this as a single refusal. It names the rule that
-refused the call and the command to run instead, and the assistant carries on
-from there. If you want to read one, start with
-[Why was I refused?](guides/why-was-i-refused.md).
+A refusal says what the rule is, what to do instead, and the rule's name in
+square brackets:
 
-This page lists every rule that is actually enforced, what it refuses, and what
-to do instead. There are two groups of them: the
-[rules on writing files](#rules-on-writing-files) and the
-[rules on shell commands](#rules-on-shell-commands). You do not need to read
-them in order. Look up the rule named in a refusal, and come back to the
-sections on [when any of it applies](#when-any-of-it-applies) and on
-[turning it off](#turning-it-off) when you need them. The gaps that are known
-and not closed are listed under [Not held](#not-held).
+```text
+this story has not been through the gates that come before committing: dor has not passed. Instead: finish the gates -- `sdlc status` shows where this story stands; committing without them is for the person running the session to decide [commit-gate]
+```
 
-## What this is, and what it is not
+Most of the time the agent reads that and carries on by itself. This page is
+where you look the rule up. It says what `sdlc` stops and what it leaves to
+you, lists every rule under the name a refusal prints, says plainly what is not
+stopped, and ends with how to turn enforcement off and how to see what the hook
+decided.
 
-Enforcement uses Claude Code's own surfaces and nothing else: a `PreToolUse`
-hook, a `Stop` hook, the plugin's agents, and the `sdlc` command. A
-`PostToolUse` hook runs your [`commands.fmt_file`](configuration.md#commands),
-and refuses nothing. No git hooks are installed, and `sdlc` never writes to
-`.git/hooks`.
+If you have a refusal in front of you and want to be walked through it, start
+with [Why was I refused?](guides/why-was-i-refused.md).
 
-The same hook records what a story costs in its
-[`trace.jsonl`](the-loop.md#the-trace), which `sdlc trace` reads back: on
-`PostToolUse`, `PostToolUseFailure`, `SubagentStart`, `SubagentStop`, `Stop`,
-`Notification`, `StopFailure` and `PostCompact`, and a refusal on `PreToolUse`.
-Recording never refuses anything and never changes what the hook answers, and
-it carries on with `SDLC_ENFORCE` set to `0`: a span recorded then has no
-refusals, because none were made. Only sdlc writes the trace
-([`trace-is-written-by-the-tool`](#trace-is-written-by-the-tool)).
+## What sdlc stops, and what it leaves to you
 
-**This is a discipline tool, not a sandbox.** It constrains an assistant that is
-trying to do the right thing and takes the shortest path to it. It does not
-defend against one that is trying to escape, and it would be dishonest to imply
-otherwise.
+Everything `sdlc` enforces protects one of seven things. Each row links to its
+rules:
 
-The rules below are narrow on purpose, and every refusal names the sanctioned
-route. A refusal that only says "no" makes an assistant retry, work around the
-hook, or give up, all worse than the thing being prevented.
+| What is protected | An agent cannot | Left to you |
+| --- | --- | --- |
+| [Your decisions](#decisions-that-are-yours) | approve its own work, lift the freeze, mark the log as read, or end a story part-way | every one of them, with a slash command or in your terminal |
+| [The tests](#the-tests) | change a frozen test, add one after the freeze, or write tests as the implementer | lifting the freeze when a test is wrong |
+| [Each agent's job](#each-agents-job) | do another agent's work, or record another's review | doing any of the work yourself, once the story is put down |
+| [The loop's records](#the-loops-records) | edit a gate record, a review, a decision, a gate's document or the story's measurements by hand, or choose the environment your commands run in when their result is recorded | reading them |
+| [Your configuration and instructions](#your-configuration-and-instructions) | edit `.sdlc/config.json`, `CLAUDE.md`, the backlog, the review policy or your Claude Code configuration | editing them by hand, between stories |
+| [Commits, branches and checkouts](#commits-branches-and-checkouts) | commit before the gates have passed, push, fetch, move a branch, or add and remove worktrees | pushing, and anything else you do to a branch |
+| [The rules themselves](#keeping-the-rules-on) | turn enforcement off, or start a second session nothing holds | turning it off when you start a session |
 
-## When any of it applies
+Nothing else about a session is touched. Your tests, your build and your own
+tooling run exactly as they did before.
+
+The hook is asked only about what an agent does. It is never asked about what
+you type in your own terminal, so everything in the last column stays open to
+you while a story runs. Where the decision is yours, the rule's entry says how
+you make it.
+
+Beside the rules that protect something, a few refuse a command only because
+the hook [could not check it](#when-a-command-cannot-be-checked), and one check
+has no rule name at all: a session that
+[stops in the middle of a story](#stopping-mid-story) is sent back to work.
+
+### When any of it applies
 
 The hook does not watch every session. It holds one session to one story, and
-leaves every other session alone. Nothing is enforced unless
-**all** of these are true:
+nothing is enforced unless all of these are true:
 
-1. The project has `.sdlc/config.json`, found by looking up from where the session and the
-   tool call are, as far as the repository root and not into a directory
-   `GIT_CEILING_DIRECTORIES` names.
-2. A story is being worked on — `.sdlc/state/active` names one.
-3. The call comes from the Claude Code session working the story, or from one
-   of its agents. `sdlc start` records the session it runs in, in
-   `.sdlc/state/session`, so the session that starts or resumes a story is the
-   one held to it, and every other session in the repository is left alone.
-   Run outside Claude Code, `sdlc start` records no session: a new story holds
-   no session until one picks it up with `/sdlc:next`, and a story resumed that
-   way keeps the session it had. `/sdlc:next` stops rather than work a story
-   when `sdlc start` could not record the session it runs in. A call that names
-   no session, or a `.sdlc/state/session` that is empty, unreadable or names
-   something that cannot be a session id, holds no session either.
-4. `SDLC_ENFORCE` is not `0` in the environment the session started with.
+1. The project is set up for the loop: it has a `.sdlc/config.json`.
+2. A story is being worked on.
+3. The call comes from the session working that story, or from one of its
+   agents. That is the session where `/sdlc:next` was typed. A story started
+   with `sdlc start` in a terminal is held by no session until somebody types
+   `/sdlc:next`.
+4. `SDLC_ENFORCE` was not `0` when the session started.
 
-### Other sessions in the same repository
+`sdlc status` and `sdlc doctor` both say when a story is under way and no
+session is working it.
 
-In every other session the plugin is silent: it never sends a session back at
-the end of its turn, runs no formatter, writes nothing and prints nothing, with
-the binary installed or not. It refuses nothing there but a person's decisions,
-below. `sdlc status` and `sdlc doctor` say when a story is under way
-and no session is working it.
+Every other session in the repository is left alone. The plugin is silent
+there: it refuses nothing but
+[a person's decisions](#a-persons-decisions-refused-in-every-session), sends no
+session back to work and runs no formatter. Left alone means every rule, so
+another session can edit code and tests, and commit. Work it leaves
+uncommitted in the story's checkout goes into the story's commit, and a commit
+it makes there is caught at the story's next gate, which
+[refuses](troubleshooting.md#sdlc-e0046) and hands the story to you. Its `sdlc`
+commands cannot write into the story either: each one that records something
+[refuses](troubleshooting.md#sdlc-e0048) from a Claude Code session other than
+the one working the story.
 
-Left alone means every rule. Another session can edit code and tests and
-commit, and the loop commits a story with `git add -A`, so work it has left
-uncommitted goes into the story's commit. A commit it makes moves HEAD
-under the story, and from then on every gate before the story's own commit is
-refused ([SDLC-E0046](troubleshooting.md#sdlc-e0046)), so the story goes to a
-person.
-
-Another session's `sdlc` commands do not write into the story.
-`sdlc artifact write`, `review add`, `gate`, `escalate`, `cost add`, `freeze`,
-`unfreeze`, `approve`, `release`, `staffing set`, `staffing amend` and `stop`
-refuse to run, and change nothing, with
-[SDLC-E0048](troubleshooting.md#sdlc-e0048), when `CLAUDE_CODE_SESSION_ID`
-names a Claude Code session other than the one `.sdlc/state/session` records.
-This keeps one session's `sdlc` commands out of a story another is working. It
-is not a barrier against an assistant set on getting round it: `sdlc start` is
-not refused, because it is how `/sdlc:next` takes a story over; a command with
-no `CLAUDE_CODE_SESSION_ID` reads as a terminal, and a person; and another
-session can still edit `.sdlc/` without `sdlc`. Nothing is refused while no
-session is recorded, and `sdlc ack` changes no story.
+The rules follow the session, not the directory. A session held to a story is
+held to the same rules in every checkout of the repository: your main checkout,
+the story's own worktree, and any other story's.
 
 ### A person's decisions, refused in every session
 
-Where no story is being worked on, or the call comes from another session, the
-hook allows everything and says nothing, with one exception: a person's
-decisions, refused from a tool call in any session, in any project with
-`.sdlc/config.json` the call reaches (the session's, the working directory's,
-or one a path in the command names). With `SDLC_ENFORCE` set to `0`, the hook
-refuses nothing at all, a person's decisions included; the commands' own
-refusals below stay, [SDLC-E0079](troubleshooting.md#sdlc-e0079) among them.
-
-- `sdlc ack` is refused there always. The log of what landed on trunk is always
-  there for a person to read.
-- `sdlc remap` is refused there always, its help included
-  ([`remap-is-a-human-decision`](#remap-is-a-human-decision)). A landed story
-  is not one that waits, so whether a story waits is never asked for it.
-- `sdlc release` is refused there always. It takes a story from the checkout
-  holding it ([`release-is-a-human-decision`](#release-is-a-human-decision)).
-- `sdlc staffing assign`, and a run of `sdlc` whose subcommand cannot be read,
-  are refused there always
-  ([`assignment-is-a-human-decision`](#assignment-is-a-human-decision)).
-- `sdlc approve` and `sdlc unfreeze` are refused while a project the call
-  reaches, or the one the command moves to with `cd`, has a story a person could
-  decide on: one under way, whichever session holds it or none, or one handed to
-  a person with `sdlc escalate` that nobody has answered. With no story under
-  way and none waiting, they are not. After a move the hook cannot follow, such
-  as `cd "$OLDPWD"`, `cd ../$name` or `popd`, they are refused as if a story
-  waited where it led.
-- A command nested too deep, or read too many ways, for the rules to read
-  ([`command-too-deep-to-read`](#command-too-deep-to-read)) is refused whatever
-  it runs, since any of these could be inside it.
-- A write to the person's Claude Code configuration, by a file tool or a
-  command, is refused there always
-  ([`claude-config-is-the-persons`](#claude-config-is-the-persons)).
-- Starting a Claude Code session that could expand one of the person's slash
-  commands is refused there always
-  ([`story-stays-in-its-session`](#story-stays-in-its-session)). That includes
-  Terminal or iTerm told by `osascript` to run `claude`, `socat` given an
-  address that runs it, and a program that gives a terminal given the path
-  `CLAUDE_CODE_EXECPATH` holds, and an `osascript` or `socat` whose text the
-  rules cannot read to the end.
-- Running the sdlc hook by hand on `UserPromptExpansion`, the event on which it
-  runs a person's slash command, is refused there always
-  ([`slash-command-is-a-human-decision`](#slash-command-is-a-human-decision)),
-  and so is running it on one of the eight events it records
-  ([`recorded-event-comes-from-the-host`](#recorded-event-comes-from-the-host)).
-- A command that takes one of the six protected names away from what it runs,
-  blanks it or sets it is refused there always
-  ([`enforcement-stays-on`](#enforcement-stays-on)): `AI_AGENT`, and the five
-  US-130 added, `CLAUDE_CODE_EXECPATH`, `GIT_EDITOR`,
-  `CLAUDE_CODE_SESSION_ATTENDED`, `CLAUDE_CODE_CHILD_SESSION` and
-  `CLAUDE_CODE_ENTRYPOINT`.
-
-A command is read to its end, so `sdlc approve A-1; sdlc ack --through HEAD` is
-refused for the `sdlc ack` in it. `sdlc escalate` ends the iteration, so the
-answer to it always comes while no session is held, and no session's assistant
-approves another's story. A session that is not using sdlc never meets the
-refusals of `sdlc ack`, `sdlc remap`, `sdlc release`,
-`sdlc staffing assign`, `sdlc approve` and `sdlc unfreeze`: each is refused only
-when an assistant runs that command itself. A command nested too deep to read
-is refused in any of those projects, whatever else it does.
-
-Behind those rules, the commands refuse themselves. `sdlc approve`,
-`sdlc unfreeze`, `sdlc ack`, `sdlc remap`, `sdlc release` and
-`sdlc staffing assign` each refuse to run, before anything is read, with
-[SDLC-E0079](troubleshooting.md#sdlc-e0079), in a process whose environment has
-any of `CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`, `CLAUDE_CODE_CHILD_SESSION`,
-`CLAUDE_PID` or `AI_AGENT`, the environment variables Claude Code sets in the
-processes it starts. [SDLC-E0074](troubleshooting.md#sdlc-e0074) answers first
-for `sdlc staffing assign` where the session id is set. A model's Bash or
-PowerShell has those variables, and so does every program it starts that keeps
-its environment, so the six commands are refused even where the shell rules
-cannot read them: behind `osascript -e`, `su -c`, `vim -c`, awk's
-`system()`, `git -c core.pager` or `GIT_EDITOR`, through `Invoke-Expression`
-or a PowerShell argument in parentheses, behind a wrapper the rules do not read
-through that keeps the environment, and in a shell or an interpreter fed its
-program on standard input. `sudo` and `doas` start a command without them, and
-so does `env -u` given their names; written out, the shell rules read the
-command after them and refuse it there. `env -i`, `exec -c`, `arch -c` and
-`env -u AI_AGENT` are refused themselves, whatever they run
-([`enforcement-stays-on`](#enforcement-stays-on)). A `!` line typed in Claude
-Code run from a terminal has the variables too, so there a person types the
-slash command instead. In Claude Desktop a `!` line has none of them and runs
-the command (Claude Code 2.1.309, seen on 2026-10-29), and so does a slash
-command, as below.
-
-A slash command a person types reaches the hook, which hands the command none
-of those variables, so it records. The hook runs it only where its own
-environment is that of a hook Claude Code runs itself for a session a person
-attends, which it tells by four variables, read in Claude Code 2.1.321 in
-Claude Desktop (entrypoint `claude-desktop`) on 2026-11-13:
-
-- `AI_AGENT` holds the label Claude Code gives a hook it runs itself,
-  `claude-code_`, its version with dashes for dots, and `_harness`. A model's
-  Bash or PowerShell, and what it starts, has `claude-code_<version>_agent`
-  instead; a session started from one gives its own hook that label again, so
-  this part alone does not tell a
-  [nested session](the-loop.md#introduction) from the person's.
-- `CLAUDE_CODE_EXECPATH` is not set. Claude Code sets it for a model's tools
-  and not for a hook it runs itself.
-- `GIT_EDITOR` is not `true`. Claude Code sets it to `true` for a model's
-  tools; an editor a person set in their own shell does not count, by the
-  person's decision of 2026-11-13.
-- `CLAUDE_CODE_SESSION_ATTENDED` is `1`. Claude Code writes it afresh for every
-  hook: `1` for a session a person attends, `0` for a `claude -p` started from
-  another session, which is a child (`CLAUDE_CODE_CHILD_SESSION`) and was not
-  started interactively. A session that is not interactive counts as attended
-  only where it is no child and its entrypoint (`CLAUDE_CODE_ENTRYPOINT`) is
-  one Claude Code counts, so those two are what a model would change to make a
-  nested session look attended.
-
-Anything else, a variable the hook cannot read among it, refuses: the typed
-command answers that it did not run, names the first variable that failed (by
-name, never its value), and sends the person to a `!` line in Claude Desktop or
-a terminal outside Claude Code. A model's shell running the hook by hand has a
-tool's label, `CLAUDE_CODE_EXECPATH` and `GIT_EDITOR=true`, and a `claude -p`
-it starts has `CLAUDE_CODE_SESSION_ATTENDED=0`, so neither runs one. The six
-names those four come down to are each protected by
-[`enforcement-stays-on`](#enforcement-stays-on), in every session.
-
-What the four tell is a process Claude Code started itself in a session a
-person attends, not a person at the keyboard. They rest on two more things
-Claude Code does, read in 2.1.321 and not run: a skill marked
-`disable-model-invocation`, as the six decisions' skills are, is not expanded
-for a prompt the model schedules with a cron or wake-up tool, which otherwise
-reaches the hook as a typed one would; and a message put on the session's own
-messaging socket (`CLAUDE_CODE_MESSAGING_SOCKET`, seen by name in a Claude
-Desktop session) is queued with slash commands skipped. What neither the
-commands nor the hook catches is listed in [Not held](#not-held): a program
-that starts with a clean environment or removes those variables; a part-way
-`sdlc stop`, which is not one of the six; a program Claude Code starts itself
-from a project's configuration, such as a hook in `.claude/settings.json` or
-`.claude/settings.local.json`, whose environment passes the hook's check; and a
-slash command a program types into the person's own prompt, as `tmux
-send-keys` can, which reaches Claude Code's own hook as the person's typing
-would. `SDLC_ENFORCE=0` turns none of this off.
-
-Asking one of these commands for its help decides nothing and is not refused:
-`sdlc approve --help`, on a line of its own or after a `cd`, alone or piped to
-`head`, `tail`, `cat` or `grep`. The flags are read as `sdlc` reads them, so
-the last of several help flags counts, `--help=false` is not help, and neither
-is `--help` after `--` or as the value of another flag. Any other form is
-refused as the command would be: after another command, with a trailing
-comment, with a file redirect, piped to a pager or any other program, in the
-background, through `env` or another program, or with a variable or a
-substitution among its words, since the hook cannot be sure the command would
-not run. `sdlc help approve` prints the same help and is not refused in any of
-those forms, since it names no command that decides anything. The one exception
-is `sdlc remap`, whose help is refused as the command is; `sdlc help remap`
-prints the same text and is not refused.
-
-### When the hook fails open
-
-The hook also **fails open**: an unreadable payload, a missing configuration, a path it cannot
-resolve — an error ends in "carry on", and in the session working a story, with
-a message saying what is off. A call that cannot be read names no session, so
-it goes through with nothing said. A hook that blocks a session because of its
-own bug is worse than the mistake it was trying to prevent.
-
-The exceptions are the files a rule exists to protect. A test freeze or a gate
-record that cannot be read is not treated as absent, because then breaking one
-would be the way round it: tests stay frozen and the commit waits until the file
-reads. `sdlc doctor` names it under "loop state".
-
-Running out of time is not one of those errors either. A call the hook checks
-and cannot decide in time is refused, with the rule name
-[`not-checked-in-time`](#not-checked-in-time). That section also says what is
-still left open.
-
-Nor is a slash command a person typed, such as `/sdlc:approve`. The hook runs
-the command it stands for and shows the person what it printed, and the
-command's text never reaches the model. Carrying on there would hand that text
-to the model, which is told only to say the command did not run. So a command
-the hook could not run, because its arguments did not read, because the
-session has no project folder, or because the command itself gave way, is
-answered with a block that says it did not run and what to do. Nothing is
-decided either way: the block stops only the model reading the command.
-
-A slash command acts on the directory the session is in, as a terminal there
-would, so that a person can type one in a story's worktree. The model can move
-a session's directory between calls, into another checkout that takes part, and
-the person's next command then acts there. What it printed, which the person is
-shown, names the story and the checkout, and a story that checkout does not
-have is refused.
-
-### `not-checked-in-time`
-
-Refuses a call the hook checks and could not check in time: a command it could
-not finish reading in time, or a change to a file it could not check in time.
-The refusal says that the hook ran out of time. It does not say the call broke
-a rule, and no rule was applied to it.
-
-Claude Code gives the hook 30 seconds for a tool call and then kills it. A
-killed hook says nothing, and the call runs with no rule applied. So the hook
-keeps a deadline of its own, 25 seconds from when it starts, and refuses a call
-it checks and has not decided by then. Reading the call, finding the project
-and the story, and reading the command all count against it. A command long
-enough to take that much reading could get round every rule on this page with
-nobody told. Once the hook knows it checks the call, it no longer can; see
-[What is still left open](#what-is-still-left-open).
-
-Measuring the working tree for a commit counts against the deadline too, but
-that check has a limit of its own, 20 seconds from the first `git` call the
-hook makes. Where that limit ends first, the commit goes through with a
-warning that the tree could not be measured, as it always has. Only a commit
-still being measured when the hook's 25 seconds end is refused.
-
-This refusal is given for the calls the hook checks:
-
-- any call from the session working a story;
-- a command from any session, in any project with `.sdlc/config.json` the call
-  reaches (the session's, the working directory's, or one a path in the command
-  names), which is where
-  [a person's decisions](#a-persons-decisions-refused-in-every-session) are
-  refused.
-
-So a session that holds no story can meet this refusal too, for a command in
-such a project that takes the hook too long to read. A file written by that
-session is never refused for time. Nor is any call that reaches no such
-project, nor anything while `SDLC_ENFORCE` is `0`. A call decided in time is
-answered exactly as it was before there was a deadline.
-
-*Instead:* run a command in shorter parts, one call for each. Try a change to a
-file again as it is. If a short command, a commit, or the same change is
-refused this way again, it is not the call that is slow: stop and tell the
-person running the session.
-
-If you are that person, [Troubleshooting](troubleshooting.md#warnings-the-hook-prints)
-says which lines of the hook's log to read. [Turning it off](#turning-it-off)
-is the last resort, because it disables every rule on this page and not only
-this refusal.
-
-[`SDLC_HOOK_DEADLINE_MS`](configuration.md#sdlc_hook_deadline_ms) can shorten
-the deadline. Nothing lengthens it.
-
-The links a command's paths go through are bounded by a count, under
-[`too-many-links`](#too-many-links), so a command of many paths through long
-chains of links is refused for that before it can use up the deadline.
-
-#### What is still left open
-
-The hook refuses only once it knows the call is one it checks, so that a call
-it does not check, such as a file written by a session holding no story, never
-hears from the plugin because the hook was slow. Until it knows, a deadline
-that passes changes nothing. The hook carries on finding out,
-refuses the call there and then if it is one it checks, and otherwise answers
-as it always does.
-
-So a hook that Claude Code kills before it has learnt whether the call is one it
-checks still lets the call through and says nothing. Finding the project means
-walking up from every path a command names, and that walk is not bounded: a
-command can make it outlast the 30 seconds, and so can a call that never
-finishes arriving. Nothing appears in the session. With `SDLC_DEBUG_FILE` set,
-the log may hold a line saying the deadline passed before the hook knew whether
-it checks the call, if the hook lived to write it.
-
-There is a second case. Once the hook has decided to allow a commit, it writes
-down the commit the work is made on, and that step is not under the deadline. A
-hook killed there has already allowed the commit, which goes through, and the
-note is lost; [SECURITY.md](../SECURITY.md) lists it among the limits of what
-the commit gate knows.
-
-This refusal makes no reading faster. It answers for the calls that run out of
-time once the hook knows what it is looking at.
-
-## Rules on writing files
-
-These apply to `Write`, `Edit`, `MultiEdit` and `NotebookEdit`. Reading,
-searching and running things are nobody's business here.
-
-### `claude-config-is-the-persons`
-
-Refuses writing the person's Claude Code configuration, from any session, in a
-project that takes part in the loop: `~/.claude` and everything under it,
-`~/.claude.json`, and the directories `CLAUDE_CONFIG_DIR` and
-`CLAUDE_CODE_PLUGIN_CACHE_DIR` name. Links are followed both ways, so a link in
-the repository that leads there is refused, and so is a write through
-`~/.claude` to wherever it leads. The file tools are refused by this rule, and
-so is a shell command that writes there, as
-[the shell's reading of it](#claude-config-through-the-shell) says.
-
-That configuration decides the hooks, plugins, skills, agents and permissions
-every session runs under, this plugin's own launcher, binary and checksums
-included. A session that could write it could take the hook away, give itself
-the permissions a person withholds, or change what a person's slash command
-runs, and then type it. `~/.claude.json` is refused whole, on purpose: it holds
-the person's MCP servers and the settings of every project, and no part of it
-is the model's to change. A project kept under `~/.claude` is refused with it.
-
-*Instead:* say what you would change there and why, and stop. The person
-changes their own Claude Code configuration, in Claude Code's settings or by
-hand.
-
-It holds only in a project that takes part. A session in a project that does
-not is held to nothing, so it can still write all of this, and every project on
-the machine then runs what it wrote. That is the residual a person accepted
-for this rule; [SECURITY.md](../SECURITY.md) says more.
-
-### `agents-config-is-the-persons`
-
-Refuses writing the person's `~/.agents`, and everything under it, from any
-session, in a project that takes part in the loop. `~/.agents` is the folder
-Codex, Cursor, Copilot, Gemini CLI and other agent tools load skills from. It
-has nothing to do with sdlc's own [agents](the-agents.md). A skill written there
-runs in the person's next session with one of those tools, outside every rule
-on this page. A `~/.agents` linked into a dotfiles directory is held where it
-leads, and it is placed by every spelling of the home the
-[`~/.claude` rule](#claude-config-is-the-persons) reads. The shell refuses the
-same writes under this rule, as
-[the shell's reading of it](#claude-config-through-the-shell) says.
-
-A command that fills or empties the whole home, such as `cp -r dotfiles/. ~`
-or `rm -rf ~`, writes both `~/.agents` and `~/.claude`. It is refused under
-this rule, which is asked before the `~/.claude` rule, because `~/.agents` is
-the folder less often known to be there, unless a rule asked earlier refuses it
-first: in a story session, taking away a home that holds a checkout is refused
-as [`loop-state-through-the-tool`](#loop-state-through-the-tool).
-
-A path the command writes whose own spelling names `.agents` is asked under
-this rule before the loop-state rule, so `echo x > $D/.agents/s`, which could
-be `~/.agents`, is refused here rather than as the project's own `.agents`. A
-word whose `..` climbs back out of `.agents` is judged where it lands instead,
-counting the names after `.agents` rather than its text: `rm -rf
-$D/.agents/../.sdlc/state` is refused as
-[`loop-state-through-the-tool`](#loop-state-through-the-tool) and `echo x >
-$D/.agents/../CLAUDE.md` as
-[`protected-path-through-the-tool`](#protected-path-through-the-tool), each
-with that rule's way on, while `.agents/x/../s` stays inside and keeps this
-rule.
-
-*Instead:* say what you would change there and why, and stop. The person
-installs or edits a skill in their own `~/.agents`, by hand or from their own
-terminal, outside the session.
-
-### `instructions-above-the-project`
-
-Refuses a write, while a story is being worked on, to an instruction file in a
-directory above the project. The project is the checkout this session works
-in, so a story's worktree has the main checkout above it.
-
-- The files are `CLAUDE.md`, `CLAUDE.local.md` and `AGENTS.md`, in any case,
-  in such a directory or in its `.claude`.
-- The directories are the one the project is in and every one above it, the
-  home among them. One beside the project, such as `~/code/other`, is not above
-  it, and neither is one below the home that the project is not in.
-
-Claude Code loads those files from every directory above the one it starts in,
-so what a session writes there is read as instructions by every later session
-started below it, in this project and in others.
-
-The file tools follow links to place the file. The shell places a word by its
-text first, and then by asking the disk whether the project's own `.sdlc` is
-below it, so `~/code/CLAUDE.md` is held where the project is
-`~/code/project`. It reads the name through globs, braces and backslashes, as
-it reads the project's own files: `~/code/CLAUDE.m?` and `~/code/CLAUDE.{md,x}`
-are refused. A directory spelt with a glob counts as above unless the part
-before the glob is the project or inside it, so `~/co*/CLAUDE.md` is refused
-with a reason that says to spell the directory out without a glob if it is not
-above the project. One with `**` followed by `..` counts as above unless, read
-with no directories for each `**`, it stays in the project: `rm
-sub/**/../CLAUDE.md` names the project's own `CLAUDE.md`, and is refused as
-[`protected-path-through-the-tool`](#protected-path-through-the-tool). A `..`
-after a link is read where the link leads, so `<above>/s/../CLAUDE.md`, where
-`s` is a link into the project, is the project's own file too. A link or an
-install counts by where it lands, whatever the destination is called, and a
-copy or a move by where it lands as [that section](#links-and-installs) reads
-it.
-
-A copy or extraction that fills such a directory is refused as well, because
-it may put an instruction file there: `rsync`, `scp`, `ditto`, a `cp`, `mv`,
-`ln` or `install` whose source puts what it holds in the destination itself,
-`tar`, `gtar` and `bsdtar` extracting, `unzip`, `7z x` or `7z e`, `pax -r`,
-`cpio -i`, `jar x`, `unar`, and PowerShell's `Expand-Archive`. A copy's source
-puts what it holds there where it is spelt for its contents (`src/.`, `src/`,
-or with `-T`), where it is a glob that can match an instruction file, or where
-it is a `.claude`, whose files are held in a directory above as in the
-directory itself. A source the hook cannot read as a plain name counts too,
-because it could be any of these: one spelt with a variable, a substitution, a
-backtick or a `%name%`, quoted or not (the refusal says to spell the source's
-path out in full), one that `xargs` or `parallel` feeds, whatever its replace
-string and whether or not the command also names sources, or that `find -exec`
-feeds through a `{}` (name the files on the command line), one beginning
-with a `~`, `~-`, `~+` or `~name` the shell expands (spell the path out), and
-one ending in `..` (name the directory). A source whose last name the shell
-fills in is refused whether it is quoted or not, since quotes stop the shell
-splitting a word but not filling it in: `cp -r "$D" ..` copies whatever `D`
-holds. A variable in an earlier part leaves the last name spelt, so a quoted
-`"$D"/docs` is not refused; an unquoted `$D/docs` is, since the shell can split
-it into words the name does not show. A substitution anywhere in the source,
-`/tmp/p/x$(echo y)` or `/tmp/$(echo p)/x`, quoted or not, is refused too, since
-the hook cannot tell what it fills in. The command a `find -exec` runs is judged
-as it would be on its own, up to its `;` or `+`, so a contents source there
-(`{}/.`) is refused as it is in a plain `cp`. A source that lands under its own name puts
-no instruction file there, so `mv build.log ..` and `cp -r docs ..` are not
-refused. Each is read into the directory its option names, including a target
-glued to a bundle of letters ending in t (`cp -rt ..`) or a valued option
-after the operands (`install x .. -m 644`), or the one the command runs in
-where it names none. After a `cd` into an absolute path with a glob in it, such
-as `cd /wor? && tar -xf p.tar`, that directory is read from the glob, and the
-reason says it can name a directory above the project, with the advice to
-spell it out without a glob if it is not one.
-
-Where `ln`, `install` or a decompressor puts the file somewhere the command
-did not spell, the reason names that place and says which, in brackets: "(ln
-puts the link there)". Where the destination may be a file rather than a
-directory, it says "if ... is a directory".
-
-What the shell cannot see:
-
-- a link the same command makes and then writes through;
-- a directory spelt with a variable other than the home, which is refused by
-  name instead;
-- where a `cd` into a glob leaves the command; the file is then judged by its
-  name, as the project's (a copy or extraction after a `cd` into an absolute
-  glob is read from the glob, as above);
-- a program that writes the file itself.
-
-*Instead:* say what you would change there and why, and stop. The person
-changes the instruction files above the project by hand, outside a running
-iteration. For a copy or extraction: say what you would put there and why, and
-stop, or write the files inside the project instead.
-
-#### After a `cd` the hook cannot place
-
-Some `cd`s leave the shell somewhere the words do not say:
-
-- one given `CDPATH`, on the line or in the environment the session started
-  in, which looks for a relative directory under each entry first; where the
-  line names `CDPATH` in a way the hook does not read as a value, such as
-  `CDPATH+=`, from a variable, with `read`, or through zsh's `cdpath` array, a
-  relative `cd` could be anywhere (a read such as `$CDPATH`, `unset CDPATH`, or
-  a longer word such as a file called `cdpath.go` does not do that; any other
-  mention of the name, a search for it or a comment included, is read as one
-  that may set it); a relative entry is searched from where the shell is, and
-  where the hook cannot place that, the `cd` could be anywhere too, and the
-  reason says whether the entry came from the line or from the environment the
-  session started in; and a `cd` that, through `CDPATH`, could leave the shell
-  in more than 16 places, each counted once and counting those it could
-  already be in, could be anywhere as well, so that the hook's work keeps in
-  step with the command's length. A directory the shell could reach more than
-  one way counts once, and where the command or the line sets `CDPATH`, and
-  neither unsets it nor sets it empty, a `cd` from a directory an entry holds,
-  to the same name again, is not counted below itself where the search
-  certainly reaches the entry first, since the shell finds that directory
-  there; a value the session started with is not enough for that, because the
-  hook cannot tell it is the one your shell holds;
-- `cd -` and `popd`, which go back to a directory the command does not show;
-- a `cd` of two words, which zsh reads as a substitution in the directory it
-  is in;
-- one that starts with a variable, such as `cd "$(git rev-parse
-  --show-toplevel)"`;
-- a bare `cd`, and one to `~` or a path below it, which go to the home
-  directory, wherever the command set `HOME` to before it;
-- one under `eval`, and one in a script handed to a shell inside another
-  script, such as `bash -c "sh -c 'cd x'"`, which the hook does not read;
-- one into a `**` with a `..` after it, or a `cd ..` after one.
-
-A `cd` in a script handed to a shell, as in `bash -c 'cd build && rm -rf
-out'`, moves the rest of that script and not the command around it; the
-script's words are judged from where it started as well. A `cd` inside a
-quoted word of a command that is no shell, as in `echo 'x; cd /tmp'`, does
-not move the command. The hook reads the command's quotes to tell these
-apart, and where that reading leaves the shell somewhere other than every
-`cd` would, what follows is judged from both places.
-
-After such a `cd`, a relative write is judged as written and also below each
-directory the shell could be in: given `CDPATH=<root>`, `cd .sdlc && rm -rf
-state` is refused as [`loop-state-through-the-tool`](#loop-state-through-the-tool).
-The reason quotes the `cd` that lost the place, which may come before the one
-you think of as the cause: a later `cd` that searches a `CDPATH` does not
-restore the place, since where no entry holds the directory the shell stays
-below wherever it was. A refusal of a removal names the operand, not an
-option such as `-rf`, wherever an operand is held too.
-A copy or extraction is placed from each such directory, and where none is
-known it is refused under this rule, because it may fill a directory above the
-project:
-
-```text
-after `cd -`, which the hook cannot place because it goes back to the directory
-before, which the command does not show, this command may put files into a
-directory above the project, the project being the checkout this session works
-in; the files may include an instruction file; Claude Code loads CLAUDE.md,
-CLAUDE.local.md and AGENTS.md from every directory above the one it starts in
-```
-
-*Instead:* spell the directory out with an absolute path, or `cd` to the
-directory you mean by an absolute path with no variable or glob; otherwise say
-what you would copy there and why, and stop. Where an absolute `cd` would not
-help, the route names the fix for the cause instead:
-
-- for a `cd` under `eval`: move the `cd` out of the eval;
-- for one in a script inside another script: move the `cd` out of the inner
-  script;
-- for one after a `CDPATH` the hook does not read: set `CDPATH` as one plain
-  assignment (`CDPATH=/a:/b`), or leave the name `CDPATH` out of the command;
-- for one that searches a relative `CDPATH` entry from where the hook cannot
-  place the shell: spell each entry as an absolute path, or leave `CDPATH`
-  out;
-- for one that could leave the shell in more places than the hook follows:
-  spell the `cd`s by absolute paths, which search no `CDPATH`; or leave
-  `CDPATH` out of the command, and ask the person to leave it out of the
-  environment the session starts in, such as their shell's startup file.
-
-A command that sets `CDPATH` once, as in `export CDPATH=/a:/b:.;`, and then
-runs several `cd`s is not counted that way: the hook does not tell which `cd`s
-come after the assignment, and one before it searches the value the session
-started with, or none. Put the value in front of each `cd` instead, as in
-`CDPATH=/a:/b:. cd x`.
-`unset CDPATH;` is not offered, because a `readonly CDPATH` makes it fail and
-the `cd`s after it still search. The environment the session starts in is the
-person's to change, not the assistant's: an assistant that meets a `CDPATH`
-there should use absolute `cd`s, or ask the person to change it.
-
-Where nothing places the shell, a relative write or removal is also judged
-from each directory of the project that would make the word a held path, or a
-path inside one: one that a held path runs through, where the next name is the
-word's first. So `cd - && rm -rf state` is refused as
-[`loop-state-through-the-tool`](#loop-state-through-the-tool), since in
-`.sdlc` it is `.sdlc/state`, and the reason starts "after `cd -`, which the
-hook cannot place because it goes back to the directory before, which the
-command does not show, the command could be in .sdlc, where". The reason names
-the operand the command acts on, not an option word, as a project-relative
-path. A story's record counts where the disk lists it in `.sdlc/stories` of
-the checkout that keeps the records, so `cd - && rm -rf US-7` is refused while
-a story `US-7` exists; where that listing cannot be read in full the reason
-says so and that any name there could be a story's record. To this refusal the
-route adds that, if the command is meant for another directory, you can `cd` to
-it by an absolute path with no variable or glob so the hook can place the
-shell, or the fix for the cause named above. A directory that is held is not
-one of them, or every name would be refused as inside `.sdlc/state`.
-
-A relative write or removal whose first name is a glob is refused too, under
-[`directory-entries-unknown`](#directory-entries-unknown), because the glob
-could match an instruction file or the loop's own state in whatever directory
-the shell is in. A plain `cd "$D" && rm -rf build`, which fills nothing, names
-no held path and has no glob, is judged as before; so is `rm -rf $D/*`, whose
-ambiguity is the variable directory `$D` rather than the lost shell.
-
-After a `cd` that searches a `CDPATH` the hook does not read, a relative entry
-from where the hook cannot place the shell, or more places than the hook
-follows, the shell could be in any
-directory at all, the git directory among them, so every relative
-write or removal is refused under
-[`directory-entries-unknown`](#directory-entries-unknown), whatever its name.
-
-### `write-outside-repository`
-
-Refuses a write that resolves outside the repository, symlinks followed.
-
-It also refuses a write into another checkout of this repository nested inside
-the one the session is held in: a story's worktree under `.sdlc/worktrees/`,
-written from a session held in the main checkout, by its path or through a
-link. A file there is that checkout's work, not this story's, and its freeze and
-loop state are that checkout's too. The refusal names the checkout the file is
-in.
-
-*Instead:* work inside the repository; if you need a file elsewhere, ask. A
-file in another checkout of this repository belongs to that checkout's story:
-work in the checkout this session holds, and leave that one to the session
-holding its story.
-
-### `write-protected-path`
-
-Refuses any write to `.git`, `.sdlc/config.json`, `.sdlc/state` or
-`.sdlc/claude-progress.json` at the root of the repository, and to `.claude`,
-`.agents`, `CLAUDE.md`, `CLAUDE.local.md` and `AGENTS.md` at any depth, in any
-case. A nested one is refused with the reason the root's gets and a clause that
-says why it is held wherever it is: Claude Code reads a `CLAUDE.md`,
-`CLAUDE.local.md` or `.claude` in a subdirectory when it works there, and other
-agent tools read `AGENTS.md` and load skills from `.agents` the same way. This
-makes the file tools and the shell agree: the shell has refused those names at
-any depth all along.
-
-A name held only because the case is folded says so, in the file tools and the
-shell alike, so `docs/agents.md` is not called an instruction file without a
-word on why: the reason ends "; the name is matched without regard to case, so
-docs/agents.md is held as AGENTS.md is, because the disk may treat them as one
-file". A name spelt exactly as the held one keeps its reason as it was.
-
-Configuration is the human's, and loop state is the tool's. An assistant editing
-either can make the record say something that did not happen.
-
-*Instead:* change configuration by hand outside a running iteration; change loop
-state through the `sdlc` command.
-
-`CLAUDE.md`, and `AGENTS.md` beside it, are in that list for the same reason the
-test freeze exists. A rule
-the agent can edit is a rule that stopped applying to it, and a contract rewritten
-to get past a gate takes every gate after it with it. If a rule is genuinely
-wrong, the loop's answer is to stop and say so, not to edit it and carry on.
-
-### `backlog-is-not-edited`
-
-Refuses any write to the backlog file, wherever
-[`backlog.path`](configuration.md#backlogpath) puts it. Where the configured name is a link to
-another file in the repository, the rule goes by where a write lands: a file tool can write through
-the name, and the shell rule refuses the name and leaves the target.
-
-The backlog holds the acceptance criteria the tests are held to and each story's
-`risk_tier`, which, with the paths the configuration lists, decides whether a
-person approves the commit. An assistant that lowered a story to `low`
-mid-iteration would take that pause away. The
-`sdlc` command still records a story's status there as the loop moves it.
-
-*Instead:* if a story's criteria or risk tier are wrong, say which and stop.
-Change the backlog by hand outside a running iteration.
-
-### `review-policy-is-not-edited`
-
-Refuses every agent's write to the review policy, wherever
-[`reviews.policy`](configuration.md#reviewspolicy) puts it, ahead of the role rules. A write is
-compared with the configured path without regard to case. Where the configured name is a link to
-another file in the repository, the rule goes by where a write lands, as
-[`backlog-is-not-edited`](#backlog-is-not-edited) does. What the rules do not read is in
-[Not held](#not-held).
-
-Reviewers read the copy in the story's worktree and it tells them what to report, so an implementer
-that could edit it could edit what its own reviewers obey.
-
-*Instead:* if the policy is wrong, say what and stop. A person commits a change on trunk between
-stories, and a running story keeps the copy it was cut from. To apply a change to this story, end the
-story, commit it on trunk and start again. A change made in the story's worktree does not get
-anywhere: the landing refuses it ([SDLC-E0055](troubleshooting.md#sdlc-e0055)).
-
-### `gate-record-is-written-by-the-tool`
-
-Refuses any in-place edit of `gate-record.json`, in any story's directory and
-not only the one being worked on. A finished story's record is the evidence
-that it finished, and the same is true of its reviews and its documents below.
-
-*Instead:* `sdlc gate <name> pass|fail --note "..."`.
-
-### `review-is-written-by-the-tool`
-
-Refuses any write under a story's `reviews/` directory.
-
-*Instead:* `sdlc review add <gate> <role> <verdict> --important <n> --nits <n>`, with one
-`--finding "<important|nit> [path]: <text>"` for each finding the review counts, which stamps the
-review with what was in front of the reviewer. Each number is the reviewer's own count.
-
-### `gate-artifact-is-written-by-the-tool`
-
-Refuses any in-place write of `ANALYSIS.md`, `THREATS.md`, `TEST-PLAN.md`,
-`PLAN.md`, `VERIFICATION.md` or `RETRO.md`.
-
-This one refuses **everyone**, including the agent whose gate it is. Two reasons,
-and they point the same way. A gate's document is loop state, and loop state
-goes through the tool. And Claude Code refuses a subagent's file write when the
-filename reads like a report, so "only the researcher may write `ANALYSIS.md`"
-is a rule nobody could keep.
-
-*Instead:* `sdlc artifact write <name>`.
-
-### `trace-is-written-by-the-tool`
-
-Refuses any write to a story's `trace.jsonl`, in any story's directory, by a
-file tool or a shell command, from every agent and the main conversation alike.
-Spellings that fold to the same file on a case-insensitive disk, and the
-`::$DATA` stream on Windows, are the same name. A `trace.jsonl` outside a
-story's directory is not this rule's, and reading the trace is never refused.
-
-The trace is the loop's measurements of the story, written by sdlc as it runs
-([the trace](the-loop.md#the-trace)); a measurement the assistant can write is
-not a measurement. The shell rules hold it as they hold the gate record: a
-redirect, `rm`, `mv`, `cp`, `tee`, a hard link onto it or of it (`ln`, `link`,
-`fsutil hardlink create`, `mklink /h`, `New-Item -ItemType HardLink`), and a
-named pipe made at its name (`mkfifo`, `mknod`) are refused. The hook's turn
-marks, `.sdlc/state/trace-read.json`, are under `.sdlc/state` and held with it
-([`write-protected-path`](#write-protected-path),
-[`loop-state-through-the-tool`](#loop-state-through-the-tool)).
-
-*Instead:* there is nothing to record by hand: read it with `sdlc trace` and
-the story's id, and put anything else you want kept in your hand-back.
-
-### `decisions-are-written-by-the-tool`
-
-Refuses any write to a story's `DECISIONS.md`, in any story's directory, by a
-file tool, from every agent and the main conversation alike. Spellings that
-fold to the same file on a case-insensitive disk are the same name. A
-`DECISIONS.md` outside a story's directory is not this rule's, and reading the
-file is never refused.
-
-The file lists the implementation decisions the loop made on the story
-([two kinds of decision](the-loop.md#two-kinds-of-decision)), and `sdlc decide`
-writes it again from the story's gate record each time it records one. A
-decision the assistant could rewrite in place is not a record of one. The
-shell rules hold it under
-[`loop-state-through-the-tool`](#loop-state-through-the-tool).
-
-*Instead:*
-
-```text
-sdlc decide <ID> --question ... --option ... --option ... --chosen ... --reason ... --by <role>
-```
-
-### `frozen-test-is-not-edited`
-
-Refuses any edit of a file in the freeze, from any role.
-
-*Instead:* change the code until the test passes. If the test itself is wrong,
-say which acceptance criterion it got wrong and stop. The person running the
-session lifts the freeze with `/sdlc:unfreeze`, or `sdlc unfreeze --reason "..."`, which puts the
-change on the record.
-
-### `no-new-test-after-the-freeze`
-
-Refuses a new test file once the tests are frozen, unless
-`freeze.allow_new_test_files` is on.
-
-*Instead:* say which case is missing and stop. The frozen files are frozen too,
-so the case cannot go into one of them either: the person running the session
-can unfreeze and freeze again so the new test is covered. With the setting on,
-run `sdlc freeze` after adding the file, or `tests_frozen`, `plan`,
-`implementation`, `verification` and `commit` refuse with `SDLC-E0043`. If the
-file is a scratch file outside the repository, write its path out in full in a
-plain command.
-
-A shell command that would create a new test file — a redirect, `touch`, `cp` —
-is refused
-by the same rule, and so is naming one in a command that runs `sed`, `awk`,
-`perl` or another interpreter other than plainly as the file it is given to
-read. Removing a test file the freeze does not hold is not: that is what
-`SDLC-E0043` asks for. Nor is a path the hook places outside the repository,
-which is no test of this project's, whatever its name: a scratch copy is
-changed with a plain command, as
-[A path outside the repository](#a-path-outside-the-repository) sets out. Where
-the rule refuses a path written out in full outside the repository that the
-hook did not place there, the refusal says so: it names the word, the
-repository it was measured against, and what stopped the hook placing it. Where
-it refuses a word the hook could not read as a path, such as one that starts
-with a variable, the refusal says that the hook could not tell where the word
-leads. A relative word read in the repository gets neither, and nor does a glob
-that is the pattern a `find` looks for.
-
-"New" is what the freeze does not hold, not what was written recently, so a
-test file that has been there for years reports here too. A frozen test can be
-reported here rather than as a frozen test, depending on how it was named; what
-to do is the same either way.
-
-### `implementer-does-not-write-tests`
-
-Refuses the implementer writing any test file, frozen or not, before the freeze
-or after it, through the file tools or through the shell, and, where `sed`,
-`awk`, `perl` or another interpreter runs in the command, naming one other than
-plainly as the file it is given to read.
-
-Reading one is not: `sed -n 1,5p internal/x_test.go` names it plainly as the
-file `sed` reads. `cat internal/x_test.go | sed -n 1,5p` names it somewhere
-else, and is refused.
-
-Through the shell, a path the hook places outside the repository is no test of
-this project's and is not refused: the implementer changes a scratch copy with
-a plain command, as
-[A path outside the repository](#a-path-outside-the-repository) sets out. The
-file tools refuse the same path, for being outside. Where the rule refuses,
-through the shell, a path written out in full outside the repository that the
-hook did not place there, the refusal says so: it names the word, the
-repository it was measured against, and what stopped the hook placing it. Where
-it refuses a word the hook could not read as a path, such as one that starts
-with a variable, the refusal says that the hook could not tell where the word
-leads. A relative word read in the repository gets neither, and nor does a glob
-that is the pattern a `find` looks for.
-
-This is not a setting: `freeze.allow_new_test_files` lets the test author add
-one, never the implementer.
-
-*Instead:* make the existing tests pass; if they are wrong, say so rather than
-changing them. If the file is a scratch file outside the repository, write its
-path out in full in a plain command.
-
-After the freeze, the rules above answer first: a frozen file is refused as
-`frozen-test-is-not-edited` and a new one as `no-new-test-after-the-freeze`, so
-this is the rule named only before the freeze, or once the setting lets a new
-file past.
-
-### `sdet-writes-tests-only`
-
-Refuses the test author writing anything that is not a test, its own story
-directory, or `CODEMAP.md`.
-
-*Instead:* write the tests. If this project keeps fixtures somewhere the loop
-does not recognise, say which directory and stop: the person running the session
-adds it to `paths.tests`, outside the iteration.
-
-### `researcher-writes-analysis-only`
-
-Refuses the analysis agent writing outside its own story directory and
-`CODEMAP.md`.
-
-### `reviewer-reviews`
-
-Refuses any of the eight reviewing agents — architect, security, red-team, perf,
-human-advocate, verifier, code-reviewer and test-reviewer — writing outside the story's own
-directory. The retro agent has a rule of its own, below.
-
-None of the eight is given a file-writing tool, so this is a backstop, not the
-thing keeping them out: it is what still holds if an agent's tool list grows.
-Like every rule on this page, it governs the file-writing tools. A reviewer's
-shell commands meet the shell rules instead, which protect loop state, the
-freeze and the commit, and not your source.
-
-A reviewer that changes the work is reviewing its own, and the independence that
-made the review worth having is gone. The story directory stays open so a
-reviewer can work something out on paper; the verdict itself still goes through
-`sdlc review add`, which the rule above holds it to.
-
-*Instead:* record the verdict with
-`sdlc review add <gate> <role> approve|block --important <n> --nits <n>`, with one
-`--finding "<important|nit> [path]: <text>"` for each finding the review counts, and say what is
-wrong rather than fixing it.
-
-### `bookkeeper-writes-the-retro-and-the-map`
-
-Refuses the retro agent writing anything but its own story directory and
-`CODEMAP.md`.
-
-The retro records what happened. An agent that can change the code while writing
-up the lessons can also write up lessons it has just made untrue.
-
-*Instead:* `sdlc artifact write retro`; `CODEMAP.md` is the only other thing this
-gate produces.
-
-### `orchestrator-delegates`
-
-Refuses the main conversation writing code or tests during an iteration, and
-any subagent that is not one of the loop's own — Claude Code's general-purpose
-agent, or one of yours. Code or tests here is every file outside `.sdlc/` and
-`CODEMAP.md`, so a page of documentation is refused as well.
-
-The gates exist so that each is done by an agent that cannot see the others'
-reasoning. The conversation doing the work itself is the failure the loop exists
-to prevent, and it is reached without breaking a single stated rule unless
-something refuses it. Handing the work to a subagent the loop does not know is
-the same failure one step removed.
-
-*Instead:* delegate the story's work to the agent whose gate it is. A file that
-is not the story's work, such as a note for the person or a commit message,
-goes under the story's own directory, `.sdlc/stories/<ID>/`, where the file tools
-may write it; the loop's own records there are still written only by `sdlc`.
-If neither fits, say what the work is and stop: ending the iteration to do the
-work outside the loop is the person's decision.
-
-The directory is the one in the checkout the session works in. A story with a
-worktree has two: the one in the main checkout holds the gate documents, and a
-session in the worktree may not write there
-([`write-outside-repository`](#write-outside-repository)); the one in the
-worktree is the one the route means.
-
-Keep such a file out of the commit and remove it before the commit gate is
-recorded. `sdlc init` does not ignore `.sdlc/stories/`, so in a project that has
-not chosen to, a file left there is committed with the story, and one left
-uncommitted counts as uncommitted work at the commit gate
-([SDLC-E0032](troubleshooting.md#sdlc-e0032)). A commit message is read by the
-commit itself: leave it out of what is staged, commit with it, and remove it
-before the gate is recorded.
-
-## Rules on shell commands
-
-Every rule above governs the file-writing tools, and two of them —
-`no-new-test-after-the-freeze` and `implementer-does-not-write-tests` — hold
-against a shell command too. The rest would leave
-`cat > .sdlc/stories/A-1/ANALYSIS.md` walking past them. The rules below close
-that, and nothing else about your shell is touched: your tests, your build and
-your tooling run exactly as before.
-
-They apply to every tool that runs a command: `Bash`, `PowerShell` and
-`Monitor`.
-
-This is pattern matching, not a shell. It is deliberately narrow.
-
-A failed run of an agent is reported with `sdlc team failure`, which the session running the
-story uses, its own report of a failed `sdlc:project-manager` run included. The project manager
-may not run it itself ([`project-manager-only-staffs`](#project-manager-only-staffs)), and no
-other rule here refuses it.
-
-If a refusal sent you here, go straight to the rule it named. The next section
-says how a command is read before any rule judges it, and you may skip it until
-you need to know why a particular spelling was, or was not, read.
-
-If [`sdlc doctor`](commands.md#sdlc-doctor) sent you here for a command in
-`.sdlc/config.json`, it asked the same classifier about that command as the main
-conversation would run it from the project root, with no story under way. It
-does not know the agent's role or a story's state, so a rule that turns on them
-can be named for a command the hook allows (a `git commit` under
-[`commit-gate`](#commit-gate) is allowed once the gates have passed) and missed
-for one it refuses. Change the command so that it does not do what the rule
-refuses, by hand, in your own terminal.
+A few commands are a person's decision. An agent that could run one would be
+approving its own work, lifting the freeze on its own tests, or choosing which
+stories nobody reads. So the hook refuses them from an agent's tool call in
+every session of a project set up for the loop, whether or not that session is
+working a story:
+
+| Command | Refused | Rule | You type |
+| --- | --- | --- | --- |
+| `sdlc approve` | while a story is under way where the call runs, or one is waiting for your answer | [`approval-is-a-human-decision`](#approval-is-a-human-decision) | `/sdlc:approve` |
+| `sdlc unfreeze` | while a story is under way where the call runs, or one is waiting for your answer | [`unfreeze-is-a-human-decision`](#unfreeze-is-a-human-decision) | `/sdlc:unfreeze` |
+| `sdlc ack` | always | [`acknowledgement-is-a-human-decision`](#acknowledgement-is-a-human-decision) | `/sdlc:ack` |
+| `sdlc remap` | always | [`remap-is-a-human-decision`](#remap-is-a-human-decision) | `/sdlc:remap` |
+| `sdlc release` | always | [`release-is-a-human-decision`](#release-is-a-human-decision) | `/sdlc:release` |
+| `sdlc staffing assign` | always | [`assignment-is-a-human-decision`](#assignment-is-a-human-decision) | `/sdlc:assign` |
+
+You make each one by typing its slash command, in Claude Code or in Claude
+Desktop, or by running the command in your own terminal, where the hook is not
+asked.
+[Running the loop from Claude Desktop](claude-desktop.md#the-commands-that-are-yours)
+has the table. A seventh decision, ending a story before its gates have
+passed, is refused only in the session working that story, under
+[`stop-is-a-human-decision`](#stop-is-a-human-decision).
+
+The hook runs a slash command only where it can tell that Claude Code ran the
+hook itself, for a session a person attends. It tells by four environment
+variables that Claude Code sets one way for your session and another for the
+tools an agent runs: `AI_AGENT`, `CLAUDE_CODE_EXECPATH`, `GIT_EDITOR` and
+`CLAUDE_CODE_SESSION_ATTENDED`. Where one of them says otherwise, as in a
+session an agent started, the command answers that it did not run and names
+the variable.
+[A slash command did not run](troubleshooting.md#a-slash-command-did-not-run)
+says what to do then. In Claude Desktop a `!` line, such as
+`!sdlc approve AUTH-3`, is the other way in.
+
+Asking a command for its help decides nothing and is not refused:
+`sdlc approve --help` goes through. The exception is `sdlc remap`, whose help
+is `sdlc help remap`.
+
+The hook is the first line, and the commands themselves are the second. Each
+of the six [refuses to run](troubleshooting.md#sdlc-e0079) in any process that
+Claude Code started, however the command was reached, and it does so with
+enforcement turned off too.
+
+In the same sessions the hook also refuses what would let an agent reach one
+of these decisions by another route:
+
+- writing your Claude Code configuration, or your `~/.agents`
+  ([`claude-config-is-the-persons`](#claude-config-is-the-persons),
+  [`agents-config-is-the-persons`](#agents-config-is-the-persons));
+- starting a Claude Code session that could type one of your slash commands,
+  or one in a terminal of its own, which would look attended
+  ([`story-stays-in-its-session`](#story-stays-in-its-session));
+- running the hook by hand as if you had typed one, or as if Claude Code had
+  reported something
+  ([`slash-command-is-a-human-decision`](#slash-command-is-a-human-decision),
+  [`recorded-event-comes-from-the-host`](#recorded-event-comes-from-the-host));
+- changing one of the variables that tell an agent's tools from your session
+  ([`enforcement-stays-on`](#enforcement-stays-on));
+- a command too deeply nested for the hook to read, or one it could not read
+  in time, since any of the above could be inside it
+  ([`command-too-deep-to-read`](#command-too-deep-to-read),
+  [`not-checked-in-time`](#not-checked-in-time)).
 
 ### How a command is read
 
-#### Wrappers the rules read through
-
-The rules read past what only wraps a command:
-
-- `( … )`, `{ … }` and a leading `!`, and the shell's own `if`, `then`, `else`,
-  `elif`, `do`, `while`, `until`, `coproc`, `function` and `time` with its
-  options, and zsh's `[[ … ]]` short forms and `always`;
-- `env` with the values its `-u`, `-C` and `-P` take, and macOS's `arch` with
-  its `-arch`, `-d` and `-e`;
-- zsh's precommand modifiers `noglob`, `nocorrect` and `-`, and its
-  `repeat N`;
-- `exec` with its `-c`, `-l` and `-a NAME`;
-- `sudo`, `doas`, `command`, `builtin`, `timeout`, `gtimeout`, `stdbuf`,
-  `caffeinate`, `nice`, `nohup`, `setsid`, `ionice`, `chrt`, `unbuffer`,
-  `taskset`, `chronic`, `ts`, `firejail`, `systemd-run`, `unshare`, `nsenter`,
-  `chroot`, `/usr/bin/time`, `gtime`, `strace`, `ltrace`, `valgrind`,
-  `prlimit`, `numactl`, `rlwrap`, `eatmydata`, macOS's `taskpolicy`,
-  `sandbox-exec` and `xcrun`, `direnv exec`, `busybox` and `toybox`, each with
-  its options read as its manual gives them, `sudo`'s and `doas`'s long ones
-  among them, and a GNU long option given by a unique prefix;
-- `lldb`, whose options are read wherever they stand: after `--` the program
-  is the first word, and otherwise the last `-f` or `--file` names it, and
-  every other positional is then an argument;
-- `sh -c`, and `bash`, `zsh`, `dash`, `ksh`, `pwsh` and `powershell` the same
-  way, with the shells' valued options (`-o`, `+o`, `--rcfile` and
-  `--init-file`, and in bash, dash and ksh `-O` and `+O`, which in zsh are
-  flags); PowerShell's parameters read whole or by any unique prefix, with `-`,
-  an en dash, an em dash, a horizontal bar or `/` in front, all but `-`
-  unverified; `cmd /c`, `ssh` with the command after the host and its options
-  read after the host as well as before it, and `xargs` with its
-  options read as GNU's and BSD's `xargs` read them, a value glued on or the
-  next word (`-I{}`, `-I {}`, `-J %`, `-i`, `--replace`, and a prefix of a long
-  option); the string `-I`, `-J`, `-i` or `--replace` gives, and `find -exec`'s
-  `{}`, is read as a word the shell makes, since `xargs` and `find` fill it in;
-- `env -S`, `flock` and `script` with the command line each is given;
-- `watch` and `parallel`, which hand their words to a shell, their words read
-  as one command line, with `parallel`'s `:::` and the arguments after it among
-  them ([not held](#not-held));
-- as well as a command sent to the background with `&` or run with
-  PowerShell's `&`.
-
-An option a wrapper does not know may or may not take the word after it, so
-the command is read both ways: `strace -J 1 git commit -m x` runs `1` or
-`git`, and each is checked. zsh's `]]`, a `}` before `always`, `else` or
-`elif`, a `{` after a function's name, and `coproc` each start another command,
-which is read too. `eval`, `trap`, `emulate -c` and `mapfile -C` are read
-through in every reading of a command, not only its first, and what they hand
-the shell is read within the same 16 other readings
-([`command-too-deep-to-read`](#command-too-deep-to-read)).
-
-A program that runs another and is not on this list is read as itself, not for
-what it runs ([not held](#not-held)), with two exceptions:
-
-- The command `find` runs with `-exec`, `-execdir`, `-ok` or `-okdir` is read
-  by the rules on commits, on git and on `sdlc`, so
-  `find . -name x -exec git commit -m x ';'` meets `commit-gate`.
-- `sdlc` is found where it is a later word behind a program not on the list, so
-  `faketime 2020-01-01 sdlc approve A-1` and
-  `docker run img sdlc unfreeze --reason "..."` are refused as `sdlc approve`
-  and `sdlc unfreeze` are. `git` is not found that way:
-  `docker run img git commit -m x` is not read as a commit.
-
-#### PowerShell spellings
-
-The rules know PowerShell's cmdlets and their aliases, a parameter given as
-`-Path:file`, and a backtick used as an escape.
-
-#### Where a path points
-
-The rules read a relative path from where the command runs: after a `cd` earlier in
-the same command, where an earlier call left the session, or where `env -C`,
-`sudo -D`, `systemd-run --working-directory` or `unshare -w` runs it, as a `cd`
-in front of it would.
-
-They also read a path as the file it is on disk, so a link to `.sdlc`, or a
-Windows short name such as `SDLC~1`, is the file it reaches.
-
-#### Here-documents
-
-The body of a here-document is text, not commands, so a plan or a review that
-mentions `git commit` is not refused for it — unless the text goes to a shell
-or an interpreter, which runs it.
-
-The hook follows the common forms of a here-document, not the shell's whole
-grammar. A line continued with a backslash is joined to the next before its
-delimiter is read, and so is a line of the body where the delimiter is not
-quoted, so `cat <<E\` with `OF` on the next line opens a document that a line
-`EOF` closes, and the commands after that line are read. Where a quote, a
-`${…}`, arithmetic or a substitution opened after the `<<` is still open at
-the end of the line, the body starts after the line that closes it, as it
-does in the shell. PowerShell has no `<<`: in a `PowerShell` command it opens
-no document, and a backslash joins nothing.
-
-The delimiter is read as the shell reads a word: to a blank or an operator
-outside quotes, with its quotes and escapes followed and then taken off. So
-`<<'E;F'` ends at a line `E;F`, `<<E\\` at a line `E\`, and `<<$'EOF'` at a
-line `EOF`. Only `<<-` lets the closing line be indented with tabs.
-
-A `<<` opens a document outside quotes, a `${…}`, an array, arithmetic and
-a comment, a substitution included. Inside quotes, as in `echo '<<EOF'`,
-inside a `${…}`, inside an array (`a=(x <<EOF)`), in arithmetic
-(`$((1<<2))`, `((…))` or `$[…]`) or in a comment it opens none, so the lines
-after it are read as commands. The hook does not check that a command could
-stand where the `<<` is: `[[ a <<EOF ]]` opens a document, though the shells
-refuse that line whole. A `#` just after the `)` that closes a substitution,
-as in `echo $(true)#`, is a character of the word and starts no comment.
-
-Where the hook is not sure where a document ends, it reads the command once
-more with this document's body, and every later one, left in, so a body that
-mentions a command the rules refuse is refused there. It is not sure where no
-line closes the document; where the delimiter holds a `$` or a backtick other
-than in `$'…'`, since bash and zsh end `<<$"EOF"` at different lines and the
-shells keep a `$(…)` in a delimiter whole; and where the line is one the
-shells read apart, or the hook may read apart from them:
-
-- a `<<` in a substitution that closes on the same line, as in
-  `echo $(cat <<EOF)`, whose next lines bash 5 reads as the body, while bash
-  3.2, zsh and sh run them;
-- an array opened after the `<<` and still open at the end of the line, where
-  bash 5 starts the body after the array's `)` and the others on the next
-  line;
-- a `#` just after the `)` that closes an array, which bash and sh read as a
-  character of the word, `a=(x)#y` being the string `(x)#y`, and zsh as the
-  start of a comment;
-- a `$((` or `((` that a single `)` ends, which the shells read as `$(` or
-  `(` with a `(` inside it and not as arithmetic, from that line on: the hook
-  reads it so too from that `)` on, but it took what came before the `)` for
-  arithmetic, in which a `<<` opens no document;
-- a `case` inside a substitution or a subshell, from that line on, since the
-  hook takes a pattern's `)` for the one that closes it;
-- a `'` inside a `${…}` within a double-quoted string, which bash reads as a
-  quote and zsh as a character, from that line on.
-
-Where the line is one of the last four, the hook also reads the whole command
-once more with each `'` inside a `${…}` within a double-quoted string read as
-a character, as zsh reads it, and the documents taken out where that reading
-ends them. Read bash's way alone, `cat <<EOF "${x:-'}"`, a line `'`, `EOF`
-and `git commit -m x` took the `'` for a quote that ran to the end of the
-command, so the commit zsh runs was not read. Where the command holds no such
-`'`, as on a line with only one of the other three, that reading is the first
-one again and adds nothing.
-
-If a command is refused for a document that no line closes, close the
-document with its end word on a line of its own. For the other causes, write
-the end word plain or in single quotes, as in `<<'EOF'`; end a substitution
-that holds the `<<` on a line after the end word; close an array before the
-`<<`; put a blank before a `#` after an array; or give the document a command
-of its own, with nothing before it on its line but the program it goes to.
-The second reading takes every body as commands, so a quote left open in a
-body can still hide the lines after it in that reading;
-[Not held](#not-held) lists this with the other forms the hook does not
-follow.
-
-PowerShell's here-string, `@'` to `'@` or `@"` to `"@`, is a document too, but
-only in a `PowerShell` command and only when it is closed; the lines after one
-that is never closed are read as commands. In a `Bash` or `Monitor` command
-`@'` is an `@` and an ordinary quote, and the quotes are read as quotes: what
-is inside them is text, and what is outside them is commands.
-
-#### Quotes and escapes
-
-Which program a command runs is read with its quoting, so a commit message, a
-`--note` or a `--message` that mentions `sdlc approve` or `git commit` is text,
-not a command.
-
-Quotes and escapes are read as the tool's shell reads them in the forms
-below. The readers follow the common forms and do not parse the shell's whole
-grammar; [Not held](#not-held) lists the forms they are known to read apart
-from it.
-Outside quotes, a backslash keeps the character after it in the word:
-
-- Before an ordinary character the backslash stays in the word, as a Windows
-  path keeps it, so `C:\Users\dev\sdlc.exe` is `sdlc`. The word is read with
-  the backslash taken out too, so `g\it com\mit` and `git $'commit'` are
-  `git commit`, with `$'…'` decoded, the string ending where the shells end
-  it. Before `#`, `~` or a glob character (`*`, `?`, `[`) the backslash
-  stays in both readings, and the word is read
-  unexpanded, as the shell leaves it.
-- An escaped quote, as in `'it'\''s'`, is a quote inside the word, not the
-  start of a string.
-- An escaped space, tab, `;`, `&`, `|`, parenthesis, brace, backtick, `<`, `>`
-  or `$` loses its backslash and is a character of the word. So
-  `eval git\ commit\ -m\ x` hands `eval` one word, the line `git commit -m x`;
-  `eval \{\ git\ commit\ -m\ x\;\ \}` hands it `{ git commit -m x; }`; and
-  `eval \"\$\(git\ commit\ -m\ x\)\"` hands it `"$(git commit -m x)"`, which
-  runs git. An escaped `$` opens nothing where it stands, so in
-  `echo \${x; git commit -m x; echo }` git runs. `find . \( -name x \) -exec …`
-  is one command.
-- A brace inside a word is a character of it (not in a `PowerShell` command);
-  only at a word's start does it open or close a group.
-- A `#` starts a comment only at a word's start: after a blank, a newline or an
-  operator. After `{`, `}` or a carriage return it is a character of the word,
-  so in `echo {#;git commit -m x` git runs.
-- `\\` is one backslash, which escapes nothing after it. In
-  `FOO=a\\ git commit -m x` the blank ends the assignment, and git runs.
-- A backslash at the end of a line goes with the newline, inside double quotes
-  too, so `gi\` on one line and `t commit -m x` on the next are `git commit`.
-  Only a newline: before a carriage return the backslash escapes the carriage
-  return, and the newline after it ends the command, so in `echo x\` followed by
-  a carriage return, a newline and `git commit -m x`, git runs. In a
-  `PowerShell` command the backslash is a character and the newline ends the
-  command, and a backtick at the end of a line continues it. A comment ends at
-  its newline whatever comes before it, so a backslash that ends a comment
-  continues nothing, and the next line is a command of its own, in which a
-  backslash at the end of a line still joins it to the one after.
-
-The rules that protect a path read a little more than the shell does, on
-purpose. A `>` that is quoted or escaped is still read as a redirect, because
-`eval echo x \> FILE` runs it as one. A backslash before a blank is read as the
-blank. Neither can hide a path. A quoted or escaped `<` is a character of the
-word, so `rm '<' .sdlc/state/tests.lock` names the lock. A `>` or `<` is never
-the file of the redirect before it, so the lock is the file written in
-`: '>' >.sdlc/state/tests.lock`. These rules split a command at every `;`, `&`,
-`|`, `)`, backtick and newline a backslash does not continue. Where the line
-holds a `#`, they also read it with every continued newline a newline, and
-joined with each comment's text taken out up to the newline that ends it,
-following its quotes as far as telling a comment from a word needs. A string
-handed to a shell's `-c` or to `eval` is read for that shell's comments too, and
-so is a `$'…'` string on the line, once decoded. Whatever these readings find, a
-line that holds a `#` that may open a comment and ends in a backslash, with more
-after it, is refused under
-[`command-too-deep-to-read`](#command-too-deep-to-read) when no other rule has
-refused it: write that part of the command on one line. And they read it once
-more split where the shell splits it, where a quoted word, a `${…}` or a `$'…'`
-holds one, quotes nested in a `${…}` included. So the lock is named in
-`rm 'a;b' .sdlc/state/tests.lock` and in
-`rm "${x:-"a;b"}" .sdlc/state/tests.lock`. A word handed to a shell's `-c` is
-read as one script, and `eval`'s words as the one script the shell joins them
-into. A process substitution, `<(…)` or `>(…)` anywhere in a word or zsh's
-`=(…)` at a word's start, is a word the shell fills in and a command of its own,
-so `rm -f a<(:) .sdlc/state/tests.lock` names the lock. A separator between two
-quoted strings separates: in `true ''|'rm' .sdlc/state/tests.lock`, `rm` runs.
-A backslash before a carriage return and a newline is read both as a line
-continuation and as the escaped carriage return it is, and so is an escaped
-backslash before a newline.
-
-#### A path that is only named
-
-The rules that protect a path look for it as a word of the command, in quotes
-or out of them, so that a path hidden in a string is still found. Three things
-are read as naming a path and not acting on it, each only where the hook is
-sure of it:
-
-- **The text of an sdlc flag.** The value of `--message`, `--note`, `--reason`
-  or `--reject`, when all of this holds: `sdlc` is run as `sdlc`, as a command
-  of its own; nothing but `cd` and `sdlc` runs before it on the line; the flag
-  is written in full, before any `--`; the text is one pair of quotes straight
-  after it, with no variable, substitution or backslash inside; and what the
-  command prints stays on the terminal or is piped only to programs that only
-  read (`cat`, `head`, `tail`, `grep`, `rg`, `wc`, `ls`, `stat`, `file`, `du`,
-  `diff`, `cmp`, `basename`, `dirname`, `realpath`, `cksum`, `md5sum`,
-  `sha1sum`, `sha256sum` and `shasum`), up to eight of them, none writing to a
-  file. `sdlc`
-  prints the text it is given, and nothing tells a program that prints what it
-  reads from one that runs it, so a text piped to anything else, `jq`, `tee`,
-  `awk` and `python3` included, is not read this way.
-- **A path a git pathspec leaves out.** The path in `':(exclude)PATH'`,
-  `':!PATH'` or `':^PATH'`, with `top`, `icase` or `glob` beside `exclude` if
-  they are there, when all of this holds: `git` is run as `git` with its
-  subcommand as the next word; the subcommand is `diff`, `log`, `show`,
-  `status`, `ls-files`, `grep`, `diff-tree`, `diff-index` or `diff-files`,
-  without `--no-index`; nothing but `cd` and `sdlc` runs before it; the
-  pathspec comes after `--`; the path is made of letters, digits and
-  `._/*?-` and holds no `..`; and `GIT_LITERAL_PATHSPECS` is not set for the
-  session. Those nine are the git commands the hook knows to take what
-  follows `--` as pathspecs, to do nothing with them but read, and to print
-  what they find and not the words they were given. Piped to a program that
-  is not one of the readers above, the pipe must be a plain `|` with no
-  redirect, so that an error that quotes the pathspec does not reach that
-  program. Under every other git command the word is read as it always was:
-  `git mv` and `git rm` take it as a file's name, and
-  `git mv -f -- other ':!a/../PATH'` moves `other` over `PATH`.
-- **A request for help.** `sdlc <command> --help` or `-h`, read as `sdlc`
-  itself reads it, when `sdlc` would print help and do nothing else; see
-  [a person's decisions](#a-persons-decisions-refused-in-every-session). The
-  one exception is `sdlc remap --help`, which is refused as the command is;
-  `sdlc help remap` prints the same text and is not.
-
-No mention is read on a line that also hands text to something that runs it
-(a shell, `eval`, `xargs`, `source`), or that holds a loop, a condition or a
-program named by a variable. Nor on a line written with a backslash, `$'…'`, a
-comment, a here-document, a brace or a parenthesis outside quotes: the hook
-reads those lines as it always did. So it does in PowerShell a line that holds
-a backtick, a character outside ASCII, a doubled quote inside a string, or a
-`%`, `@` or `,` outside quotes, which covers the stop-parsing token `--%`,
-after which PowerShell no longer reads a quote as a quote. What PowerShell
-makes of a line was taken from its documentation and not checked against a
-running PowerShell.
-
-Nor is one read where a later command on the line could be given it. The text
-stays on the line, and a shell hands the words of one command to the next: in
-`sdlc escalate x --message 'rm PATH'; perl -e 'system(@ARGV)' "$_"` the `$_`
-is that text. So a mention is read only when no command after it has a word
-the shell fills in when the command runs (a variable, a history word such as
-`!$`, a pattern, `~`), none runs an earlier line again (`fc`, `history`), and
-none runs a program written on the line (`python3 -c`, `perl -e`, `node -e`,
-`awk`, `sed` and their like). For a pathspec, the programs git's own listing
-is piped to may run a program of their own, since reading the listing is what
-the pathspec is for; they may not hold a word the shell fills in, and no other
-command on the line may do either. The words of a text that is read as a
-mention stay where a rule that reads the whole line finds them; what goes is
-only the `;`, `>` and `|` inside the quotes, which the shell never saw.
-
-Reading a path as only named can let a command through and never refuses one.
-A command that is still refused is refused under the rule that always named
-it. Where the refusal is for a path, and the path may only have been named in
-one of the ways above, the reason ends by saying that the hook cannot tell
-whether the command acts on it or only names it, and why: for example
+The hook does not run your shell. It reads each command an agent is about to
+run, in the `Bash`, `PowerShell` and `Monitor` tools, for what the command
+would do to the files and commands the rules protect, however it is spelled.
+Each of these is refused as a write to the loop's records, under
+[`loop-state-through-the-tool`](#loop-state-through-the-tool):
 
 ```text
-... is the loop's own record, and a shell command is the one way around every
-rule that protects it; the hook cannot tell whether the command acts on it or
-only names it, because what the command prints is piped to a program the hook
-does not know to be one that only reads, which could run it
+rm -rf .sdlc/state
+sh -c 'cd .sdlc && rm -rf state'
+D=.sdlc/state; rm -rf "$D"
+find . -name tests.lock -delete
+python3 -c 'import shutil; shutil.rmtree(".sdlc/state")'
 ```
 
-and the way on starts with how to write the command so that the hook can tell,
-before the rule's own.
+Where the hook cannot tell what a command would do to a protected file, it
+refuses, and the refusal says how to write the command so that it can. Such a
+refusal does not mean the command was harmful.
 
-One thing this leaves open is for you to weigh: `git diff -- . ':(exclude)PATH'`
-piped to a program that runs what it reads is allowed, as the same line is with
-any other path left out or with none. What reaches that program is the diff, so
-the act would have to be in a file's changes already.
+Reading is left alone: `cat`, `grep`, `head` and the file tools read anything.
+A command with `sed`, `awk`, `perl` or another interpreter in it is held more
+tightly near a protected file, because each of those can write through a
+program of its own. What the reading misses is listed under
+[Not held](#not-held).
 
-#### A command inside a string
-
-A string handed to `bash -c`, `cmd /c`, PowerShell's `-Command` or `eval`, and
-a command inside `$(…)` or backticks, is read for the commands it runs, with
-the rules of the tool the command came from: a string for a shell of another
-kind, such as `pwsh -Command` in a `Bash` command or `bash -c` in a
-`PowerShell` one, is read as the tool's own shell would read it, not as that
-shell does ([not held](#not-held)).
-
-A string is read however its blanks are kept in it: quoted, or each escaped
-with a backslash, as in `bash -c git\ commit\ -m\ x` or
-`eval sdlc\ approve\ A-1` ([quotes and escapes](#quotes-and-escapes)). Its
-separators and groups are read the same way, escaped or not:
-`eval true\;\ rm\ -f\ FILE` and `eval \{\ rm\ -f\ FILE\;\ \}` run `rm`, and
-are read as doing so.
-`eval -- 'cmd'` is read as `eval 'cmd'`: bash, zsh and sh take the `--` as the
-end of eval's options, however it is quoted. A string is read inside up to four
-others. One nested deeper is not read, and the command is refused under
-[`command-too-deep-to-read`](#command-too-deep-to-read): with five `eval`s in
-front of it, `git commit -m x` is refused, and with four it is read and held to
-the gate. A script handed to a shell is read again as that shell decodes it,
-`$'...'` and a backslash taken out, as the command itself is
-([quotes and escapes](#quotes-and-escapes)).
-
-The strings other builtins hand the shell to run are read as `eval`'s is:
-`trap`'s action (`trap 'rm .sdlc/state/tests.lock' EXIT`), the command line
-after zsh's `emulate -c`, and the callback `mapfile` and `readarray` run with
-`-C`. A `}` or `]]` among the words before `emulate`'s `-c` or `mapfile`'s
-`-C` still ends the command there, as zsh reads it.
-
-A `$(…)` or a backtick inside a `${…}` runs as one outside it does, and is read
-so: `echo ${x:-$(git commit -m x)}` meets `commit-gate`. So is one inside quotes
-and inside a `[…]` of the same word, since bash and zsh expand an array's
-subscript again where they read the word as arithmetic or as a name:
-`let 'q[$(git commit -m x)]=1'`, `printf -v`, `read`, `unset`, `declare`,
-`[[ -v ]]` and an integer's assignment each run it. Which words a shell reads
-that way cannot be told from the line, since a variable can be made an integer
-anywhere, so every such word is read, and `echo 'q[$(git commit -m x)]'` is
-refused with them; one after the `]` closes, as in a commit message
-``'fix [docs]: run `make`'``, is left as text. Such a refusal says the command
-was read from a `$( )` or a backtick inside `[ ]` in a word, and to print the
-text, keep the substitution out of the brackets, or write it to a file with a
-file tool. A refusal of a path in quoted text, such as
-`echo '$(rm .sdlc/state/tests.lock)'`, is the path rules' own, brackets or
-none ([a path that is only named](#a-path-that-is-only-named)).
-
-#### A commit in another repository
-
-A commit in another repository, after a `cd` or with `git -C` or `--git-dir`,
-is not held to the story's gates. A commit with `GIT_DIR` set is, and so is one
-in a repository inside the project, such as a submodule; where `GIT_DIR` names
-another checkout of this repository, it is refused as a commit there
-([`commit-in-another-checkout`](#commit-in-another-checkout)).
+> [!NOTE]
+> If `sdlc doctor` sent you here, it asked the same reader about a command in
+> your `.sdlc/config.json`. It judges without a story or an agent, so it can
+> name a rule for a command the hook allows mid-story, as it does for one that
+> commits. Edit the command by hand so that it no longer does what the rule
+> refuses.
 
 ### A path outside the repository
 
-The loop governs the repository and nothing else. Outside the repository means
-outside the checkout the session is held in and outside every other checkout of
-the same repository. The file tools refuse a path there, under
-[`write-outside-repository`](#write-outside-repository), because a file the
-loop cannot review is not one it lets a tool write. A shell command is yours to
-run, so a path the hook can place outside the repository is not governed by
-the shell rules, whatever its name: a copy of a frozen test in a scratch
-directory is not a frozen test.
+Outside the repository means outside the checkout the session is held in and
+every other checkout of the same repository. The file tools refuse a path
+there, under [`write-outside-repository`](#write-outside-repository). A shell
+command is different: a path the hook can place outside the repository is not
+governed by the shell rules, whatever its name. A copy of a frozen test in a
+scratch directory is not a frozen test.
 
-Placing a path is the exception, and the hook does it only on grounds a
-spelling cannot fake. All three have to hold: the command is plain, the
-directory it runs in is known, and the disk agrees.
-
-#### A plain command
-
-A command is plain, on this page and in a refusal, when the hook reads the
-whole of it and knows what every word is for. It is made of the commands in
-this table and no others, each with the options shown and no others, alone or
-joined by `&&` and nothing else:
+The hook places a path outside only when it is sure, and that takes a plain
+command: one made of the commands below and no others, alone or joined by
+`&&`, with every path written out in full.
 
 | Command | Plain as |
 | --- | --- |
 | `rm` | `rm FILE...` or `rm -f FILE...` |
 | `cp` | `cp FILE... TO`, `cp -p FILE... TO` or `cp -t DIRECTORY FILE...` |
-| `mv` | `mv FILE... TO`, and only as the whole command, joined to no other |
-| `touch` | `touch FILE...` |
-| `tee` | `tee FILE...` |
-| `sed` | `sed -i s/x/y/ FILE...`: one substitution ending in `/` or `/g`, and no `w` or `W` in the first file's path |
+| `mv` | `mv FILE... TO`, as the whole command |
+| `touch`, `tee` | `touch FILE...`, `tee FILE...` |
+| `sed` | `sed -i s/x/y/ FILE...`, with one substitution |
 | `echo`, `printf` | any words |
 | `find` | `find DIRECTORY... -name GLOB -delete`, or with `-path` for `-name` |
-| `cd` | `cd DIRECTORY`: one directory, with no option, glob or `..` |
+| `cd` | `cd DIRECTORY` |
 
-The output of any of them may go to a file with `>` or `>>`, set apart by a
-space from the word before it. A word may be in single or double quotes. The
-command holds nothing the shell would fill in or act on: no variable, `$(...)`,
-backtick, `~`, brace list or `!`; no `;`, pipe, `||`, single `&`, `<`,
-here-document or subshell; and no character outside printable ASCII. It holds
-no backslash, in quotes or out of them: the rules that judge by name read one
-as a separator, and the shell reads one in single quotes as a letter of the
-name. Inside quotes it holds no space, none of `;`, `&`, `|`, `<`, `>`, `)` or
-a backtick, and no quote of the other kind: the rules that judge by name read
-each of those as if it were not quoted, and where the two readings of a command
-differ the hook places nothing. A `PowerShell` command is never plain.
-
-Anything else in the command — another program, another option, `rm -r`,
-`cp -a` — could make a link or move the shell, and the hook does not guess
-which. One such word anywhere in a command stops the hook placing any path in
-it, and the whole command is judged by name, as every command was before the
-hook placed any path.
-
-#### A known directory
-
-The directory is the one Claude Code says the session is in, moved only by a
-plain `cd`. A relative `cd` is followed only where the session carries no
-`CDPATH`.
-
-#### The disk agrees
-
-There is no link on the way to the path, no directory on the way that is a
-checkout of the repository under another name, and no second name for the file,
-which a hard link gives it. For `find`, no checkout is below where it starts
-either.
-
-#### A word the hook cannot place
+Output may go to a file with `>` or `>>`. A plain command holds nothing the
+shell would fill in or act on: no variable, `$( )`, `~`, glob in a directory,
+brace list, `..`, pipe, `;` or backslash, and no space inside quotes. A
+`PowerShell` command is never plain.
 
 A word the hook cannot place is judged by its name, as that file in the
-repository: `rm "$S/internal/x_test.go"` is refused as the frozen test
+repository: `rm "$S/internal/x_test.go"` is refused as the test
 `internal/x_test.go` wherever `$S` leads, because the hook does not run the
-shell. That is what "judged by name" means on this page. The way on is to write
-the path out in full, with no variable, glob, brace list or `..` in it, in a
-plain command.
+shell. The way on is to write the path out in full, in a plain command.
 
-Judged by name is not the same as
-[a path that is only named](#a-path-that-is-only-named), which is a path a
-command mentions and does not act on: in the text of an sdlc flag, in a
-pathspec that leaves it out, or beside a request for help. Neither `sdlc` nor
-`git` is in the table above, so a command with such a mention in it is not
-plain, and every other path in it is judged by name. Where the hook is not
-sure of the mention, a refusal can say both things of one path: what stopped
-the hook placing it, and then that the hook cannot tell whether the command
-acts on it or only names it.
+> [!NOTE]
+> A path through a link is not placed. On macOS `/tmp` and `/var` are links, so
+> write `/private/tmp/...` and `/private/var/...`.
 
-For the three rules that protect tests, a glob in the last name of what `rm`
-removes is placed by the directory before it, as in
-`rm -f /private/tmp/scratch/*_test.go`. A glob anywhere else, or with a `/`
-after it, is judged by name.
+## Decisions that are yours
 
-A plain `cp` or `mv` is read by where each file lands. A file copied or moved
-into the repository from outside is the file it becomes there, whatever the
-destination is called, for the rules on tests, on loop state and on protected
-paths. For the three rules that protect tests, a `cp` of a test to a path
-placed outside the repository only reads the test, and is not refused. Where
-the destination is not written out in full, as in `cp x_test.go ../scratch/`,
-the hook cannot tell where a file lands, and each file is judged by name.
-
-#### Known limits
-
-Each of these errs towards refusing:
-
-- A path through a link is not placed, even where the link stays outside the
-  repository. On macOS `/tmp` and `/var` are links, so `/tmp/...` and anything
-  under `$TMPDIR` is not placed: write `/private/tmp/...`.
-- A file with a hard link is not placed.
-- A `find` over more than 10,000 files and directories is not placed, and
-  neither is one that starts at a directory that is not there.
-- On Windows only a path on a lettered drive is placed, and none with a name
-  that ends in a dot or a space; no `PowerShell` command is plain.
-- A command with a space inside quotes is not plain, so a path with a space in
-  it is never placed, and `echo "two words" > /private/tmp/scratch/x_test.go`
-  is judged by name: `printf two-words > /private/tmp/scratch/x_test.go` is
-  plain.
-- A command with a backslash in it is not plain, so
-  `printf 'a\nb\n' > /private/tmp/scratch/x_test.go` is judged by name: write
-  each line with an `echo` of its own, joined by `&&`.
-- On macOS, `sed -i` wants a suffix after it, `sed -i '' s/x/y/ FILE`, and that
-  spelling is not plain.
-
-#### A glob in the directory
-
-An absolute or `~` word whose directory holds a glob is read against the
-project's own path, name by name. Where it can name a path in the project, it
-is held as that path is; where it cannot, it is outside, as before. So
-`rm /work/proj*/.sdlc/state/active` is refused as loop state where the project
-is `/work/project`, and `rm /tmp/p*/x_test.go` is not.
-
-A segment that is `**`, or holds it, is read as any number of directories, as
-zsh and bash's `globstar` read `**`. Once the part before it is the project's
-directory or one above it, the word is held as the project's:
-`rm ~/**/.sdlc/state/active` is refused as loop state. Where such a segment has
-`..` after it, the word is held as the project's whatever comes before it,
-because `**` can stand for no directories and `..` then climbs from the part
-before it: `rm /tmp/**/../work/project/.sdlc/state/active`. None of this asks
-the disk. A word read as the project's only because of its glob is told to
-spell the directory out without a glob if it is not this project.
-
-What it misses: a glob whose match is a link into the project from a directory
-that is not above it (`/tmp/p?/.sdlc/config.json`, where `/tmp/pl` links to the
-project), and the directories above a project reached through a link whose
-names differ from the project's own path.
-
-### `loop-state-through-the-tool`
-
-Refuses a command that would write or delete the loop's own files: `.sdlc/state`,
-`.sdlc/config.json`, `.sdlc/claude-progress.json`, any story's
-`gate-record.json` or `DECISIONS.md`, any `reviews/` directory, or any gate document, and `.sdlc`,
-`.sdlc/stories` or a story's directory taken whole — by redirection; through
-`rm`, `mv`, `cp`, `tee`, `dd`, `sed -i`, `find -delete`, `git rm`,
-`git checkout`, a hard link (`ln`, `link`, `fsutil hardlink create`), a named
-pipe (`mkfifo`, `mknod`) and their like; or from
-inside a program handed to an interpreter.
-
-A relative name is read from the directory the session is in. Where the hook
-places that directory outside the repository, `.sdlc/state/active` there is
-that directory's file and is not refused. Neither is a `find` that starts only
-in directories placed outside the repository, whatever name it looks for:
-`find /private/tmp/scratch -name active -delete` removes no file of the loop's.
-Written through a variable, a glob or a link, or in a command that is not
-plain, the path is judged by name; see
-[A path outside the repository](#a-path-outside-the-repository).
-
-It also refuses taking away a checkout of this repository, or a directory that
-holds one: the session's own, the main checkout, or another story's worktree,
-each with the story and the loop state it holds.
-
-*Instead:* `sdlc artifact write`, `sdlc review add`, `sdlc gate`, and
-`sdlc decide` for a story's `DECISIONS.md`. The freeze is
-lifted by the person running the session. For `.sdlc/config.json` there is no
-command: the person running the session changes it by hand, outside a running
-iteration. Remove only what the story made, by naming it inside the checkout,
-such as `rm -rf build`; a checkout is removed by a person, in their own
-terminal.
-
-A refused `find` has a way on of its own:
-
-- For a `find` with a glob the hook cannot read, spell the names out, or use a
-  glob the hook can read, in single quotes, with no variable and no backslash
-  the shell would act on.
-- For a `find` whose operators leave a protected file in, run one `find` for
-  each filter.
-- For one whose expression the hook cannot follow, the refusal names the cause
-  and the way on for it: write the word out in single quotes, correct or
-  replace the option, run the `find` as a command of its own and not inside a
-  script, put the directories first and take the comment off, or run one `find`
-  for each filter.
-
-The rest of this entry is the fine detail: what is left alone, how a `find` is
-read, and what counts as taking a checkout away.
-
-#### Links and installs
-
-`link` takes two names, and both are read as written: one is a second name for
-the other. `fsutil` writes unless its verb only reads, as `hardlink list` and
-the `query` verbs (`file queryfileid`, `reparsepoint query`) do; a verb it adds
-later is read as a write until it is known. `mkfifo` and `mknod` make a named
-pipe or a device at each name they are given, so naming the gate record or a
-frozen test is refused, and a pipe elsewhere is not.
-
-`ln` and `install` land each source under the destination, whatever the
-destination is called, so `ln -s /tmp/x/AGENTS.md docs.v2` writes
-`docs.v2/AGENTS.md`. `-t`, `--target-directory=` and a bundle such as `-Ct dir`
-are read, and so is a one-operand `ln`, which links into the directory it runs
-in. A bundle that ends in `t` is read both ways, as naming the target and as
-another option's value, because BSD install's `-B` and GNU's `-S` take the `t`
-as a backup suffix. `cp` and `mv` land a source under the destination where the
-destination is written as a directory: more than one source, a trailing `/`,
-`..`, or a last name with no dot after its first character. A destination with
-a dot is a directory too where the project's own `.sdlc` is below it (the root,
-such as `me.github.io`, or a directory above it), where it holds a frozen test,
-where it is another checkout, or, asked of the disk only where a source would
-land on a held name in it, where the disk says it is one: `cp
-payload/invoice_test.go pkg.v2` writes a frozen `pkg.v2/invoice_test.go`. A
-destination with a dot is read so for `rsync` and `scp` too, so `rsync
-CLAUDE.md ../me.github.io` from inside the project is refused as it is into a
-root with no dot. `cp` and `mv` read `-t`,
-a target glued to a bundle (`cp -pt. x`), PowerShell's `-Destination` by any
-start of its name, and the same bundles too, and pass over the value of an
-option such as `-S` written after the operands. `rsync -R` lands each source
-under its full path, from a `/./` in it where there is one. A `cp`, `mv`, `ln`
-or `install` that `xargs` feeds, with `-t` or with `-I{}` and the destination
-last, lands the line's paths under its destination. A refusal for a place the
-command did not spell says which reading put the file there.
-
-#### What a copy's source holds
-
-A copy whose source puts what it holds under the destination, rather than
-itself, is judged by what the disk shows the source holds: a glob in the
-source's last name (`cp p/* .`), a source spelt for its contents (`cp -r p/.
-.`, `p/`, or `-T`), and the same fed by `xargs`. Each entry of the source's
-directory that the glob matches, or every entry, lands under the destination
-under its own name and is judged there by name, so `cp -r p/. .` with a
-`CLAUDE.md` in `p` is refused as
-[`protected-path-through-the-tool`](#protected-path-through-the-tool), and one
-holding only `x.txt` is not. The destination itself is never listed, and one
-level is read, as the shell's glob is: a listed directory lands under its own
-name. A source whose listing comes back short is refused as
-[`directory-entries-unknown`](#directory-entries-unknown).
-
-#### Programs that write a file they are given
-
-These are read as writing the file they are given, as a redirect to it is:
-
-- `sort -o`, `base64 -o` and `iconv -o`, and `--output`;
-- `uniq`, whose second operand is its output;
-- `shuf -o`, `--output` and `--output=`;
-- the output prefix of `split` and `csplit`, read as every name that starts
-  with it and ends with any `--additional-suffix`, because the program adds
-  the rest: `split -l 1 log CLAUDE.` can write `CLAUDE.md`, and a prefix with
-  no name, `x` for `split` and `xx` for `csplit`, is read the same way;
-- `zstd -o`, `brotli -o` and the second operand of `lz4`;
-- `gzip -d`, `gunzip`, `pigz -d`, `unpigz`, `xz -d`, `unxz`, `lzma -d`,
-  `unlzma`, `bzip2 -d`, `bunzip2`, `compress -d` and `uncompress`, read with or
-  without `-f`, which write the file without its suffix (`CLAUDE.md.gz` writes
-  `CLAUDE.md`), or with the one `-S` names; an operand with no such suffix is
-  the file written, since `gunzip CLAUDE.local.md` finds and unpacks
-  `CLAUDE.local.md.gz`. A `-d` in `GZIP`, `BZIP2`, `BZIP` or `XZ_OPT`, on the
-  line or in the session's environment, counts as one on the line. `-N` writes
-  the name the archive's header holds, and `-r` writes into every directory
-  below, so where neither is known the operand's directory is judged as one
-  that could hold a held file; `xz --files` reads its names from a file, and is
-  refused. `-c`, `--stdout`, `-t` and `-l` write nothing.
-
-Reading with them, such as `sort CLAUDE.md`, is not refused. One of them run by
-`xargs` makes every word of the line a candidate, as any writer there does.
-
-A compressor that removes what it packs takes the file away as `rm` does, and
-is refused as `rm` of it is: `gzip`, `pigz`, `xz`, `lzma`, `bzip2` and
-`compress` without `-k`, `-c` or a test or list option, `zstd`, `brotli` and
-`lz4` given `--rm`, and `zip -m`.
-
-#### Globs read as the shell reads them
-
-A glob is read as the shell that runs it may read it, and where two readings
-differ, the one that writes a held file is refused:
-
-- zsh's `GLOB_DOTS` and bash's `dotglob` let `?` and `*` match a leading dot.
-  Your start-up files can set either where the hook does not see them, so a
-  glob that would then match a held name, such as `?sdlc` or `*git`, is read so
-  whether or not the line sets one, and the reason ends "; `?sdlc` matches
-  `.sdlc` if the shell has GLOB_DOTS or dotglob set, which the hook cannot see
-  in your start-up files". Quoted text is not expanded, so `find -name
-  '*.orig'` is read as written, unless it is a script given to a shell's `-c`.
-- bash 3.2 lets `.?` match `..`, and the reason ends "; `.?` matches `..` in
-  bash 3.2".
-- zsh reads `(a|b)` in a word as either name with no option set, so `echo x >
-  CLAUDE.(md|x)` writes `CLAUDE.md`; a group at the start of a command, or one
-  holding a space, is a subshell and is read as one. With `EXTENDED_GLOB`,
-  `^x` is every name but `x` and `(*/)#` is any number of directories.
-- zsh's `~name` is the directory a variable `name` holds, or that `hash -d`
-  names, so `c=<root>; rm -rf ~c/.sdlc/state` is the project's own.
-
-A glob that is the last name of a word a command writes or takes away, such as
-`rm -f *`, `truncate -s 0 *` or zsh's `echo x > *`, names nothing held by its
-text alone. Where its directory is spelt with no glob or variable and is the
-project, in it, or above it, the hook lists that directory and judges each
-entry the glob matches, so `rm -f *` in a root that holds a `CLAUDE.md` is
-refused, and `rm -rf build/*` in a `build` that holds nothing held is not. A
-directory that is not there holds nothing. zsh's `***/` follows links, so the
-entries of the directory before it are judged with the rest of the word after
-each. Nothing is listed outside the project and not above it. The listing is
-bounded: one command lists at most 20000 entries in all, and a listing past
-that, or one that fails, is refused as
-[`directory-entries-unknown`](#directory-entries-unknown) where the directory
-is in the project or above it.
-
-A name read from the disk is shown in a refusal with every character that is
-not printable escaped, as Go's `strconv.QuoteToGraphic` escapes it.
-
-#### What is left alone
-
-A scratch file inside a story's directory is not loop state. Reading the loop's
-files with `cat`, `grep`, `head` or the file tools is never refused; `sed`,
-`awk`, `perl` and interpreters are refused on them whatever they are asked to
-do, because each can write through its own program.
-
-A path that is only named, in the text of an sdlc flag, in a pathspec that
-leaves it out, or beside a request for help, is not refused where the hook is
-sure of it; [a path that is only named](#a-path-that-is-only-named) says when
-that is.
-
-#### How `find` globs are read
-
-The globs `find` is given with `-name`, `-iname`, `-path`, `-ipath`,
-`-wholename` and `-iwholename` are read as `find` reads them:
-
-- a `]` first in a bracket expression is one of its members, as in `[]x]`;
-- `[!x]` and `[^x]` exclude;
-- ranges and POSIX names such as `[[:digit:]]` work;
-- and a backslash escapes the next character.
-
-A character in a bracket expression matches in either case. A range between two
-lower-case letters, two upper-case letters or two digits holds what lies
-between them by code point or by letter, in either case, and any character
-beyond ASCII; a range between any other two characters, such as `[{-g]`, holds
-any one character, because locales put those in different orders. `[!...]` and
-`[^...]` leave out only what all of these readings hold.
-
-#### A glob the hook cannot read
-
-A glob the hook cannot read is refused when the `find` goes on to delete, run a
-writer, or write its list to a file, from a directory that is, or is above, the
-one holding the loop's files: `.`, `..` or a directory above them, or one the
-hook cannot place, such as `"$ROOT"`, a glob, a path outside the project, or a
-directory reached by a `cd` it could not follow.
-
-A glob the hook cannot read is:
-
-- one the shell changes before find sees it: it fills in a variable, such as
-  `"$G"`, or removes a backslash;
-- one that a quote or white space splits;
-- or one that find reads in a way the hook does not, such as a bracket
-  expression the hook does not know, or a glob longer than 512 bytes.
-
-The refusal names the glob and the directory. A `find` that only reads what it
-finds, such as with `-exec cat`, is not refused, whatever its glob.
-
-#### How `find` operators are read
-
-Between its tests `find` has operators, and the hook reads them: `!` and
-`-not` negate, `-o` and `-or` give alternatives, `-a` and `-and` join, and
-parentheses group — each in the quoted and escaped spellings a shell leaves
-for find, such as `\!`, `'('` and `-not`.
-
-A negated test is read as leaving every file in, never as the files its name
-does not pick, so a `find` that negates a name and then deletes is read as
-deleting every file the name does not pick, the loop's own among them. Each
-alternative of an `-o` is read on its own, and one that picks a protected file
-refuses the whole command.
-
-The refusal then says that the operators leave the file in, and the way on is
-one `find` for each filter: `find . -name '*.orig' -delete`, and then another
-for the next name.
-
-This reading is asked of a `find` that deletes or runs a writer; a `find` that
-only writes its list to a file, with `-fprint` and its like, is judged by its
-glob alone, not by what its operators pick.
-
-#### Which words belong to the `find`
-
-The `find` is read as find is handed it. A redirect is no word of it, with a
-descriptor number or without, wherever on the line it stands. A separator
-inside a quoted word, such as the `;` of `-name 'a;b'`, is a character of the
-word and does not end the `find`.
-
-A `find` given to a shell as a script, with `sh -c` or `bash -c`, or to `eval`,
-is the same `find`, read through the one pair of quotes the script is written
-in. Each command of a string given to `eval` is read as the command it is.
-
-#### An expression the hook cannot follow
-
-Where the expression is one the hook cannot follow, the `find` is refused from
-the same directories as an unreadable glob, when it deletes, runs a writer, or
-writes its list to a file. The refusal names the word and the directory, and
-its way on depends on the cause:
-
-- A word the shell fills in or unescapes where an operator could be, such as
-  `"$OP"` between two tests. Write the word out in single quotes, or run one
-  `find` for each filter. A value the shell fills in, such as the reference of
-  `-newer "$REF"`, is a value and not a place an operator could be, and is not
-  refused.
-- An option the hook does not know: it cannot tell how many of the words after
-  it are the option's own. If it is a slip, correct it; if your `find` has such
-  an option, pick the files with options the hook knows, or list them with a
-  `find` that only prints and name the ones to change.
-- A `find` inside something the hook cannot take apart: a script inside a
-  script; a script given to `eval` in more than one word, which `eval` parses a
-  second time; a script whose quote closes before the end of its command; a
-  script in double quotes that holds a backslash before a quote or before
-  another backslash; an escaped separator written against another word; a
-  process substitution among the `find`'s words; or a quote that is never
-  closed, or is still open where the `find` starts, which is what an
-  apostrophe in a comment on the line leaves. Run the
-  `find` as a command of its own, or write the script as one word in single
-  quotes; where a quote is never closed, close it, or take the comment that
-  holds it off the command.
-- A word that is neither a test nor an operator where only one of those can
-  stand. That is a directory after the first test, a comment after the `find`,
-  or a separator handed to `find` as a word of its own. Put every directory
-  before the first test, and take the comment off the command.
-- The two ways the hook reads the command do not agree, or it cannot tell
-  where the `find` starts. Run the `find` as a command of its own, with each
-  word written out plainly.
-- The shape of the expression itself: a comma, parentheses that do not
-  balance, an operator with nothing to govern, or more than 512 words. Run one
-  `find` for each filter.
-- A command one of its actions runs that can be read more than one way, since
-  an option its program does not know may or may not take the word after it,
-  as `-exec strace -J 1 rm {} +`. Give each option of the command the action
-  runs as the tool's manual does, or run that command on the files a `find`
-  that only prints lists.
-
-Some ordinary commands are over-refused in this way and have a plain way on,
-named with the refusal:
-
-- a `-depth` given a number (use `-maxdepth` or `-mindepth`),
-- a leading `-s` or `-x` before the directories (write the directories out),
-- a leading `-E` (list the files with a `find` that only prints, and name the
-  ones to change),
-- an option after a variable in an `-exec` command (put the option first),
-- and a `find` that deletes with a comment after it on the same line (put the
-  comment on a line of its own, without an apostrophe).
-
-#### When the hook cannot tell where a `find` ends
-
-Where the hook cannot take the `find` apart, or its two readings do not agree,
-it does not know where the `find` ends either. Such a `find` is judged with
-every word from its start to the end of the command, as if they were all its
-own. That refuses more than the `find` alone would be refused for, and in each
-case the way on is to run the `find` as a command of its own, on a line with
-nothing after it:
-
-- Such a `find` that only reads is refused, from a directory that holds or
-  could hold a protected file, where a later word on the line is an action of
-  `find` that changes files: `-delete`, an `-exec` of anything but a reader, or
-  `-fprint` and its like. The refusal says that the later word is the cause,
-  and that the hook cannot tell where the `find` ends.
-- Such a `find` that changes files is judged as if every later word on the
-  line were a file it writes. It is refused, wherever it starts, where a later
-  command on the line so much as names a protected file, one of the loop's own
-  files or a frozen test, and the refusal is then about that file.
-- Where the two readings do not agree, the same holds for a word anywhere on
-  the line, before the `find` as well as after it.
-- A command may hold only so many such finds. Past that bound each one is
-  refused, wherever it starts and whatever it does, a `find` that only reads
-  included. Split the line into separate commands and run each `find` as a
-  command of its own.
-
-#### Taking away a checkout
-
-Taking a checkout away is:
-
-- removing or moving it with `rm`, `rmdir`, `mv` and their PowerShell and `cmd`
-  twins,
-- moving it to the trash with `trash`, `trash-put` or `gio trash`, or away with
-  `gio move` or `gio rename`,
-- the destination of `rsync` with `--delete`,
-- what `find` could remove with `-delete` or `-exec rm`,
-- a remover at the end of a pipe such as `xargs rm`,
-- and a remover in code handed to an interpreter.
-
-The checkout can be named any way the shell has for it:
-
-- by its path, `.`, `$PWD`, `~+` or `$(pwd)`, and `$OLDPWD` or `~-` for where
-  the shell was before its last `cd`;
-- in PowerShell, `(Get-Location)`;
-- `..` and the directories above;
-- and a glob or a brace list that could match it, such as `rm -rf ../*` from a
-  story's worktree.
-
-A glob is refused for what it could match, which is a guess, so the refusal
-names the checkout it could reach. A `-name` or `-path` glob the hook cannot
-read counts as matching here, so a `find` that deletes with a mistyped bracket
-expression can be refused for the checkout it could reach. The operators are
-read here too, so a `find` that starts at a checkout, or above one, and whose
-negation or alternation leaves the checkout in, is refused for it.
-
-`rsync --delete` into a checkout, or a directory holding one, is refused
-because it removes there whatever the source lacks.
-
-#### Removals that take no checkout away, and three refused all the same
-
-`rm -rf ./build/*`, `rm -rf node_modules`, `find . -name '*.pyc' -delete` and,
-from a story's worktree, `find .. -empty -delete`, which removes nothing that
-holds a checkout, take away no checkout and are not refused.
-
-Three that take away none are refused all the same:
-
-- `rm -rf build/.*`, because `.*` is read as matching `..`, as the refusal
-  says;
-- PowerShell's `[IO.Directory]::Delete((Join-Path $PWD 'build'), $true)`,
-  because `$PWD` names the checkout;
-- and a `find` that deletes all it finds, with no name to look for, from `.` at
-  a checkout's root or from `..` just below it, as
-  `find . -type d -empty -delete` there does, whatever else it tests, because
-  it is read as taking that checkout away with the loop's record in it. For
-  this `find`, at your own checkout's root the refusal names `.sdlc/state` and
-  gives the loop-state reason; where the checkout is another it names that
-  checkout and gives the take-away reason.
-
-Either way, and for all three, the way round is to name the directory itself,
-as in `rm -rf build` or `find build -type d -empty -delete`.
-
-### `protected-path-through-the-tool`
-
-Refuses a command that would write or delete `CLAUDE.md`, `CLAUDE.local.md`,
-`AGENTS.md`, anything under `.claude` or `.agents`, anything under `.git`,
-the backlog, or the review policy — the paths
-`write-protected-path`, `backlog-is-not-edited` and `review-policy-is-not-edited` protect from the
-file tools that are not the loop's own state. It matches the way the filesystem does, so
-`claude.md` is `CLAUDE.md` on macOS and Windows, and the reason then says the
-name is matched without regard to case, as
-[`write-protected-path`](#write-protected-path) does. A `CLAUDE.md` in a directory
-below the root, such as `sub/CLAUDE.md`, is refused by this rule too, and so is
-an `AGENTS.md` or `CLAUDE.local.md` anywhere. A link or install that lands one
-there is read as [links and installs](#links-and-installs) says, and a program
-that writes a file it is given as
-[that section](#programs-that-write-a-file-they-are-given) says.
-
-The backlog's and the review policy's names are held in any directory, and folded. So with the
-default on, a shell write to any `review.md` anywhere in the project is refused during a story, while
-the file tools still write one that is not the configured path.
-
-The editors `ed`, `red`, `ex`, `vi`, `nvi`, `vim`, `vim.tiny`, `vim.basic`, `vim.nox`, `vim.gtk3`,
-`nvim`, `emacs`, `emacs-nox`, `view`, `rvim`, `rview`, `vimdiff`, `gvim` and `kak` are writers on a
-held path, whatever they are asked, since a batch mode, or kak's `-f`, rewrites the file with no
-person at the keyboard. To read the file, use `cat` or a file tool; the refusal says so. An ordinary
-file stays free. `nano` is not among them: it is interactive, with no batch mode.
-
-A line that assigns a variable is read a second time with each `$NAME` and `${NAME...}` as the value
-the line gives it, so a target assigned on the line is refused as the path it holds, and the refusal
-says which assignment it read. Any assignment on the line counts, in a branch or a subshell, and one
-a later assignment replaces too, because a reading that may be wrong refuses. So a line that only
-mentions both, such as `echo 'T=CLAUDE.md; rm "$T"'`, is refused, as `echo 'a; rm CLAUDE.md'` is.
-[Not held](#the-review-policy) says which values it does not read.
-
-A settings file under `.claude` is where hooks are configured, `CLAUDE.md` is
-the contract every gate reads, and the backlog is the story itself, so a shell
-command that rewrote any of them would take the rules with it. Reading them with
-`cat`, `grep`, `head` or the file tools is never refused, and neither is
-`.gitignore` or `.github/`. As with loop state, `sed`, `awk`, `perl` and
-interpreters are refused on them, though not for naming a whole directory, as
-`python3 -m pytest --ignore .sdlc` does. A path outside the project, such as
-your own `~/.claude`, is not the project's and is not protected.
-
-*Instead:* change them by hand outside a running iteration. If what one says is
-wrong, stop and say what. A person commits a change to the review policy on trunk between stories,
-and a running story keeps the copy it was cut from. To apply it to this story, end the story, commit
-it on trunk and start again.
-
-### `frozen-test-through-the-tool`
-
-Refuses a command that would write, rewrite or delete a frozen acceptance test:
-by redirection; through `rm`, `mv`, `cp`, `tee`, `sed -i`, `find -delete`,
-`git checkout` and their like; or from inside a program handed to `sed`, `awk`,
-`perl` or another interpreter, on the command line or on standard input. A link
-or install that lands one is read as [links and installs](#links-and-installs)
-says, and a program that writes a file it is given as
-[that section](#programs-that-write-a-file-they-are-given) says.
-
-Before the freeze this rule does nothing at all.
-
-A path the hook places outside the repository is not a frozen test, whatever
-its name, and neither is what a `find` comes to that starts only in directories
-placed outside it;
-[A path outside the repository](#a-path-outside-the-repository) says when a
-path is placed. Where the rule refuses a path it did not place, the refusal
-names the word, or where the `find` starts, the repository it was measured
-against, and what stopped the hook placing it.
-
-*Instead:* leave it alone. If it genuinely has to change, say which test and
-why; the person running the session lifts the freeze with
-`/sdlc:unfreeze`, or `sdlc unfreeze --reason "..."`. If the file is a copy outside the repository,
-write its path out in full in a plain command.
-
-A refused `find` has a way on of its own:
-
-- For a `find` with a glob the hook cannot read, spell the names out, or use a
-  glob the hook can read, in single quotes, with no variable and no backslash
-  the shell would act on.
-- For one whose operators leave a frozen test in, run one `find` for each
-  filter.
-- For one whose expression the hook cannot follow, take the way on the refusal
-  gives for its cause, as listed under
-  [`loop-state-through-the-tool`](#loop-state-through-the-tool).
-
-#### A program given somewhere other than the first argument
-
-A `sed`, `awk` or `gawk` command given its program somewhere other than its
-first argument — with `-f`, `--file`, or, for `awk` as for `gawk`, gawk's
-`--source`/`-e` and `--exec`/`-E` — leaves nothing to say
-which of its files is data, so every file it names is treated as one the
-program could write.
-
-#### Reading a frozen test
-
-Reading one with `cat`, `grep`, `head` or the file tools is never refused where
-`sed`, `awk`, `gawk`, `perl` or another interpreter is not in the command too,
-and reading the tests is how the implementer knows what to implement. Those are
-narrower, because each writes through a program of its own that this cannot
-read.
-
-A frozen test named plainly as the file one of them is given to read —
-`sed -n 1,5p internal/x_test.go` — is allowed, unless that command was given its
-program somewhere other than its first argument, when every file it names is
-treated as one the program could write.
-
-Otherwise the name is looked for as a word of the command, not as the program
-would work it out, anywhere on a command line one of these tools runs on, and
-refused there: inside the program text, in quotes, or in another part of a
-pipeline or list. A `;`, `&&`, `||` or `|` inside the program counts as another
-part of the list, so `sed -n '1,5p;10,20p' internal/x_test.go` is refused too.
-
-The flags above (`-f`, `--file`, `--source`/`-e` and `--exec`/`-E`) are looked
-for in any word starting with `-`, wherever it stands and program text
-included, so
-`awk '$1 == "-f" {print $2}' internal/x_test.go` is refused as well.
-
-A frozen test named in the quoted text of `--message`, `--note`, `--reason` or
-`--reject`, or left out by a git pathspec, is not refused where the hook is
-sure that is all it is: see
-[a path that is only named](#a-path-that-is-only-named).
-
-#### How `find` globs and operators are read
-
-The globs `find` is given are read as under
-[`loop-state-through-the-tool`](#loop-state-through-the-tool). A glob the hook
-cannot read is refused when the `find` goes on to delete, run a writer, or write
-its list to a file, from a directory that holds a frozen acceptance test or
-could: one with a frozen test below it, `.`, `..` or a directory above them, or
-one the hook cannot place. The refusal names the glob, the directory, and one
-frozen test the directory holds or could hold.
-
-A `find` that only reads what it finds is not refused, whatever its glob.
-
-The operators of a `find` that deletes or runs a writer are read as under
-[`loop-state-through-the-tool`](#loop-state-through-the-tool), and an
-expression the hook cannot follow is refused the same way, naming the word and
-the directory.
-
-#### A patch names its files where the rule cannot see them
-
-A patch applied with `git apply` or `patch` names its files inside the patch,
-where this cannot see them. `sdlc gate` still refuses a frozen test that
-changed, with `SDLC-E0025`.
-
-### `archive-members-unknown`
-
-Refuses an extraction into the project whose archive's members the hook
-cannot read. The hook reads the member names of the archive a `tar`, `gtar`,
-`bsdtar`, `unzip`, `jar x` or `Expand-Archive` is given, by what the file holds
-rather than its name, and judges each where it lands, with its leading `/` and
-every `..` taken off as `tar` and `unzip` take them off, or as written under
-`tar -P`: `tar -xf p.tar -C .` with a member `CLAUDE.md` is refused as
-[`protected-path-through-the-tool`](#protected-path-through-the-tool), and one
-holding only `notes/a.txt` is not. Where the members cannot be read, any of
-them could be an instruction file or the loop's own, so the extraction is
-refused, and the reason says why:
-
-- the archive does not exist yet: "`p.tar` does not exist yet, so the hook
-  cannot read its members";
-- it is in none of the formats the hook reads, tar, tar.gz, tar.bz2 and zip
-  (a file shorter than one 512-byte tar header is in none), or it is
-  extracted by `pax`, `cpio`, `unar`, `7z` or `ditto`: "`x.7z` is an archive
-  the hook cannot read the member names of (it reads tar, tar.gz, tar.bz2 and
-  zip)";
-- it comes on standard input: "`tar` reads its archive from standard input,
-  whose member names the hook cannot read";
-- an option renames members as they are extracted, `--strip-components`,
-  `--transform`, bsdtar's `-s`, or unzip's `-j` (junk paths): "`--strip-components`
-  renames members as they are extracted, so the hook cannot tell where they
-  land";
-- `tar` is given more than one archive (`-f a.tar -f b.tar`), which differ in
-  which they extract: "`tar` is given more than one archive (`a.tar`, `b.tar`),
-  and tars differ in which one they extract, so the hook cannot tell whose
-  members land" (a `-g` snapshot file is not counted; unzip's `-P` value is a
-  password, not an archive);
-- `unzip` names no archive the hook can pick out of its options, because a
-  bundle holds a letter it does not know: "`unzip` names no archive the hook
-  can pick out of its options, so it cannot tell which file it extracts";
-- the archive word is one the shell or the extractor expands, a variable, a
-  substitution, a backtick, a `%name%`, a glob or a brace list: "`$A` is
-  expanded by the shell or `tar` to a file the hook cannot see, so it cannot
-  read its members";
-- an option variable the extractor reads is set, `UNZIP`, `UNZIPOPT` or
-  `TAR_OPTIONS`, whose options the hook cannot see: "`UNZIP` is set, and the
-  hook cannot see the options it adds to `unzip`, so it cannot tell where the
-  members land" (its route starts "unset `UNZIP`, or put its options on the
-  command line");
-- `unzip` is given a file the hook reads as another format, which means unzip's
-  own fall-back to `<name>.zip` or a wildcard in the name: "`unzip` reads `q`
-  as a zip, and it is not one (the hook reads it as tar), so it cannot tell
-  which members `unzip` extracts";
-- it could not be read to its end, because it is cut short or malformed, or
-  past a bound: "`p.tgz` could not be read to its end (unexpected EOF)".
-
-Each ends ", and it is extracted into `build`, which may hold an instruction
-file or loop state". The bounds are 64 MiB decompressed for one command, 64 MiB
-for a zip, 20000 members and 4096 bytes for a member's name; a bzip2 archive
-read to the first takes about two seconds. An extraction above the project, or
-after a `cd` the hook cannot place, is
-[`instructions-above-the-project`](#instructions-above-the-project)'s instead.
-
-*Instead:* extract it outside the project (an absolute path under the temp
-directory) and copy by name the files you need; or, if an earlier part of this
-command makes the archive, run that part first as its own command so the hook
-can read it; otherwise say what you would unpack and why, and stop.
-
-### `directory-entries-unknown`
-
-Refuses a write whose glob, or a copy whose source, the hook lists to judge
-(see [globs read as the shell reads them](#globs-read-as-the-shell-reads-them)
-and [what a copy's source holds](#what-a-copys-source-holds)), where the
-directory could not be listed in full: a glob's directory in the project or
-above it, or the source of a copy into the project:
-
-```text
-`dist/*` could not be listed in full (more than 20000 entries), so the hook
-cannot tell whether it matches an instruction file or loop state
-```
-
-The cause is "more than 20000 entries" or "the listing failed". The 20000 are
-counted across every directory one command lists, so where the command listed
-other directories first, the cause reads "more than 20000 entries, counting
-those the command listed in other directories first": the directory named may
-hold few entries itself. The same cause appears where the list of stories in
-`.sdlc/stories` could not be read in full after a `cd` the hook cannot place. A
-name the part that was listed already shows held is refused under its own rule
-first.
-
-It also refuses a relative write or removal whose first name is a glob after a
-`cd` the hook cannot place, such as `cd - && rm -f *.o`: there is no directory
-to list, so the glob could match an instruction file or loop state wherever the
-shell is. [After a `cd` the hook cannot place](#after-a-cd-the-hook-cannot-place)
-gives the route.
-
-*Instead:* name the files you mean or use a narrower glob; to empty a large
-directory, remove the directory itself (`rm -rf dist`) and make it again. For a
-copy: copy the files by name, or copy the directory under its own name.
-
-### `unfreeze-is-a-human-decision`
-
-Refuses `sdlc unfreeze` run from a tool call, where `sdlc` is written out as
-the program: by name on `PATH`, by path, or through `npx` or `go run`. Reached
-through a variable, a command substitution or a copy under another name, it is
-[not held](#not-held). In a session the story is not held in, it is refused
-while a story is under way or waiting for a person.
-
-Lifting the freeze is sometimes right, and it is also exactly the move an agent
-would make to reach green. So it is a person's decision: they run it in their
-own terminal, where the hook is not asked. A note that only mentions the word,
-such as `--note "no need to unfreeze"`, is not refused.
-
-*Instead:* say which frozen test is wrong and which acceptance criterion it gets
-wrong, and stop there. The person running the session lifts the freeze with `/sdlc:unfreeze`, or
-`!sdlc unfreeze --reason "..."` at the prompt in Claude Desktop, or
-`sdlc unfreeze --reason "..."` in their own terminal.
+These rules keep the loop's decisions with a person.
+[A person's decisions, refused in every session](#a-persons-decisions-refused-in-every-session)
+says where each one holds and how you make it yourself.
 
 ### `approval-is-a-human-decision`
 
-Refuses `sdlc approve` run from a tool call, where `sdlc` is written out as
-the program: by name on `PATH`, by path, or through `npx` or `go run`. Reached
-through a variable, a command substitution or a copy under another name, it is
-[not held](#not-held). In a session the story is not held in, it is refused
-while a story is under way or waiting for a person, and not in a project with
-neither.
+Refuses `sdlc approve` from an agent's tool call. A reviewer's `approve`
+verdict, recorded with `sdlc review add`, is a different command and is not
+refused.
 
-An approval is a person's answer to a question the loop stopped to ask them:
-`sdlc escalate` hands the story over and ends the iteration. An agent that could
-give the answer would be approving its own work. A reviewer's `approve` verdict,
-given with `sdlc review add`, is a different command and is not refused.
+An approval is your answer to a question the loop stopped to ask you. An agent
+that could give it would be approving its own work.
 
-*Instead:* `sdlc escalate <type> --message "..."`, and stop. The person reads the
-work and runs `/sdlc:approve`, or `sdlc approve` in their own terminal.
+*Instead:* the agent hands the question over with `sdlc escalate` and stops.
+You read the work and type `/sdlc:approve`, or run `sdlc approve` in your own
+terminal. [Human approval gates](guides/human-approval-gates.md) shows how.
+
+### `unfreeze-is-a-human-decision`
+
+Refuses `sdlc unfreeze` from an agent's tool call. A command that only
+mentions the word, as in `--note "no need to unfreeze"`, is not refused.
+
+Lifting the freeze is sometimes right. It is also exactly the move an agent
+would make to get a failing test to pass.
+
+*Instead:* the agent says which frozen test is wrong and which acceptance
+criterion it gets wrong, and stops. You lift the freeze with `/sdlc:unfreeze`,
+or `sdlc unfreeze --reason "..."` in your own terminal.
+[When a frozen test is wrong](guides/when-a-frozen-test-is-wrong.md) walks
+through it.
 
 ### `acknowledgement-is-a-human-decision`
 
-Refuses `sdlc ack` run from a tool call, where `sdlc` is written out as the
-program (by name on `PATH`, by path, or through `npx` or `go run`), in any
-session, in any project with `.sdlc/config.json` the call reaches (the
-session's, the working directory's, or one a path in the command names),
-whether or not a story is being worked on.
+Refuses `sdlc ack` from an agent's tool call, in every session, whether or not
+a story is being worked on. `sdlc log` itself is not refused.
 
-`sdlc log` starts after the commit acknowledged, so acknowledging one takes every
-story before it off the list a person reads. An agent that could run it would be
-deciding which stories nobody needs to look at. `sdlc log` itself is not refused.
+`sdlc log` lists what has landed on trunk since the commit you last
+acknowledged. An agent that could move that mark would be deciding which
+stories nobody needs to look at, its own among them.
 
-The log of what landed on trunk is always there for a person to read, so there
-is always a decision here to keep, between stories and in a session that never
-started one as much as during a story.
-
-*Instead:* say what `sdlc log` lists, and stop. The person reads it and runs
-`/sdlc:ack`, or `sdlc ack --through <commit>` in their own terminal.
+*Instead:* the agent says what `sdlc log` lists, and stops. You read it and
+type `/sdlc:ack`, or run `sdlc ack --through <commit>` in your own terminal.
+[Reviewing what landed on trunk](guides/reviewing-what-landed-on-trunk.md) is
+the guide.
 
 ### `remap-is-a-human-decision`
 
-Refuses `sdlc remap` run from a tool call, where `sdlc` is written out as the
-program (by name on `PATH`, by path, or through `npx` or `go run`), in any
-session, in any project with `.sdlc/config.json` the call reaches, whether or
-not a story is being worked on. The rule reads the subcommand and nothing
-after it: no story id, no flag and no state of the project makes the command a
-session's.
+Refuses `sdlc remap` from an agent's tool call, in every session, whatever
+follows the word. Its `--help` is refused with it; `sdlc help remap` prints the
+same text and is not.
 
-`sdlc remap` puts a landed story's kept change into trunk's `CODEMAP.md`
-([the loop](the-loop.md#parallel-stories-and-codemapmd)). The text is a
-bookkeeper's and no reviewer read it; `--replace` puts it over what trunk
-holds, which may be another story's or a person's, and `--drop` throws it
-away. An agent that could run it would be deciding what trunk's map says.
+`sdlc remap` puts a landed story's change to `CODEMAP.md` on trunk, over what
+trunk holds, or throws it away
+([the loop](the-loop.md#parallel-stories-and-codemapmd)). Either is a choice
+between two texts that no reviewer read, and an agent that made it would be
+deciding what trunk's map says.
 
-Its help is refused with it. For every other command a person keeps,
-`sdlc <command> --help` is let through because a test holds that spelling to
-printing help and doing nothing; none holds it for this one, so the spelling is
-read as the command it names. `sdlc help remap` is not refused, and
-[the commands page](commands.md#sdlc-remap-story) has the same text.
-
-The hook refuses a command only where it can read it, and [Not held](#not-held)
-lists the spellings it cannot: each is as open for this command as for
-`sdlc ack`. The change itself
-is kept in the repository's git directory, at `.git/sdlc/codemap/<ID>.md`,
-which the file and shell rules protect only from a session that holds a story,
-and then only where they can place the path: one built by a substitution, such
-as `$(git rev-parse --git-common-dir)/sdlc/codemap/<ID>.md`, is not placed, so
-a session that holds a story can remove or rewrite another story's kept file
-that way. It is the limit every protected path has.
-A session that holds none can remove or rewrite that file, as it can commit to
-trunk; the story's `gate-record.json` has a `codemap` event for every change
-`sdlc` itself stored, applied or dropped, and none for one made that way.
-
-*Instead:* say what the stop or `sdlc status` printed, and stop. The person runs
-`/sdlc:remap <story>`, or `!sdlc remap <story>` at the prompt in Claude Desktop,
-or `sdlc remap <story>` in their own terminal.
+*Instead:* the agent says what `sdlc stop` or `sdlc status` printed, and
+stops. You type `/sdlc:remap <ID>`, or run `sdlc remap <ID>` in your own
+terminal.
 
 ### `release-is-a-human-decision`
 
-Refuses `sdlc release` run from a tool call, where `sdlc` is written out as the
-program (by name on `PATH`, by path, or through `npx` or `go run`), in any
-session, in any project with `.sdlc/config.json` the call reaches, whether or
-not a story is being worked on.
+Refuses `sdlc release` from an agent's tool call, in every session.
 
-Releasing a story takes it from the checkout of the repository that holds it,
-after which any checkout can start it. An agent that could run it could take a
-story another checkout is working, or let go of the one it is held to and with
-it every rule holding it.
+Releasing a story takes it from the checkout that holds it, after which any
+checkout can start it. An agent that could do that could take a story another
+session is working, or let go of the one it is held to and of every rule with
+it.
 
-*Instead:* say which checkout holds the story and stop. A person runs
-`/sdlc:release <ID> --reason "..."`, or `!sdlc release <ID> --reason "..."` at
-the prompt in Claude Desktop, or `sdlc release <ID> --reason "..."` in their own
-terminal, if it is to move.
-
-### `stop-is-a-human-decision`
-
-Refuses `sdlc stop` run from a tool call while the story still has a gate to
-pass, where `sdlc` is written out as the program: by name on `PATH`, by path,
-or through `npx` or `go run`.
-
-Nearly every rule on this page holds only while a story is being worked on, so ending
-the iteration part-way is the way round all of them at once: a commit no gate
-passed goes through straight after. Ending a story whose gates have all passed
-is the runbook's last step, and is not refused.
-
-*Instead:* work the next gate, or hand the story to a person with
-`sdlc escalate <type> --message "..."` and stop. The person ends the iteration
-with `sdlc stop` in their own terminal, or with `!sdlc stop` at the prompt in
-Claude Desktop.
-
-### `review-is-recorded-by-its-reviewer`
-
-Refuses `sdlc review add <gate> <role> <verdict>` run by anyone but the agent
-it names: the main conversation, a subagent outside the loop, another reviewer,
-or the implementer recording an approval of its own work.
-
-Every reviewer records its own verdict, and the gate passes on those verdicts.
-A review recorded by someone else is a review nobody did. A person recording one
-in their own terminal is not asked.
-
-*Instead:* delegate to the reviewer, which reads the work and records its own
-verdict.
-
-An instance of a reviewer records under its own name: with `instances` set to 2 on security in
-the [`team`](configuration.md#an-agents-entry) section, `sdlc:security` run with `security-2` in
-its brief records as `security-2`, and only that run may. This rule reads no configuration, so a
-session's `sdlc:verifier` can still record its review where the project has disabled the
-verifier.
-
-#### How a review's command is read
-
-These are hook decisions that changed in this release. Where `sdlc` is the program run, a word
-the shell makes, or a word the hook cannot line up with what it read, anywhere from the program
-word through the gate and the role, refuses `sdlc review add` to every session, the reviewer
-itself included, and refuses every command only a person runs: `approve`, `unfreeze`, `ack`,
-`remap`, `release` and `staffing assign`. The program word is the command's first word, the
-program's name. A word the shell makes is one it fills in when the command runs: a
-substitution, a backtick, a variable, a parameter expansion, a pattern, a brace list, a tilde, a
-caret, and under PowerShell a leading `@`. The hook does not list the ways a shell can make a
-word; where its reading cannot see a word as written, it refuses.
-
-Two places are the reviewer's own and are not refused: a flag's value before `add`'s first
-positional word, as in `sdlc review add --note "$NOTE" code_review code-reviewer approve`, and
-every value after the gate and the role.
-
-Two places are read more narrowly, because the program there may not be `sdlc` at all: a
-program word the shell makes in which `sdlc` cannot be read, such as `$CC` or `"$EDITOR"`, and
-a made option of `env`, `nice`, `sudo`, `stdbuf`, `nohup` or `timeout` left in front of `sdlc`.
-There the words after are refused only where they read `review add` or a person's command, or,
-behind a wrapper's made option, where `sdlc`'s subcommand is made. Every other rule still reads
-the line as it did.
-
-Every reading the hook builds is read for made words this way: scripts and strings a shell runs
-later, alias values, an alias's or a `hash` name's use, the command line of a git `!` alias, and
-a here-string handed to a shell with no script. An alias is read where it is defined, by every
-rule, as the command it runs, so `alias r='rm -f .sdlc/state/tests.lock'` is refused as the `rm`
-is, used or not, and the refusal ends: "defining the alias `r` is refused: it runs
-`rm -f .sdlc/state/tests.lock`, and an alias is read as the command it runs".
-
-A line is read twice where it holds a subscripted or appending assignment in front of a program,
-such as `a[1]=x git push --force origin HEAD`, or a brace at the start of a word, such as
-`cp {p}/* .`: once as bash and zsh read it, and once more as the hook read it before. The second
-time, `a[1]=x` is the program, as dash runs it, and a `{` at a word's start opens a group, so
-`p}/*` is a program name, which a pattern can make into one the rules refuse. A refusal only the
-second reading makes says so in its reason and names the word. Its route says what to write
-instead: put the setting on its own line, before the command; write the brace list out
-(`cp a/* b/* .`); or quote a brace that is no list (`cp '{p}'/* .`).
-
-What it costs, and what to write instead:
-
-| Refused now | Write instead |
-| --- | --- |
-| a made flag value before the subcommand, `sdlc --story "$ID" status` | put the flag after the subcommand and its verb: `sdlc status --story "$ID"` |
-| a quoted value between the gate and the role | write the gate and the role together as bare words, and the flags after them |
-| a subcommand partly made by a substitution, `sdlc st$(echo a)tus` | write the subcommand whole |
-| a made version in the program word, `npx sdlc@$V status` | type the version, `npx sdlc@0.9.0 status`, or run the installed `sdlc` |
-| a made program word or a wrapper's made option before `review add` or a person's command, `$TOOL approve x`, `env -u "$V" sdlc review add ...` | write the program and the wrapper's options out, typing an option's value (`timeout 30 sdlc ...`). A variable the command needs goes in front of the program as an assignment: `FOO="$X" sdlc review add ...` |
-| an alias whose command would be refused written out, refused where it is defined, whether or not it is used: `alias p='git push --force'` | run the command written out where it is allowed, and do not define an alias that runs a refused command |
-| a git alias whose command line leaves `sdlc`'s command to the words at its use, `git config alias.s '!sdlc'` | write the subcommand in the alias, `git config alias.st '!sdlc status'`, or run `sdlc` itself |
-| a reviewer's own review on a line that changes what a name runs before it, `alias ll='ls -l'; sdlc review add code_review code-reviewer approve` | make the change in its own command, and record the review in the next one. A change after the review on the same line costs nothing |
-| after a change to what a name runs, a later run whose words read `review add` or a person's command, `alias g=git; g tag release` | make the change in its own command |
-| a person's command through an alias, `alias s=sdlc; s approve US-001` | a person runs `sdlc approve` written out, in their own terminal |
-| a help request through a name the line changed, `alias s=sdlc; s unfreeze --help` | ask for help in a command of its own, with `sdlc` written out: `sdlc unfreeze --help` |
-| a trap that sets an action, on any condition, before a later command on the line whose words read a review or a person's command, `trap 'rm -f "$tmp"' EXIT; git tag release` | drop the trap and clean up after the command, or run the command on a line of its own |
-| a line whose quotes the rules cannot follow, with `sdlc` or `git` in its text, `echo "${x:-"'"}"; git commit -m x` | run `sdlc` or `git` on a line without that string; put the quoted text in a variable, `d="it's"; git commit -m "${x:-$d}"` |
-| in a session holding no story, a git alias whose value is a variable, `git -c alias.l="$V" l` | write the alias's value out |
-| a command after a subscripted or appending assignment in front of it, `a[1]=x git push --force origin HEAD`, `SDLC_ENFORCE+=0 sdlc status` | nothing: the command now meets the rule it meets without the assignment, as the shells run it |
-| an expansion that assigns with a zsh flag or modifier, or with bash's `!`, `: ${(L)x:=y}`, `: ${!n:=v}` | assign by the name itself in a command of its own, `x=y`; to keep `:=`'s meaning, test first, `[ -n "$x" ] \|\| x=y` |
-| on a line that declares a nameref, a value that reads as a refused command, `declare -n r=PATH; m='sdlc approve US-001'` | write to the variable by its own name, or put the nameref and the value in separate commands |
-| zsh's `set -A AI_AGENT …` | nothing: the session's agent variable is not the session's to change |
-
-A `$'\c'`, `$'\c\''`, `$$'` or backslash-newline prefix no longer hides a refusal: an ANSI-C
-string is decoded, and ends, where the shells end it.
+*Instead:* the agent says which checkout holds the story, and stops. If the
+story is to move, you type `/sdlc:release <ID> --reason "..."`, or run
+`sdlc release <ID> --reason "..."` in your own terminal.
+[Stopping and resuming a story](guides/stopping-and-resuming-a-story.md#move-a-story-to-another-checkout)
+covers the move.
 
 ### `assignment-is-a-human-decision`
 
-Refuses `sdlc staffing assign` run from a tool call, in any session, in any
-project with `.sdlc/config.json` the call reaches, whether or not a story is
-being worked on and whether the project manager is enabled or not.
+Refuses `sdlc staffing assign` from an agent's tool call, in every session. A
+run of `sdlc` whose subcommand the hook cannot read, such as one built from a
+variable, is refused under this rule too, because it could be this command.
 
-What `sdlc staffing assign` records says a person chose a model or an effort for
-an agent, and the project manager cannot change it afterwards. A session that
-could run it could pin every agent where it liked, in a person's name.
+What `sdlc staffing assign` records says that a person chose a model or an
+effort for an agent, and the project manager cannot change it afterwards. A
+session that could run it could pin every agent where it liked, in your name.
 
-*Instead:* say what you would have asked for, and stop. A person types
-`/sdlc:assign` in Claude Code, or runs `sdlc staffing assign` in their own terminal, outside
+*Instead:* the agent says what it would have asked for, and stops. You type
+`/sdlc:assign`, or run `sdlc staffing assign` in your own terminal, outside
 Claude Code.
-`sdlc staffing --help` lists the commands.
 
-#### How the word after `sdlc staffing` is read
+### `stop-is-a-human-decision`
 
-The word after `sdlc staffing` is read against the three the hook knows: `show`,
-`set` and `amend`. Any other word is refused, and so is one the shell makes when
-the command runs, since it could be `assign`. `sdlc staffing` with no word after
-it is refused unless it asks for help.
+Refuses `sdlc stop` from an agent's tool call while the story still has a gate
+to pass. Ending a story whose gates have all passed is the loop's last step,
+and is not refused.
 
-#### A subcommand that cannot be read
+Nearly every rule on this page holds only while a story is being worked on, so
+ending one part-way would turn them all off at once. A commit no gate passed
+could go through straight after.
 
-The same rule refuses a run of `sdlc` whose subcommand cannot be read, because
-it could be this command or another only a person runs. That is a run where the
-word after `sdlc` comes from a variable, a substitution, a pattern or a brace
-list, as in `sdlc {review,} add code_review code-reviewer approve`, and a run
-that is handed its words on standard input by `xargs` or GNU `parallel`. A
-subcommand partly made by a substitution, as in `sdlc st$(echo a)tus`, is
-refused as a wholly made one is. It applies to every `sdlc` command, not only
-the staffing's, and the refusal says which of the two it met.
-
-So does a run whose program word the shell partly makes, as in
-`sdlc$(true) staffing set`, where the subcommand written after it is one other
-than `review`: the shell can hand `sdlc` more words in front of the written
-ones. With `review` written there, [`review-is-recorded-by-its-reviewer`](#review-is-recorded-by-its-reviewer)
-refuses it.
-
-*Instead:* write the subcommand out as a literal word, `sdlc status` and not a
-variable that holds `status` or a brace list that makes it; write the program word out, `sdlc` and not
-`sdlc$(true)`; and pass the words on the command line.
-
-Where `sdlc` is not the program a command runs but a later word of it, as in a
-copy of a built binary or a `cd` into a directory of that name, none of this
-applies: only a written-out `staffing` followed by a verb other than the three
-is refused there, and so is a `staffing` command handed its words on standard
-input.
-
-#### A line that changes what a name runs
-
-A line can change what a name runs before it runs it: an alias, a function, a hashed path, zsh's
-lists of names (`commands`, `functions`, `aliases`) and bash's `BASH_CMDS` and `BASH_ALIASES`.
-On such a line, every later run of `sdlc`, and of a name the change names, whose words read
-`review add` or a person's command is refused, since the hook cannot be sure what the shell
-will run there. A change that acts on names it does not write makes every later command on the
-line read this way: a builtin that moves names, such as `enable` or `disable`, a not-found
-handler, a trap that sets an action on any condition, and a zsh global or suffix alias. An alias
-is read where it is defined, by the rules on `sdlc` and on git, as the command it runs, so an
-alias that would run a refused `sdlc` or git command is refused there, as
-`alias p='git push --force'` is.
-
-A value written to one of the lists whose values are code (`functions`, `aliases`, `galiases`,
-`saliases` and their `dis_` lists, and `BASH_ALIASES`) is read where it is written, as the code it
-is: a written key's value, each element of a whole-list literal, and each value zsh's `set -A` or
-`set +A` assigns to such a list. So `set -A functions s 'sdlc approve'; s US-001` is refused as
-`functions=(s 'sdlc approve'); s US-001` is. A `set -A` or `set +A` whose list name the shell
-makes, as in `set -A $n …`, may write any list, and is read as a change to every name.
-
-*Instead:* make the change in a command of its own, and run what follows in the next one.
-
-#### A line whose quotes the rules cannot follow
-
-The rules read quotes the way bash and zsh do, and two shapes are known where their reading can
-end a quote somewhere the shells do not: a `'` inside a `${…}` within a double-quoted string, and
-the two array forms listed under [Not held](#not-held). A line of either shape with `sdlc` or
-`git` in its text, written out, quoted, escaped or inside a word, or with words that read a
-person's command, is refused. A closing quote later on the line does not change that.
-
-*Instead:* run `sdlc` or `git` on a line of its own, and put the quoted text in a variable:
-`d="it's"; git commit -m "${x:-$d}"`.
+*Instead:* the agent works the next gate, or hands the story to you with
+`sdlc escalate` and stops. You end a story part-way with `sdlc stop` in your
+own terminal, or `!sdlc stop` at the prompt in Claude Desktop.
+[Stopping and resuming a story](guides/stopping-and-resuming-a-story.md#put-a-story-down)
+says what that keeps.
 
 ### `slash-command-is-a-human-decision`
 
-Refuses running the sdlc hook by hand on Claude Code's `UserPromptExpansion`
-event, or on an event the hook cannot read, from a tool call: in any session,
-in any project with `.sdlc/config.json` the call reaches, whether or not a
-story is being worked on.
+Refuses running the `sdlc` hook by hand, from an agent's tool call, on
+`UserPromptExpansion`, the event Claude Code raises when you type a slash
+command. It refuses the same on an event it cannot read until the command
+runs, such as one given as a variable. It holds in every session.
 
-On that event the hook is being run as if a person had typed a slash command.
-It runs the command the payload on its standard input names, such as
-`/sdlc:approve`, as that person's decision. The hook cannot tell a run Claude
-Code made from one a model made with a payload it wrote, so a session that
-could run it could approve its own work, lift the freeze or acknowledge the log
-in a person's name.
+When you type `/sdlc:approve`, the hook runs the command for you, as your
+decision. An agent that ran the hook on a message of its own making would be
+approving its own work in your name. The hook's check of its own environment
+answers such a run that the command did not run, and this rule refuses it
+before it starts.
 
-It refuses four kinds of command:
+*Instead:* the agent says what it wanted decided, and stops, and you type the
+slash command. To see what the hook answers to a call, it runs
+[`sdlc hook PreToolUse`](commands.md#sdlc-hook-event), which is not refused.
 
-- `sdlc` itself running `hook`, by name, by path, through `npx` or `go run`,
-  or behind a wrapper the rules read through, on the event written out or on
-  one it cannot read: `sdlc hook UserPromptExpansion < p.json`. Through
-  `Start-Process`, its argument list is read as PowerShell passes it, a list
-  or one string alike, so
-  `Start-Process sdlc -ArgumentList 'hook UserPromptExpansion'` is refused.
-- The plugin's launcher, `sdlc-hook` or `sdlc-hook.cmd`, by name or by any
-  path, run as the program, as a script under `sh` or `bash`, or through
-  `cmd /c` or `Start-Process`, on the same events:
-  `"$CLAUDE_PLUGIN_ROOT/bin/sdlc-hook" UserPromptExpansion < p.json`.
-- A program whose name cannot be read, because it comes from a variable, a
-  substitution or a pattern, given `hook` and then one of those events:
-  `"$(which sdlc)" hook "$E" < p.json`.
-- Any program handed the event written out, as its first word or after a word
-  `hook`, which is how a copy of `sdlc` under another name is run:
-  `/tmp/x hook UserPromptExpansion < p.json`.
+## The tests
 
-The event's name is read in any case. An event cannot be read when the shell
-makes it as the command runs, from a variable, a substitution (PowerShell's
-`$( )` included, and one a script run under `sh` is given, as in
-`sh plugin/bin/sdlc-hook "$(echo UserPromptExpansion)"`), a pattern or a `%`,
-or when `xargs` or GNU `parallel` hands it
-over on standard input. Every event Claude Code has is named in letters alone, so
-any other word is read that way. The refusal says which of the two it met: the
-event written out, or one it cannot read.
+The tests are written from your acceptance criteria and frozen before any code
+exists ([Gate 3](the-loop.md#gate-3-freeze-the-tests)). These rules keep them
+as they were frozen.
 
-Where `sdlc` or the launcher is only a later word of a command, behind a
-program the hook does not know, only the event written out is refused. So
-`git add plugin/bin/sdlc-hook`, `chmod +x plugin/bin/sdlc-hook` and
-`cp plugin/bin/sdlc-hook "$D/"` are not refused.
+### `frozen-test-is-not-edited`
 
-A command that an older rule refuses first keeps that rule's name. So
-`echo UserPromptExpansion | xargs sdlc hook` is refused under
-[`assignment-is-a-human-decision`](#assignment-is-a-human-decision), and a
-project manager's or a reviewer's run of the hook may be refused under
-[`project-manager-only-staffs`](#project-manager-only-staffs) or
-[`review-is-recorded-by-its-reviewer`](#review-is-recorded-by-its-reviewer).
+Refuses any edit of a frozen test with the file tools, from every agent.
 
-*Instead:* say what you wanted decided and stop; a person types
-`/sdlc:approve <ID>`, or `sdlc approve <ID>` in their own terminal, and likewise
-`/sdlc:unfreeze`, `/sdlc:ack`, `/sdlc:remap`, `/sdlc:release` and
-`/sdlc:assign`; to try the hook yourself, run it on PreToolUse, written out as
-a literal word, such as `sdlc hook PreToolUse`.
+A test is frozen by its content when the test gate passes. An agent that can
+edit its own tests will, sooner or later, edit them until they pass, and every
+gate after that one means nothing.
 
-Not refused: the hook run by hand on `PreToolUse` or `SessionStart`, as in
-`sdlc hook PreToolUse < p.json`, which is how a reviewer drives it, and on an
-event Claude Code does not have; and a line that only names the event, such as
-`grep -n UserPromptExpansion plugin/hooks/hooks.json`, a commit message or a
-document's text. The eight events the hook records are refused under
-[`recorded-event-comes-from-the-host`](#recorded-event-comes-from-the-host).
+*Instead:* the agent changes the code until the test passes. If the test
+itself is wrong, it says which acceptance criterion the test gets wrong, and
+stops. Only you lift the freeze:
+[When a frozen test is wrong](guides/when-a-frozen-test-is-wrong.md) is the way
+through.
 
-Not caught by this rule, and caught after it, each in [Not held](#not-held).
-Code handed to an interpreter that runs the hook itself, as `python3 -c` with
-`subprocess.run` does, or a script file that runs it, reaches the hook, which
-answers that the command did not run and records no decision, since the
-process has a tool's label in `AI_AGENT`, and `CLAUDE_CODE_EXECPATH`.
-Interpreter code that names the hook and the expansion or an event it records,
-written out, is refused; code that builds them still reaches the hook, whose
-check on the slash route answers as before. PowerShell's `Invoke-Expression`
-or `iex`, given the hook's command line as a string, reaches the hook with a
-tool's label in `AI_AGENT` too, and the hook answers that the command did not
-run. A copy of `sdlc` or of the launcher under another name, given an event
-this rule cannot read, as in `/tmp/x hook "$E"`, reaches the hook with a tool's
-label in `AI_AGENT`, and the hook answers that the command did not run. An
-event given in PowerShell as an expression in parentheses, as in
-`sdlc hook ('User'+'PromptExpansion')`, which is read as a command of its own,
-reaches the hook with a tool's label in `AI_AGENT`, and the hook answers that
-the command did not run. A session in a project that does not take part,
-running the hook on a payload whose `cwd` names one that does, runs it with a
-tool's label in `AI_AGENT`, and the hook answers that the command did not run.
-That session's own calls are not read, though, so one that has first
-overridden `AI_AGENT` with a hook's label and removed the other markers a
-model's tool carries, all written out, is not caught (in Not held). The
-launcher sourced with `.` or `source`, given an event this rule cannot read,
-gets past this rule too. Run that way, as in
-`. plugin/bin/sdlc-hook "$E" < p.json`, it reaches the hook with a tool's label
-in `AI_AGENT`, and the hook's check of its own environment is what stops it:
-the hook answers that the command did not run. A hook named in the project's
-settings is a program Claude Code starts itself, with an environment of its own
-that passes the hook's check (read in Claude Code 2.1.321), and a payload it
-feeds the hook is not caught; a server named in `.mcp.json` was not checked,
-and is listed with it (the project MCP server or hook in Not held). A slash
-command another program types into the person's own prompt reaches Claude
-Code's own hook as the person's typing would (in Not held too).
+### `frozen-test-through-the-tool`
 
-### `recorded-event-comes-from-the-host`
+Refuses a shell command that would write, move or delete a frozen test: a
+redirect, `rm`, `mv`, `cp`, `tee`, `sed -i`, `find -delete`, `git checkout`, or
+code handed to an interpreter. Before the freeze it does nothing.
 
-Refuses running the sdlc hook by hand, from a tool call, on one of the eight
-events it records: `PostToolUse`, `PostToolUseFailure`, `SubagentStart`,
-`SubagentStop`, `Stop`, `Notification`, `StopFailure` and `PostCompact`, in
-any case. In any session, in any project with `.sdlc/config.json` the call
-reaches, whether or not a story is being worked on.
+Reading a frozen test is how the implementer learns what to build, and `cat`,
+`grep`, `head` and the file tools are never refused. A command with `sed`,
+`awk`, `perl` or another interpreter in it is let through only where it names
+the test plainly as the file to read: `sed -n 1,5p internal/x_test.go` is
+allowed, and `cat internal/x_test.go | sed -n 1,5p` is refused.
 
-On those events the hook writes the story's `agent_start` and `agent_end`
-events to its `gate-record.json` and its measurements to the
-[trace](the-loop.md#the-trace), as Claude Code reported them. A payload a model
-wrote is not Claude Code's report, and the story's figures would be what the
-model chose.
+A copy of a frozen test outside the repository is not a frozen test:
+[A path outside the repository](#a-path-outside-the-repository) says when the
+hook can tell. A patch applied with `git apply` or `patch` names its files
+where this rule cannot see them, and `sdlc gate` still
+[refuses](troubleshooting.md#sdlc-e0025) once a frozen test has changed.
 
-It is read as
-[`slash-command-is-a-human-decision`](#slash-command-is-a-human-decision) reads
-the expansion, through every spelling listed there, and further:
+*Instead:* the agent leaves the test alone. If it has to change, the agent
+says which test and why, and you lift the freeze. For a copy outside the
+repository, it writes the path out in full in a plain command.
 
-- the launcher, `sdlc-hook` or `sdlc-hook.cmd`, as a later word under any
-  program, `.` and `source` included, where a recorded event follows it:
-  `. plugin/bin/sdlc-hook SubagentStop < p.json`;
-- a program the shell makes, from a variable, a substitution, a backtick or a
-  pattern, given a recorded event as its first word, as the launcher would be:
-  `L=plugin/bin/sdlc-hook; $L SubagentStop < p.json`;
-- the same after `xargs -I`, `-i`, `--replace` or `-J`, and in `find -exec`,
-  whose replacement string is a word the shell makes:
-  `echo plugin/bin/sdlc-hook | xargs -I{} sh {} SubagentStop`;
-- `exec -c ./plugin/bin/sdlc-hook SubagentStop`;
-- interpreter code, `python3 -c`, `node`, `perl`, `ruby`, `php` and awk's
-  family among them, that names `sdlc hook` or the launcher and a recorded
-  event, in its words or in a here-document it is fed;
-- a program handed `SubagentStart`, `SubagentStop`, `PostToolUse`,
-  `PostToolUseFailure`, `StopFailure` or `PostCompact` as its first word, such
-  as a copy of the launcher (`/tmp/y SubagentStop`), where the program is not
-  one the rules know runs no hook.
+### `no-new-test-after-the-freeze`
 
-A recorded event as the first word of a program that is named is not read
-otherwise, since `docker stop web`, `echo Stop` and
-`grep -n SubagentStop plugin/hooks/hooks.json` run no hook, and neither is the
-launcher named with no event after it, as in `chmod +x plugin/bin/sdlc-hook`.
+Refuses a new test file once the tests are frozen, from the file tools and
+from a shell command that would create one, unless
+[`freeze.allow_new_test_files`](configuration.md#freezeallow_new_test_files)
+is on. New means any test file the freeze does not hold, however long it has
+been there. Removing one is not refused. Nor is a path the hook places
+outside the repository, which is no test of this project's.
 
-`PreToolUse` and `SessionStart` stay open. A reviewer drives the hook on
-`PreToolUse` to see what it answers, and neither records anything run that
-way, with one exception: a payload sent to `sdlc hook PreToolUse` that the hook
-refuses adds a `refusal` record, as the refusal of a real call would, and a
-commit payload it allows notes the commit as Claude Code's own call would.
+A test added after the code exists can be written to pass. That is the freeze
+with extra steps.
 
-The hook does not ask `AI_AGENT` on these events: Claude Code in Claude
-Desktop ran its hooks with it set (2.1.309, seen on 2026-10-29), and gives
-them a label of their own, ending `_harness`, from 2.1.321, so a check there would record
-nothing for a person working in Claude Desktop on an older release. So these
-rules are what hold the events, and what gets past them is in
-[Not held](#not-held).
+*Instead:* the agent says which case is missing, and stops. You may lift the
+freeze so that the test author adds the case and freezes again. With the
+setting on, the test author adds the file and runs `sdlc freeze`, which waits
+for the test reviewer, where the story has one, to approve the tests with the
+new file among them. Until then the later gates
+[refuse](troubleshooting.md#sdlc-e0043).
 
-*Instead:* leave the recording to Claude Code, which runs the hook on these
-events itself; to see what the hook answers, run `sdlc hook PreToolUse` with a
-payload on standard input that has a `session_id` of its own: it answers on
-stdout as it would answer Claude Code, and a payload it refuses that carries
-this session's id is recorded in the held story's trace as a refusal of a call
-that never ran, and counted in its figures.
+### `implementer-does-not-write-tests`
+
+Refuses the implementer writing any test file, frozen or not, before the
+freeze or after it, through the file tools or the shell. Reading one is not
+refused. Through the shell, a path the hook places outside the repository is
+no test of this project's, so a scratch copy may be changed with a plain
+command.
+
+The agent that writes the code does not write the tests it is judged by. That
+separation is what the loop is made of, and it is not a setting:
+`freeze.allow_new_test_files` lets the test author add a file, never the
+implementer.
+
+*Instead:* the implementer makes the existing tests pass. If they are wrong,
+it says so and stops.
+
+After the freeze the two rules above answer first, so this is the name you see
+before the freeze, or for a new file the setting lets past.
+
+## Each agent's job
+
+Each gate is done by an [agent](the-agents.md) that never saw the others'
+reasoning. These rules keep each one to its own part.
+
+All but the last three govern the file tools: `Write`, `Edit`, `MultiEdit` and
+`NotebookEdit`. A shell command is held to the rules that protect the tests,
+the loop's records, your configuration and the commit, and not to an agent's
+role.
+
+### `orchestrator-delegates`
+
+Refuses the main conversation, the one you type into, writing any file outside
+`.sdlc/` and `CODEMAP.md` while a story is being worked on: code, tests and
+documentation alike. It refuses the same of a subagent that is not one of the
+loop's own, such as Claude Code's general-purpose agent or one of yours.
+
+The conversation doing the work itself is the failure the loop exists to
+prevent, and it can be reached without breaking any other rule. Handing the
+work to an agent the loop does not know is the same failure one step removed.
+
+*Instead:* the session delegates the work to the agent whose gate it is. A
+file that is not the story's work, such as a note for you or a commit message,
+goes under `.sdlc/stories/<ID>/` in the checkout the session works in. It is
+removed before the commit gate is recorded, because a file left there is
+committed with the story unless your project ignores that directory. If you
+asked for a quick change mid-story, let the story's own agents make it, or
+[put the story down](guides/stopping-and-resuming-a-story.md#put-a-story-down)
+first.
+
+### `sdet-writes-tests-only`
+
+Refuses the test author writing anything but tests, the story's own directory
+and `CODEMAP.md`.
+
+A test written beside its implementation tests the implementation, not the
+criterion.
+
+*Instead:* the test author writes the tests, and the code comes next, from the
+implementer. If your project keeps fixtures somewhere the loop does not
+recognise as tests, the agent names the directory and stops, and you add it to
+[`paths.tests`](configuration.md#pathstests) between stories.
+
+### `researcher-writes-analysis-only`
+
+Refuses the researcher writing outside the story's own directory and
+`CODEMAP.md`.
+
+The researcher says what the story needs before anybody writes a test or a
+line of code. It does not go on to write either.
+
+*Instead:* it keeps to the story's directory and `CODEMAP.md`, and stores its
+documents with `sdlc artifact write`.
+
+### `reviewer-reviews`
+
+Refuses any of the eight reviewing agents (architect, security, red-team,
+perf, human-advocate, verifier, code-reviewer and test-reviewer) writing
+outside the story's own directory.
+
+A reviewer that changes the work is reviewing its own. None of the eight is
+given a file-writing tool, so this rule is a backstop: it is what still holds
+if an agent's tool list grows.
+
+*Instead:* the reviewer says what is wrong and records its verdict with
+`sdlc review add`. Somebody else makes the change.
+
+### `bookkeeper-writes-the-retro-and-the-map`
+
+Refuses the bookkeeper writing anything but the story's own directory and
+`CODEMAP.md`.
+
+The retro records what happened. An agent that could change the code while
+writing up the lessons could write up lessons it had just made untrue.
+
+*Instead:* it stores the retro with `sdlc artifact write retro`. `CODEMAP.md`
+is the only other thing its gate produces.
+
+### `review-is-recorded-by-its-reviewer`
+
+Refuses `sdlc review add` run by anyone but the reviewer it names: the main
+conversation, an agent outside the loop, another reviewer, or the implementer
+recording an approval of its own work. A review you record in your own
+terminal is not asked about.
+
+A gate passes on its reviewers' verdicts, so a review recorded by somebody
+else is a review nobody did.
+
+*Instead:* the session delegates to the reviewer, which reads the work and
+records its own verdict. Where a reviewer runs as several
+[instances](configuration.md#an-agents-entry), each records under its own
+name, such as `security-2`. A reviewer's
+[arbiter](the-loop.md#the-arbiter) is a fresh agent of the reviewer's kind,
+and records as `<role>-arbiter`.
 
 ### `staffing-is-recorded-by-the-project-manager`
 
 Refuses `sdlc staffing set` and `sdlc staffing amend` in the session working a
-story, from anyone but the `sdlc:project-manager` agent: the main conversation,
-a subagent outside the loop, and every agent the staffing is about.
+story, from anyone but the `sdlc:project-manager` agent.
 
-The staffing says who takes part in a story and what each is asked for. The
-session that runs the loop is the one a smaller staffing saves work for, and the
-agents are the ones it leaves out, so none of them writes it. Where no story is
-being worked on the hook does not ask; the commands themselves refuse, because
-they write only the story being worked on.
+The staffing says which agents take part in a story and what model and effort
+each is asked for. The session running the loop is the one a smaller staffing
+saves work for, and the agents are the ones it leaves out, so none of them
+writes it.
 
-*Instead:* delegate to `sdlc:project-manager` with the story and what happened.
+*Instead:* the session delegates to `sdlc:project-manager`, with the story and
+what happened.
 
 ### `project-manager-only-staffs`
 
-Refuses the `sdlc:project-manager` agent every run of `sdlc` but the ones it is
-for: `sdlc staffing show`, `sdlc staffing set`, `sdlc staffing amend`, the
+Refuses the `sdlc:project-manager` agent every `sdlc` command but the ones it
+is for: `sdlc staffing show`, `sdlc staffing set`, `sdlc staffing amend`, the
 commands that only read (`sdlc status`, `sdlc review list`, `sdlc story list`,
-`sdlc artifact list`, `sdlc log`, `sdlc cost`, `sdlc doctor`, `sdlc version`),
-and any command asked for its help. It is a list of what it may run, so a
-command this version does not have, and a subcommand that cannot be read, are
-refused too. Help is read as `sdlc` reads it: a help flag turned off by a later
-`--help=false`, or beside a variable or a substitution that could turn it off,
-is not a request for help.
+`sdlc artifact list`, `sdlc log`, `sdlc cost`, `sdlc doctor` and
+`sdlc version`), and any command asked for its help.
 
 The project manager decides who takes part. An agent that could also record a
-gate or a review, or hand the story to a person, would be deciding the story.
+gate or a review, or hand the story to you, would be deciding the story.
 
-*Instead:* record or amend the staffing, and say anything else in your result.
-Handing a story to a person is for the main conversation running the runbook.
+*Instead:* it records or amends the staffing, and says anything else in its
+result. Reporting an agent's failed run with
+[`sdlc team failure`](commands.md#sdlc-team-failure-agent) is for the session
+running the story, the project manager's own failed run included.
+
+## The loop's records
+
+The record of a story is what every later gate relies on, and what you approve
+from. `sdlc` writes it, and nobody edits it. These rules cover every story's
+records, not only the one being worked on: a finished story's record is the
+evidence that it finished.
+
+### `loop-state-through-the-tool`
+
+Refuses a shell command that would write or delete the loop's own files:
+`.sdlc/config.json`, `.sdlc/state`, any story's gate record, `DECISIONS.md`,
+reviews and gate documents, and `.sdlc` or a story's directory taken whole. How
+the command does it makes no difference: a redirect, `rm`, `mv`, `cp`, `tee`,
+`sed -i`, `find -delete`, a hard link, or code handed to an interpreter.
+
+It also refuses two things that would take those files along with them:
+
+- removing or moving a checkout of this repository, or a directory that holds
+  one, such as `rm -rf ..` from a story's worktree;
+- throwing the working tree away wholesale, with `git stash`,
+  `git reset --hard`, `git checkout -- .` or `git clean`.
+
+A scratch file inside a story's directory is not loop state, and reading the
+loop's files with `cat`, `grep` or `head` is never refused. `sed`, `awk`,
+`perl` and other interpreters are refused on them whatever they are asked to
+do.
+
+A `find` that deletes is read with its operators. `!` and `-not` are taken to
+leave every file in, and each side of `-o` or `-or` is read on its own, so
+`find . ! -name '*.go' -delete` is refused for the loop's files it would
+reach, and the refusal names them.
+
+Without this rule, a shell command would be the one way round every rule that
+protects the record.
+
+*Instead:* the agent uses `sdlc artifact write` for a gate's document,
+`sdlc review add` for a review, `sdlc gate` for an outcome and `sdlc decide`
+for a decision. To clear up, it removes only what the story made, by name, as
+in `rm -rf build` or `find build -type d -empty -delete`, and runs one `find`
+for each name it filters on. `.sdlc/config.json` has no command: you change it
+by hand, between stories. Removing a checkout is yours too.
+
+### `gate-record-is-written-by-the-tool`
+
+Refuses any edit of a story's `gate-record.json` with the file tools.
+
+The gate record is the loop's memory of which gates passed, and every later
+gate reads it. A record an agent can edit is not a record.
+
+*Instead:* the agent records an outcome with
+[`sdlc gate <name> pass|fail --note "..."`](commands.md#sdlc-gate-gate-status).
+
+### `review-is-written-by-the-tool`
+
+Refuses any write under a story's `reviews/` directory with the file tools.
+
+`sdlc` stamps each review with what the reviewer was looking at, so that a
+later change makes the approval
+[stale](the-loop.md#why-approvals-go-stale) instead of letting it stand. A
+review written by hand carries no such stamp.
+
+*Instead:* the reviewer runs
+[`sdlc review add`](commands.md#sdlc-review-add-gate-role-verdict) with its
+gate, role and verdict, its counts, and one `--finding` for each finding it
+counts.
+
+### `gate-artifact-is-written-by-the-tool`
+
+Refuses any in-place write of a gate's document: `ANALYSIS.md`, `THREATS.md`,
+`TEST-PLAN.md`, `PLAN.md`, `VERIFICATION.md` or `RETRO.md`. It refuses
+everyone, the agent whose gate it is included.
+
+A gate's document is part of the record. Were it an ordinary file, the main
+conversation could write the analysis itself and then record a pass on its own
+work.
+
+*Instead:* the agent whose gate it is runs `sdlc artifact write <name>` and
+gives it the document.
+
+### `trace-is-written-by-the-tool`
+
+Refuses any write to a story's `trace.jsonl`, by a file tool or a shell
+command, from every agent and the main conversation alike. Reading it is never
+refused.
+
+[The trace](the-loop.md#the-trace) is the loop's measurements of the story:
+what each agent's run took, and what was refused. A measurement an agent can
+write is not a measurement.
+
+*Instead:* there is nothing to record by hand. Read it with
+[`sdlc trace <ID>`](commands.md#sdlc-trace).
+
+### `decisions-are-written-by-the-tool`
+
+Refuses any write to a story's `DECISIONS.md` with the file tools, from every
+agent and the main conversation alike. Reading it is never refused, and a
+`DECISIONS.md` outside a story's directory is an ordinary file.
+
+The file lists the
+[implementation decisions](the-loop.md#two-kinds-of-decision) the loop made on
+the story without stopping for you, and it is where you read them afterwards.
+`sdlc` writes it again from the story's record each time a decision is
+recorded. A decision an agent can rewrite is not a record of one.
+
+*Instead:* the agent records a decision with
+[`sdlc decide`](commands.md#sdlc-decide-id), giving the question, each option
+it weighed, the one chosen, the reason, and whose recommendation it was. A
+shell command that writes the file is refused under
+[`loop-state-through-the-tool`](#loop-state-through-the-tool).
+
+### `recorded-event-comes-from-the-host`
+
+Refuses running the `sdlc` hook by hand, from an agent's tool call, on one of
+the eight events it records: `PostToolUse`, `PostToolUseFailure`,
+`SubagentStart`, `SubagentStop`, `Stop`, `Notification`, `StopFailure` and
+`PostCompact`. It holds in every session.
+
+On those events the hook writes down each agent's run and the story's
+measurements as Claude Code reported them. A report an agent wrote is not
+Claude Code's, and the story's figures would be whatever the agent chose.
+
+*Instead:* the agent leaves the recording to Claude Code. To see what the hook
+answers, it runs [`sdlc hook PreToolUse`](commands.md#sdlc-hook-event) with a
+`session_id` of its own, because a refusal that carries the session's own id
+is counted in the story's trace.
+
+### `commands-run-as-configured`
+
+Refuses `sdlc gate implementation pass` and `sdlc freeze` where the same
+command line changes the environment `sdlc` starts with, or runs the call
+behind another program that could. In `PowerShell`, a line that may run either
+call has to be the call alone.
+
+Both calls run [your configured commands](configuration.md#commands) and
+record the result, and the verifier and the landing reuse that result instead
+of running the commands again. The commands inherit the environment `sdlc`
+starts with. A setting in front of the call, such as `GOFLAGS='-run=^$'` or a
+`PATH` that finds another `go`, would record a pass of a run that tested
+nothing. So the rule refuses any change, whatever variable it names.
+
+The refusal says which of these it met:
+
+| The line holds | Write it as |
+| --- | --- |
+| A setting, an `export`, `env`, a second command that changes the environment, or a wrapper such as `sudo` or `timeout`, in front of the call or earlier on the line | The call with nothing in front of it. A `cd` before it is fine, and so are `time`, `nice` and `nohup`. |
+| In `Bash`, a here-document whose delimiter is not quoted, with `$( )`, a backtick or `${ }` in its body | The delimiter quoted, as in `<<'EOF'`, so that the body is text. |
+| In `PowerShell`, anything beside the call: a pipe, a comment, a variable or a double-quoted note | The call alone, with a plain or single-quoted `--note`, after at most one `Set-Location` or `cd` to an absolute path. |
+| In `PowerShell`, text that names `sdlc` and the call's words, such as a commit message or a review's finding | The text in a file, handed over with `git commit -F <file>` or `--file <file>`. |
+| In `PowerShell`, a typographic quote anywhere on the line, an editor's apostrophe in `it’s` among them | ASCII quotes, or the text in a file. |
+| In `PowerShell`, `pwsh` or `powershell` given a variable, an expression or an encoded command | Literal words, as in `pwsh -File ./build.ps1`. |
+
+*Instead:* the agent runs the call alone. A setting your commands need goes in
+the command itself, in `.sdlc/config.json`, which you edit by hand, between
+stories.
+
+The rule narrows who chooses that environment, and does not settle it. A
+result the verifier marks `run by sdlc` was run as configured from a line the
+rule could read, which is not proof that nobody chose the environment. The
+rule does not read a script the line runs, such as `bash ./x.sh` or
+`make gate`. Nor does it read `sdlc` run under another name: a copy, a hard
+link, or `go build -o` in a project that builds `sdlc`. Inline interpreter
+code that builds the name gets past it, and so does a substitution that is the
+whole call behind another program, as in `sudo $(printf 'sd%s freeze' lc)`.
+The verifier's check for tests that pass without the behaviour stays the net,
+and [Not held](#not-held) lists the rest.
+
+## Your configuration and instructions
+
+The contract in `CLAUDE.md`, your settings, the backlog and the review policy
+are what a story is judged against. A rule the agent can edit is a rule that
+has stopped applying to it. Everything here is yours to change by hand,
+between stories.
+
+### `write-protected-path`
+
+Refuses a file-tool write to `.git`, `.sdlc/config.json` and `.sdlc/state` at
+the root of the repository, and to `CLAUDE.md`, `CLAUDE.local.md`,
+`AGENTS.md`, `.claude` and `.agents` at any depth. Names are matched without
+regard to case, so `docs/agents.md` is held as `AGENTS.md` is, and the refusal
+says so.
+
+Configuration is yours, and the loop's state is `sdlc`'s. An agent editing
+either can make the record say something that did not happen. The instruction
+files are held at any depth because Claude Code and other agent tools read
+them wherever they sit in the project. A contract rewritten to get past a gate
+takes every later gate with it.
+
+*Instead:* you change configuration by hand, between stories. If a rule in
+your contract is wrong, the agent stops and says so.
+
+### `protected-path-through-the-tool`
+
+Refuses a shell command that would write or delete `CLAUDE.md`,
+`CLAUDE.local.md`, `AGENTS.md`, anything under `.claude`, `.agents` or `.git`,
+the backlog, or the review policy. It is the shell's side of the rule above
+and the two below. An editor such as `vim` or `ed` opened on one of them is
+refused as well, because it can rewrite the file with nobody at the keyboard;
+`cat` reads it.
+
+The shell matches these names more widely than the file tools do: without
+regard to case, and in any directory. While a story runs, a command that
+writes `docs/review.md` is refused where your policy is `REVIEW.md`.
+
+*Instead:* you change these files by hand, between stories. If what one says
+is wrong, the agent stops and says what.
+
+### `backlog-is-not-edited`
+
+Refuses a file-tool write to the backlog, wherever
+[`backlog.path`](configuration.md#backlogpath) puts it. `sdlc` itself still
+records each story's status there as the loop moves it.
+
+The backlog holds the acceptance criteria the tests are held to, and each
+story's risk tier, which decides, with the paths your settings list, whether
+you approve the commit. An agent that lowered a story's tier mid-story would
+take that pause away.
+
+*Instead:* if a story's criteria or risk tier are wrong, the agent says which,
+and stops. You change the backlog by hand;
+[Writing stories](guides/writing-stories.md) says when it is safe to.
+
+### `review-policy-is-not-edited`
+
+Refuses a file-tool write to the review policy, wherever
+[`reviews.policy`](configuration.md#reviewspolicy) puts it, from every agent.
+
+Every reviewer reads [the policy](the-loop.md#the-review-policy) first, and it
+tells them what to report. An agent that could edit it could edit what its own
+reviewers obey.
+
+*Instead:* if the policy is wrong, the agent says what, and stops. You change
+it on trunk, between stories. A running story keeps the copy it started with,
+so to apply a change to it you end the story, commit the change on trunk and
+start again. A change made in the story's worktree does not reach trunk:
+[the landing refuses it](troubleshooting.md#sdlc-e0055).
+
+### `claude-config-is-the-persons`
+
+Refuses writing your Claude Code configuration, with a file tool or a shell
+command, in every session of a project set up for the loop. That is `~/.claude`
+and everything under it, `~/.claude.json`, and the directories
+`CLAUDE_CONFIG_DIR` and `CLAUDE_CODE_PLUGIN_CACHE_DIR` name. Claude Code's own
+commands that change it are refused too, such as `claude config set`,
+`claude mcp add` and `claude plugin install`.
+
+That configuration decides the hooks, plugins, skills, agents and permissions
+every session runs under, this plugin among them. A session that could write
+it could take the hook away, or give itself the permissions you withhold.
+
+*Instead:* the agent says what it would change there and why, and stops. You
+change your own configuration, in Claude Code's settings or by hand.
+
+The rule holds only in a project set up for the loop. A session in any other
+project is held to nothing, so it can write all of this, and every project on
+the machine then runs what it wrote. That limit is accepted, and
+[SECURITY.md](../SECURITY.md) says more about it.
+
+Claude Code's commands are read by the word `claude`. One run through the path
+in `CLAUDE_CODE_EXECPATH`, as in `"$CLAUDE_CODE_EXECPATH" mcp add`, is refused
+only in the session working a story, under
+[`story-stays-in-its-session`](#story-stays-in-its-session).
+
+### `agents-config-is-the-persons`
+
+Refuses writing your `~/.agents`, and everything under it, in every session of
+a project set up for the loop. A command that fills or empties your whole home
+directory, such as `rm -rf ~`, is refused under this rule too.
+
+`~/.agents` is the folder Codex, Cursor, Copilot, Gemini CLI and other agent
+tools load skills from. It has nothing to do with `sdlc`'s own agents. A skill
+written there runs in your next session with one of those tools, outside every
+rule on this page.
+
+*Instead:* the agent says what it would change there and why, and stops. You
+add or change a skill in your own `~/.agents`, by hand.
+
+### `instructions-above-the-project`
+
+Refuses a write, while a story is being worked on, to `CLAUDE.md`,
+`CLAUDE.local.md` or `AGENTS.md` in a directory above the project, or in that
+directory's `.claude`. The project is the checkout the session works in, so a
+story's worktree has your main checkout above it. A copy or an extraction that
+fills such a directory is refused as well, as with `cp -r src/. ..` or a
+`tar -x` there, because it may put one of those files in it.
+
+Claude Code loads those files from every directory above the one it starts in.
+What a session writes there is read as instructions by every later session
+started below it, in this project and in others.
+
+*Instead:* the agent says what it would change there and why, and stops, or
+writes the files inside the project. You change the instruction files above
+the project by hand.
+
+### `write-outside-repository`
+
+Refuses a file-tool write that lands outside the repository, links followed.
+It also refuses a write into another checkout of the repository nested inside
+this one, such as a story's worktree written from a session held in your main
+checkout.
+
+The loop vouches only for what it can review, and a file elsewhere is in no
+story's diff. A file in another checkout is that checkout's story's work.
+
+*Instead:* the agent works inside the repository, in the checkout its session
+holds, and asks you to create a file it needs elsewhere. A shell command may
+still write a scratch file outside the repository, as
+[A path outside the repository](#a-path-outside-the-repository) sets out.
+
+## Commits, branches and checkouts
+
+The commit is where a story's work becomes history, and the landing is where
+it reaches trunk. These rules keep both for work that has been through the
+gates.
 
 ### `commit-gate`
 
-Refuses `git commit` until every gate before the commit gate has passed. The
-refusal names the first one that has not.
+Refuses `git commit`, and the git commands that make a commit of their own
+(`merge`, `cherry-pick`, `revert`, `am`, `rebase` and `commit-tree`), until
+the story is ready to commit. Three things have to be true, and the refusal
+names the first that is not:
 
-Once they have, it also refuses a commit of work that has changed since the
-verifier and the code reviewers approved it. Their reviews are stamped with the
-working tree as it was, outside `.sdlc/` and without the `status` and `updated`
-fields `sdlc` writes into the backlog, and a change anywhere else makes them
-stale; the refusal names whose. Measuring the tree takes a moment, so it is done
-only for `git commit`.
+1. Every gate before the commit has passed.
+2. The work has not changed since the verifier and the code reviewers approved
+   it.
+3. For a story that waits for you, you have approved that same work with
+   `sdlc approve`. A story waits when its risk tier is in
+   [`human_gates.pre_commit_pause_tiers`](configuration.md#human_gates), or
+   when its change touches a path that `human_gates.pre_commit_pause_paths`
+   matches. For a path, the refusal names each file with the glob it matched.
 
-A story whose risk tier is in `human_gates.pre_commit_pause_tiers`, or whose
-change touches a path `human_gates.pre_commit_pause_paths` matches, is also
-refused until a person has approved that same tree with `sdlc approve`. The
-change runs from where the story's branch left trunk, with what is staged, not
-staged or untracked, and the refusal names each file with its glob, the first
-20 and then how many more, which `sdlc status` names. The main checkout's lists
-count beside the story's own copy of the configuration, which cannot take a
-pause away. A story missing from the backlog is refused too, because its tier
-cannot be known.
+This is the rule that makes the gates count. Nothing reaches your history
+until the tests, the plan and the diff have each been checked, and what is
+committed is what was checked.
 
-Where a pause is due and the working tree cannot be measured, within the
-hook's time or because git failed, the commit is refused, saying so and why: no
-approval can be matched to a tree nobody measured. Where a person has approved
-the work, they make that commit in their own terminal, and
-`sdlc gate commit pass`, which has no deadline, then checks it against their
-approval. A commit nothing pauses is let through with a warning, as before.
+The story's own copy of your settings cannot take the pause away: the lists in
+your main checkout count beside it.
 
-The hook still lets through a commit amended once the commit gate has passed:
-the tree is the approved one. For a story in its own worktree that pauses so,
-the landing is what holds it to the commits the gate recorded, and `sdlc stop`
-refuses another ([`SDLC-E0037`](troubleshooting.md#sdlc-e0037)).
+*Instead:* the agent finishes the gates, and `sdlc status` shows which is
+next. Committing without them is your decision: you end the story with
+`sdlc stop` in your own terminal first.
 
-*Instead:* finish the gates — `sdlc status` shows where the story stands.
-Committing without them is for the person running the session to decide:
-`sdlc stop`, which turns this rule off along with the iteration, is refused from
-a tool call until they have passed
-([`stop-is-a-human-decision`](#stop-is-a-human-decision)).
+Where a story waits for you and the hook cannot measure the working tree in
+time, it refuses the commit and says so, because no approval can be matched to
+work nobody measured. If you have approved the work, make that commit in your
+own terminal. `sdlc gate commit pass` then checks it against your approval.
 
-#### Commands that make commits of their own
-
-The git commands that make commits of their own are refused the same way:
-`merge`, `cherry-pick`, `revert`, `am`, `rebase` and `commit-tree`, apart from
-`--abort` or `--quit` on its own, and a `--no-commit`, `merge --squash` or
-`cherry-pick -n` that leaves the change in the working tree for `git commit`.
-
-So is an alias to one of them, set with `git -c`, `git config`, `--config-env`
-or the `GIT_CONFIG_*` variables, in the command or in the environment the
-session started with; an alias in your own git configuration file is not read,
-and one the hook cannot read at all is refused
-([`git-command-cannot-be-read`](#git-command-cannot-be-read)).
-
-A commit made in a way the hook cannot read is refused at the next gate
-instead, which will not pass once HEAD has moved since the story started
-([`SDLC-E0046`](troubleshooting.md#sdlc-e0046)). Once the gates before the
-commit have passed, a rebase is
-[`branch-through-the-tool`](#branch-through-the-tool)'s to judge instead.
-
-#### A gate record that cannot be read
-
-A gate record that is missing or will not parse counts as no gate passed, and
-the refusal names the file. `sdlc start` always writes one, so either means
-something damaged it. `sdlc stop`, run by a person, still ends the iteration
-when the record cannot be read.
-
-#### The note of a commit let through
-
-A commit this rule lets through is also written down: the HEAD it is made on,
-in the repository's git directory at `<git-dir>/sdlc/commits/<story>/`, so that
-the commit gate can tell the story's commits from anybody else's.
-
-Only a command that commits now is written down: not one that sets an alias,
-rehearses with `--dry-run` or leaves the change uncommitted. Nor is one whose repository the
-command's words do not identify as this one, such as after `cd "$HOME/other"`,
-with `git -C "$DIR"` or with `GIT_DIR` set, or in a repository nested inside
-the project: this rule holds such a commit back in case it is this
-repository's, and writing it down on the same guess would record this
-repository's HEAD for a commit made elsewhere.
-
-The note is written only for the session working the story, never refuses anything
-itself, and is never committed or pushed. The commit gate believes it, so it is
-a claim the hook saw a commit coming rather than proof;
-[Reviewing what landed on trunk](guides/reviewing-what-landed-on-trunk.md#ranges-to-read-with-care)
-says what that leaves open.
+A commit made in a way the hook cannot read is caught one step later: the next
+gate [refuses](troubleshooting.md#sdlc-e0046) once the branch has moved under
+the story. A repository nested inside your project, such as vendored code, is
+treated as part of the checkout it sits in, so a commit there is held to the
+same gate.
 
 ### `commit-in-another-checkout`
 
-Refuses a commit, or a command that makes one as `commit-gate` counts them, in
-[another checkout](#a-repository-with-more-than-one-checkout) of the
-repository: with `git -C`, `cd`, `env -C` or
-`sudo -D` into the main checkout or another linked worktree, with `--git-dir`
-naming the main checkout's `.git` or another worktree's git directory, or with
-`--work-tree` naming another checkout. It refuses whatever the story's gates
-say.
+Refuses a commit in another checkout of the repository, however git is pointed
+there: with `git -C`, a `cd`, `--git-dir` or `--work-tree`. It refuses whatever
+the story's gates say.
 
-The story's gates cover only the checkout it is held in: what they reviewed is
-not what would be committed in another, and that the story may commit says
-nothing about it. `--git-dir` naming the session's own worktree's git
-directory is its own checkout, and meets `commit-gate` as a plain `git commit`
-does, and so does `GIT_DIR`, `GIT_WORK_TREE` or `GIT_INDEX_FILE` naming its own.
+The story's gates cover only the checkout it is held in. What they reviewed is
+not what would be committed in another.
 
-*Instead:* commit from the checkout the story is held in.
-
-#### Other ways git is told where to commit
-
-The rule reads the same places when git is given them in the ways listed here,
-and only in those ways. Each is read with the rules of the tool the command
-came from, so a string handed to a shell of another kind is not read for that
-shell's own ways
-([not held](#not-held)). `GIT_DIR` names the
-repository, `GIT_WORK_TREE` the work tree and `GIT_INDEX_FILE` the index, set
-anywhere earlier in the command:
-
-- as an assignment, in front of the command or on its own, read as handed on
-  to git whether or not it is exported; or with `export`, `declare`,
-  `typeset`, `local`, `readonly` or `env`;
-- with `printf -v NAME`, with or without `--` after the name;
-- with `read` from a here-string (`<<<`); what `read` takes from anywhere else
-  is not in the command, so cannot be placed;
-- in a `Bash` or `Monitor` command, with `${NAME:=…}` or `${NAME=…}`, read as
-  setting it whether or not it was set before, and inside single quotes too;
-- in a `PowerShell` command, with `$env:NAME =` or `${env:NAME} =`, with `+=`
-  for either, with `[Environment]::SetEnvironmentVariable`, or with
-  `Set-Item`, `New-Item`, `Set-Content` or `Add-Content`, or their aliases
-  `si`, `ni`, `sc` and `ac`, on a path that starts with `Env:`.
-
-  Their parameters are read in any order, each named after a `-` in full, or
-  cut short to a part that names it alone, with its value after a space, a `:`
-  or both; a switch the cmdlet takes, by that name, given bare or with its
-  value joined to the `:`; one path, quoted or not, given with `-Path`, with
-  `-LiteralPath` or its aliases `-PSPath` and `-LP`, or first; `New-Item`'s
-  `-Name` under `Env:` itself; and the value given with `-Value`, or next.
-
-  `Add-Content` and `+=` are read as setting what they add. A value that comes
-  down the pipeline is not in the command, so cannot be placed.
-
-`core.worktree` names the work tree, given with `git -c`, `--config-env` or the
-`GIT_CONFIG_*` variables. The same variables in the environment the session
-started with count too. An index in another checkout's git directory, such as
-the main checkout's `.git/index`, is that checkout's.
-
-#### When the hook cannot tell where git is pointed
-
-A place that cannot be placed, given through a variable the shell has yet to
-expand or in one of the ways above, is refused as though it were another
-checkout. So is a commit later in the same command than a `git add`, `rm`,
-`mv`, `restore`, `reset` or other index write run with another checkout's work
-tree or index.
-
-### `worktree-through-the-tool`
-
-Refuses `git worktree` for every action but `list`: `add`, `remove`, `move`,
-`prune`, `lock`, `unlock`, `repair`, and an action the hook cannot read,
-however git is reached, an alias included, in any checkout. `git worktree list`,
-`git worktree -h`, `git help worktree` and `man git-worktree` are not refused.
-
-`git worktree` makes, moves or takes away a checkout of this repository, and
-each story is held in
-[the checkout git lists for it](#a-repository-with-more-than-one-checkout): its
-claim names that
-checkout's path. Moving or removing a worktree ends the hold on the story in it,
-pruning forgets one, and adding one can put a checkout where a story's worktree
-is about to go.
-
-*Instead:* `sdlc start` makes a story's worktree; a person adds, removes, prunes
-or repairs one in their own terminal. To read another branch, use
-`git show <branch>:<path>` or `git diff <branch>`.
-
-### `worktree-setting-through-the-tool`
-
-Refuses `git config` changing `core.worktree` or `core.bare`, in any scope,
-whether it sets, adds, replaces or unsets them, and removing or renaming the
-`core` section. Reading them is not refused.
-
-Changing either changes which directory a checkout of this repository works in,
-and it can move the main checkout's work tree out from under it, and with it
-every story that checkout holds.
-
-*Instead:* a person changes `core.worktree` and `core.bare` in their own
-terminal. If git says this is not a work tree, stop and tell them.
+*Instead:* the agent commits from the checkout the story is held in.
 
 ### `branch-through-the-tool`
 
 Refuses a command that moves trunk or a story branch other than by the story's
-own gated commit, by what the command does to a branch rather than by which
-branch it names, in the story's worktree and in any other checkout:
+own gated commit:
 
-- `git update-ref` in every form, `-d` and `--stdin` included, and the plumbing
-  that writes refs: `filter-branch`, `fast-import`, `send-pack`, `receive-pack`
-  and `http-push`;
-- `git branch` with `-f`, `--force`, `-d`, `-D`, `--delete`, `-m`, `-M`,
-  `--move`, `-c`, `-C` or `--copy`, or an abbreviation git takes of one;
-- `git checkout -B`, `git switch -C` or `--force-create`, and either with
-  `--ignore-other-worktrees`;
-- `git symbolic-ref` given a ref to write, `-m` or `-d`;
-- `git push`, `git fetch`, `git pull` and `git remote update`;
-- `git reset` naming a commit other than HEAD with no paths, in another
-  checkout, or anywhere once the story's commit gate has passed;
-- a rebase once the gates before the commit have passed: before the commit gate
-  every one but `git rebase --abort` and `git rebase --quit`, which make no
-  commit and move no branch wherever they are pointed, though an abort in
-  another checkout throws away the rebase in progress there; after it every one
-  but the plain rebase of the session's own worktree onto trunk and a bare
-  `git rebase --abort` there.
+- `git push`, `git fetch`, `git pull` and `git remote update`, whatever they
+  name;
+- forcing, deleting, renaming or copying a branch with `git branch`, and
+  resetting one with `git checkout -B` or `git switch -C`;
+- `git update-ref`, and the other commands that write refs directly;
+- `git reset` to another commit, in another checkout, or anywhere once the
+  story is committed;
+- a rebase, once the gates before the commit have passed.
 
-*Instead:* leave branches to the loop. `sdlc stop` in a finished story's
-worktree lands it on trunk, and a person moves, deletes, pushes or fetches a
-branch in their own terminal. To read one, use `git log`, `git show` or
-`git diff`.
+`sdlc stop` lands a finished story on trunk itself, after checking that it is
+the reviewed change and nothing else. A branch moved any other way can put
+work on trunk that no gate passed. Refusing every push and fetch is a choice:
+the loop never pushes, and the hook cannot always tell another repository from
+one of this repository's own checkouts.
 
-#### The plain rebase onto trunk
+*Instead:* the agent leaves branches to the loop, and reads them with
+`git log`, `git show` or `git diff`. You push, fetch, move or delete a branch
+in your own terminal.
 
-The plain rebase names trunk by its full branch ref, `refs/heads/<trunk>`, or by
-its short name where git reads that name as trunk's branch in the session's
-checkout; a tag or another ref with trunk's short name makes it refused. It
-takes `-q` or `--quiet` and nothing else: no other option, no `git -c`, alias,
-`--git-dir` or `GIT_DIR`, and no `-C` but one into the session's own worktree.
+A git command the hook can place in another repository altogether, such as a
+test fixture in a temporary directory, is not refused.
 
-`--continue`, `--skip` and `--quit` are refused after the commit gate:
-resolving a conflict is a person's. The runbook no longer rebases at all:
-`sdlc stop` puts a finished story onto a trunk that moved itself, and abandons
-its own rebase where the commits do not apply. Trunk is the one
-the main checkout's configuration names.
+### `worktree-through-the-tool`
 
-#### A git command in another repository
+Refuses every `git worktree` action but `list`: `add`, `remove`, `move`,
+`prune`, `lock`, `unlock` and `repair`.
 
-A git command the words place in another repository altogether, such as a
-fixture in a temporary directory, is not this repository's branches, and is not
-refused. One they cannot place is.
+Each story is held in the checkout git lists for it. Moving or removing a
+worktree ends the hold on the story in it, pruning forgets one, and adding one
+can put a checkout where a story's worktree is about to go.
 
-#### When another rule refuses the same command
+*Instead:* `sdlc start` makes a story's worktree, and you
+[remove one](the-loop.md#removing-a-worktree) in your own terminal. To read
+another branch, the agent uses `git show <branch>:<path>` or
+`git diff <branch>`.
 
-This rule answers last: a command another rule refuses keeps that rule, and once a
-branch move is found, the rest of the command is read only within a bound, past
-which the refusal is this rule's.
+### `worktree-setting-through-the-tool`
 
-### `git-command-cannot-be-read`
+Refuses `git config` changing `core.worktree` or `core.bare`, in any scope,
+and removing or renaming the `core` section. Reading them is not refused.
 
-Refuses a git command whose subcommand, or an alias it defines or runs, the
-hook cannot read, and one whose configuration comes from somewhere the hook
-cannot read:
+Either setting changes which directory a checkout works in. A change can move
+your main checkout's work tree out from under it, and every story it holds
+with it.
 
-- a subcommand the shell has yet to expand, such as `git $CMD prune` or
-  `git "$(echo worktree)" prune`; a brace list such as `git {worktree,} prune`
-  is expanded first, and each word it makes is read, and one that makes more
-  words than the rules read is refused;
-- a program the shell has yet to expand is read as git, so `$G worktree prune`
-  and `"$(command -v git)" commit` are judged as git commands; where the word
-  after it has yet to be expanded too, as in `$X $Y`, that word would be git's
-  subcommand, and cannot be read. That refuses commands that never run git:
-  `$EDITOR "$FILE"`, `$CC $CFLAGS -o x x.c`, and
-  `for f in ./t/*; do "$f" "$ARG"; done`, which runs each script in `t`, are
-  refused, and the refusal says to name the program itself;
-- aliases nested deeper than the rules read, or an alias that leads back to
-  itself;
-- `!` aliases whose shell command lines, counted each time one runs, come to
-  more than the rules read in one command, 64 KB: an alias that runs another
-  many times, a few levels deep, is refused rather than read for longer than the
-  hook is given, and the refusal says to run what the aliases would run as
-  commands of their own, a few at a time;
-- an alias whose value cannot be read, wherever it is set: `-c alias.x=…`,
-  `git config alias.x …`, `--config-env=alias.x=VAR` with no assignment to
-  `VAR` in the command, or `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_<n>` and
-  `GIT_CONFIG_VALUE_<n>`, or `GIT_CONFIG_PARAMETERS`, whose value the shell has
-  yet to expand or that will not parse;
-- an include, `include.path` or `includeIf.<condition>.path`, given in the
-  command, or `GIT_CONFIG_GLOBAL`, `GIT_CONFIG_SYSTEM` or `GIT_CONFIG` set in
-  it to a file other than `/dev/null`; `git config` writing an include is
-  refused too.
+*Instead:* you change them in your own terminal. If git says this is not a
+work tree, the agent stops and tells you.
 
-What the hook cannot read, it cannot judge, and every other git rule would let
-it pass unread.
-
-*Instead:* spell git's subcommand and any alias out in the command itself, with
-no include or configuration file. Where the program is not git, name it, such
-as `python3`, rather than a variable. Where aliases hand the shell more than the
-rules read, run what they would run as commands of their own, a few at a time.
-
-#### How an alias is read
-
-The rules for git read what git would run. An alias set in the command is read
-as its value, so `git -c alias.x='worktree remove --force' x .` is judged as
-`git worktree remove`, an alias defined with `git config` is judged by what it
-would run, and one whose value starts with `!` by the shell command it runs.
-
-A git in that shell command runs with the settings of the git command around
-it, which git hands on, so in
-`git -c alias.a='!git b' -c alias.b='worktree prune' a` the `git b` is
-`git worktree prune`.
-
-An alias in your own git configuration, such as `git st`, is not read and not
-refused ([not held](#not-held)).
+## Keeping the rules on
 
 ### `enforcement-stays-on`
 
-Refuses a command that sets `SDLC_ENFORCE`, `SDLC_BIN`, `CLAUDE_PROJECT_DIR` or
-`CLAUDE_CODE_SESSION_ID`, and, in every session, one that takes one of six
-protected names away from what it runs, blanks it or sets it: `AI_AGENT`, and
-the five US-130 added, `CLAUDE_CODE_EXECPATH`, `GIT_EDITOR`,
+Refuses a command that sets `SDLC_ENFORCE`, `SDLC_BIN`, `CLAUDE_PROJECT_DIR`
+or `CLAUDE_CODE_SESSION_ID`. In every session of a project set up for the
+loop, it also refuses a command that removes, blanks or sets one of six
+protected names, or that starts a program with an emptied environment, such as
+`env -i`. The six are `AI_AGENT`, `CLAUDE_CODE_EXECPATH`, `GIT_EDITOR`,
 `CLAUDE_CODE_SESSION_ATTENDED`, `CLAUDE_CODE_CHILD_SESSION` and
 `CLAUDE_CODE_ENTRYPOINT`.
 
-The switch that turns enforcement off belongs to the person who started the
-session. A switch an assistant can reach is not a control.
-`CLAUDE_CODE_SESSION_ID` is one: `sdlc start` records the session it finds
-there as the one the story holds, so setting it hands the story to a session
-that does not exist.
+The switch that turns enforcement off belongs to whoever started the session,
+and a switch an agent can reach is not a control. The other three names decide
+which `sdlc` the hook runs, which project it looks at and which session holds
+a story.
 
-The six protected names are another. The hook runs a person's typed slash
-command only where its own environment is that of a hook Claude Code runs
-itself for a session a person attends, which it tells by `AI_AGENT`,
-`CLAUDE_CODE_EXECPATH`, `GIT_EDITOR` and `CLAUDE_CODE_SESSION_ATTENDED`
-([a person's decisions](#a-persons-decisions-refused-in-every-session)), and
-Claude Code works out the last from `CLAUDE_CODE_CHILD_SESSION` and
-`CLAUDE_CODE_ENTRYPOINT`. Changed by a model, any of them could make a payload
-the model wrote, or a session it starts, pass for a person's typed command,
-such as `/sdlc:approve`. Setting `CLAUDE_CODE_SESSION_ATTENDED` itself does
-nothing, since Claude Code writes it afresh for every hook, and is refused all
-the same. Recording does not ask any of them, so the story's
-[trace](the-loop.md#the-trace) and its agent events are held by
-[`recorded-event-comes-from-the-host`](#recorded-event-comes-from-the-host)
-instead.
-A command is refused for what it does to a protected name, however it is
-spelled:
+The six protected names are how the hook tells a slash command you typed from
+one an agent made up. It reads the first four, and Claude Code works out
+`CLAUDE_CODE_SESSION_ATTENDED` from the last two
+([a person's decisions](#a-persons-decisions-refused-in-every-session)).
+Changed by an agent, any of them could make a message it wrote, or a session
+it started, pass for your typed `/sdlc:approve`.
 
-- a builtin that writes a variable it is named: `unset`, `export`, `declare`,
-  `typeset`, `local`, `readonly`, `read`, `mapfile`, `getopts`, `printf -v`,
-  `wait -p`, `for` and `select`, `coproc`, zsh's `getln` and its module
-  builtins such as `zparseopts`, with a protected name, a subscript of it, or a
-  pattern that can match one (`AI_*`, `CLAUDE_CODE_*`) in a place it writes;
-- an assignment to one, in front of a command, alone, in arithmetic or in
-  `${AI_AGENT:=}`, and a value that names one, as `declare -n r=AI_AGENT` or
-  `V=AI_AGENT` kept for a later `unset "$V"`;
-- a program the shell makes, given a word that names one:
-  `X=unset; $X AI_AGENT`;
-- a program started without one: `env -i` and its spellings (`env -`,
-  `--ignore-environment` and its prefixes), `exec -c`, `arch -c`, and
-  `env -u AI_AGENT`;
-- interpreter code that names one, as `python3 -c` with `os.environ.pop` or
-  `node -e` with `delete process.env.AI_AGENT`, awk's family (`awk`, `gawk`,
-  `mawk`, `nawk`) and `perl` among them, in its words or in a document it is
-  fed;
-- in PowerShell, `$env:AI_AGENT =`, `Remove-Item`, `Rename-Item` and their kin
-  on `Env:AI_AGENT`, a pattern or the bare `env:` drive, `Start-Process
-  -UseNewEnvironment`, and a string that is a protected name alone.
+The hook cannot always tell a change from a mention, so a command that names
+one of the six where the shell could change it is refused even when it changes
+nothing, as `declare -p AI_AGENT` is. Reading one with `echo "$AI_AGENT"` or
+`printenv GIT_EDITOR` is not, and nor is a longer name that holds one, such as
+`GIT_SEQUENCE_EDITOR`. The refusal names the variable the command changes, or
+all six where it cannot tell which.
 
-Some commands are refused though they change nothing, because the hook cannot
-tell them from ones that do: `declare -p AI_AGENT`, `readonly AI_AGENT`, a
-builtin given a name the shell makes (`read -r "$var"`, `export "$NAME=1"`), a
-value that is the text of a protected name (`MSG=AI_AGENT make`), interpreter
-code that only reads one (`python3 -c` with `os.environ.get("GIT_EDITOR")`),
-awk code that names one, a here-document that names one after a command that
-names an interpreter or a shell among its words (`xyz python3 <<EOF`), and
-`env -i` or `exec -c` whatever they run. A model's
-`GIT_EDITOR=true git rebase --continue` and `CLAUDE_CODE_ENTRYPOINT=x claude`
-are refused too: Claude Code already gives a model's shell `GIT_EDITOR=true`,
-so git needs no assignment. Reading one is never refused:
-`echo "$AI_AGENT"`, `printenv GIT_EDITOR`, `export AI_AGENT` and
-`Get-Item Env:AI_AGENT` are left alone, and so is a longer name that holds
-one, such as `GIT_SEQUENCE_EDITOR`.
+`GIT_EDITOR` is the one an agent meets most:
+`GIT_EDITOR=true git rebase --continue` is refused. Claude Code already gives
+an agent's shell `GIT_EDITOR=true`, so git needs no setting of its own.
 
-The refusal names the protected name the command changes, or all six where it
-cannot tell which, as for a name the shell builds or an emptied environment.
-
-*Instead:* leave the name as Claude Code set it; a command that names it where
-the shell or an interpreter could change it is refused even when it changes
-nothing (`declare -p AI_AGENT`, `MSG=AI_AGENT make`), so leave the name out of
-it; for `GIT_EDITOR`, a git command needs no `GIT_EDITOR` of its own, since
-Claude Code gives a model's shell `GIT_EDITOR=true` (seen in Claude Desktop on
-macOS), so run it without one; where `GIT_EDITOR` is not set,
-`git -c core.editor=true ...` keeps the message as written for one command;
-spell out a variable's name instead of building it from another variable; to
-drop a variable that is not one of the six for one program, use `env -u NAME`,
-not `env -i`; to see what the hook answers, run
-`sdlc hook PreToolUse` as you are, with a payload that has a `session_id` of
-its own, since a refused one with this session's id is counted in the held
-story's trace; if a rule is wrong, say which one and why.
-
-### `commands-run-as-configured`
-
-Refuses `sdlc gate implementation pass` and `sdlc freeze` where the same command line changes the
-environment sdlc starts with, or runs the call behind a word that can change it. On PowerShell, a
-line that may run the call must be the call alone.
-
-What a refusal most often means, and the cure for each:
-
-- **A setting, a wrapper or a second command in front of the call.** Run the call alone, and put a
-  setting the commands need in the configured command, in `.sdlc/config.json`, which a person
-  edits.
-- **On Bash, a here-document with its delimiter unquoted, whose body holds `$(`, a backtick, `$[`,
-  a `${…}` other than a plain `${name}`, or zsh's `$name[`, on a line that names the call; a made
-  call with a setting in such a body; or such bodies whose expansions take more than 32 KB to
-  read again.** Quote the delimiter (`<<'EOF'`), so that the body is text.
-- **On PowerShell, something after the call, a pipe, a comment or a double-quoted note.** End the
-  line at the call, with a plain or single-quoted note.
-- **On PowerShell, a change of directory before the call.** Use `Set-Location` or `cd` to an
-  absolute path, then `;` or `&&`, and nothing else.
-- **On PowerShell, text that names sdlc and the call's words:** a commit message, a `Write-Host`,
-  or the document or a `--finding` of `sdlc review add` or `sdlc artifact write`. Write the text to
-  a file first, by a file write rather than a shell line, then hand it over with
-  `git commit -F <file>`, `sdlc review add … --file <file>` or
-  `sdlc artifact write <name> --file <file>`. A `--finding` is a flag's value, so one that names
-  the call is worded without it.
-- **On PowerShell, a typographic quote (‘ ’ ‚ ‛ “ ” „) anywhere on the line**, an editor's
-  apostrophe in `it’s` among them. Write ASCII quotes, or hand the text over in a file as above.
-- **On PowerShell, `pwsh` or `powershell` given a variable, a splat or an expression.** Give it
-  literal words (`pwsh -File ./build.ps1`).
-
-Both calls run the project's configured commands and record the result, which the landing and the
-verifier reuse in place of a run of their own. The commands inherit the environment sdlc starts
-with, and the session chooses it: `GOFLAGS='-run=^$'`, a `PATH` whose `go` exits 0, or
-`NODE_OPTIONS=--require` in front of the call records a pass of a run that tested nothing. So the
-rule refuses any change, and names no tool's variable: an assignment in front of the call, `env`
-with a setting or an unset, an export, a declaration, `set -a`, an unset, an alias or a function
-defined on the line, a limit (`ulimit`, `umask`, zsh's `limit`), a builtin that writes a variable
-it is named, a descriptor stored in a name (`{HOME}>/dev/null`), `hash` told which file a name runs
-(`hash -p`, zsh's `hash name=path`), the keyword or allexport option turned on through `set`,
-`setopt` or `shopt`, an assigning `${…}` with flags or a nested name, an assignment to `$env:NAME`
-with any operator, arithmetic that assigns or increments, and the call handed to a shell or an
-interpreter as text, which the rule cannot read, or to a reader that runs a command of its
-choosing: `man` (`-P`, `MANPAGER`, `PAGER`), `less` and `more` (`LESSOPEN`), and `rg --pre`.
-Earlier on the line counts as much as in front of the call, in the same compound or not. A
-here-document's body is text to every rule, but where its delimiter is not quoted the shell runs
-the body's substitutions and evaluates its arithmetic, its `${…}` and, on zsh, the index of a
-subscript on a bare parameter (`$path[HOME=1]`, `$#path[…]`, `$@[…]`), in the call's own process
-for the call's own document on zsh. So a line that names the call and holds such a body with
-`$(`, a backtick, `$[`, `${` or `$name[` in it is refused; a plain `${name}`, which changes and
-runs nothing, is not. On any line, each of those expansions is also read as the line's own, after
-the rest of it, from where it opens to the end of the body, so that a reader that ends it too
-early (at a `)` in double quotes, a case pattern or a comment) only reads more:
-`$(GOFLAGS=x sdl? freeze)` and `$(echo ")"; GOFLAGS=x sdl? freeze)` in such a body are refused as
-they are anywhere else, and `$(date)` is not. Each such reading reads the rest of the body again,
-so a line whose bodies take more than 32 KB to read that way is refused. A quoted delimiter
-(`<<'EOF'`, `<<"EOF"`, `<<\EOF`) keeps the body as written. The call's own words are not read as
-a change, so
-`sdlc gate implementation pass --note "GOFLAGS=-v is no longer needed"` stays allowed.
-
-The rule asks the reading [`enforcement-stays-on`](#enforcement-stays-on) makes of a line for its
-six protected names, with any name in their place, so that a spelling read there for the six is
-read here for every name. Its reading of a quoted name on a PowerShell line is the one left out,
-since any quoted word would then refuse; on PowerShell the line rule below holds more. The rule
-adds readings of its own for what that rule has no need to read: the limits, the keyword and
-allexport options, an option word the shell makes (`set -$(printf a)`), an assigning `${…}` head,
-a descriptor stored in a name, `hash -p`, PowerShell's compound assignments and arithmetic that
-assigns.
-
-Arithmetic needs no name written out to assign one: `$(( ${x:-HOME}=1 ))` sets HOME. So wherever
-the shell evaluates arithmetic, an assigning operator (`=`, `+=` and the other compound forms), an
-increment or a decrement refuses, whatever stands before it; `==`, `!=`, `<=` and `>=` do not. That
-is in `((…))` and `$((…))`, each `((` paired with its own `))`, in `$[…]`, a subscript, the offset
-of `${name:…}`, zsh's padding flags, the operands of a `[[ … ]]` that holds `-eq` or another
-arithmetic test, and the words zsh reads as arithmetic, given to `shift`, `repeat`, `return`,
-`break`, `continue`, `printf` and `print -f`. A single-quoted string is read the same way, since
-`${1@P}` and zsh's `${(e)…}` expand one. So is an assigning operator straight after a word the
-shell makes, anywhere on the line outside a here-document's body, as a name written out with `=`
-already is: `echo ${x}=1` is refused beside the call.
-
-The program word may be made by the shell. A substitution, an expansion or a glob in sdlc's place
-(`$(command -v sdlc)`, `"${s}lc"`, `sdl?`) is read as sdlc where the words after it could be the
-call, its tail (`implementation pass`, `pass`) included, and so is a made word that stands for the
-whole call (`$(printf 'sd%s freeze' lc)`, `"$@"` after `set --`), where the line changes the
-environment. With nothing changed, a made program word is left alone:
-`$(command -v sdlc) gate implementation pass --note x` is allowed.
-
-The line is read a second time as zsh reads it, where a parenthesis stuck to the end of a word is
-part of the word, as glob qualifiers or a group of a pattern: `~/.local/bin/sdlc(N)`, `sdlc(:A)`,
-`sdlc(.)` and `sdlc(#q.)` run sdlc in zsh, the default shell on macOS, and are made program words
-here, refused with a setting in front or an export earlier and allowed alone. A qualifier that runs
-code or adds words, `(e:…:)`, `(+name)` or `(P:…:)`, refuses a line that may run the call wherever
-it stands, since `sdlc(e:'export GOFLAGS=-v':) freeze` sets the variable with nothing in front of
-the call.
-
-On Bash, every word in front of the call is one of `time`, `!`, `exec`, `command`, `nice` and
-`nohup`, each bare, with `-p` only straight after `time` or `command`. Anything else refuses the
-call, whatever it does with the environment: the rule reads the words, not what each wrapper does.
-So `firejail --env=…`, `bwrap --setenv`, `direnv exec .`, `uv run --env-file`, `pipenv run`,
-`npx`, `op run --`, `doppler run --`, `prlimit`, `sudo`, `timeout 600`, `setsid`, `exec -a`,
-`ssh host`, `env` with nothing set and `go run ./cmd/sdlc` are refused in front of the call, with
-sdlc written out or made. A `cd` before the call, the call's output sent elsewhere, and
-`set -euo pipefail` change nothing and stay allowed.
-
-On PowerShell the call runs alone on its line: `sdlc freeze`, or `sdlc gate implementation pass`
-with a plain or single-quoted `--note`, and nothing before or after it but one `Set-Location` or
-`cd` to an absolute path, then `;` or `&&`:
-
-```powershell
-Set-Location 'C:\Users\dev\work\US-134'; sdlc gate implementation pass --note 'green'
-```
-
-The path is a plain word or a whole single-quoted string, starting with `/` or a drive letter.
-A cmdlet, a relative `cd`, `sl`, `Push-Location`, a provider path, a pipe, a comment, a variable
-and a double-quoted note are all refused: PowerShell runs a subexpression in a double-quoted
-string before sdlc starts. So is a line that may run the call another way, at any depth of blocks
-and subexpressions: any line that names sdlc and the call's words, a commit message among them; a
-computed program before the call's words (`& (gcm sdl?) freeze`); sdlc given a parenthesised
-operand where the call's words stand; `Invoke-Expression` given a literal or an expression; `pwsh`
-or `powershell` given an encoded command, or any word but a plain word or a single-quoted string;
-and any line holding a typographic quote, at which PowerShell ends a string as at an ASCII quote.
-PowerShell reaches the environment, and starts processes with one of their own, in more ways than
-a reading can list (.NET, a cmdlet given a member's name, the Environment provider), and each
-round of review found another, so the rule reads what is allowed rather than what refuses.
-`$env:GOFLAGS = '-v'; sdlc status`, `& $exe build`, `pwsh -NoProfile -File ./build.ps1` and
-`Write-Host 'its fine'` stay allowed, as does a commit message that names the call on Bash, and a
-typographic quote there, which is a character.
-
-The refusal names its cause. On PowerShell, the first of these that holds names it. On Bash, a
-here-document's body gives the fourth text, and every other cause the fifth, a setting, a wrapper
-or a second command in front of the call among them:
-
-1. A typographic quote on the line:
-
-   > this line holds a typographic quote, one of ‘ ’ ‚ ‛ “ ” „, at which PowerShell ends a string
-   > as at an ASCII quote, so what it runs cannot be read, and it may run sdlc freeze or sdlc gate
-   > implementation pass with an environment it changed
-
-   *Instead:* write ASCII quotes in place of typographic ones, or hand the text over in a file (git
-   commit -F, or --file on sdlc review add and sdlc artifact write); a setting the project's
-   commands need goes in the configured command itself, in .sdlc/config.json, which a person edits
-
-2. `pwsh` or `powershell` given a word that is not literal, or the encoded switch:
-
-   > pwsh or powershell is given a word that is not literal, or an encoded command, so the script
-   > it runs cannot be read, and it may run sdlc freeze or sdlc gate implementation pass with an
-   > environment it changed
-
-   *Instead:* give pwsh only plain words and single-quoted strings, as in pwsh -File ./build.ps1,
-   and no encoded command; a setting the project's commands need goes in the configured command
-   itself, in .sdlc/config.json, which a person edits
-
-3. The call written out, with something beside it, a setting in front of it among them:
-
-   > on PowerShell, sdlc freeze and sdlc gate implementation pass run alone on their line, because
-   > PowerShell can change the environment they start with in more ways than a reading of the line
-   > can list, and this line holds something beside the call
-
-   *Instead:* run the call alone on its line, written out as sdlc, with a plain or single-quoted
-   note, after at most one Set-Location or cd to an absolute path then ; or &&; a setting the
-   project's commands need goes in the configured command itself, in .sdlc/config.json, which a
-   person edits
-
-4. On Bash, a here-document whose delimiter is not quoted and whose body holds `$(`, a backtick,
-   `$[`, `${` or `$name[`, on a line that names the call; whose body's expansions, each read as
-   the line's own to the end of the body, would be refused; or whose expansions take more than
-   32 KB to read that way:
-
-   > this line holds a here-document whose delimiter is not quoted, so the shell runs the
-   > substitutions in its body and evaluates its arithmetic and its other expansions, which can run
-   > sdlc freeze or sdlc gate implementation pass, or change the environment either starts with
-
-   *Instead:* quote the delimiter, as in <<'EOF', so that the body is text, or hand the text over
-   in a file (git commit -F, or --file on sdlc review add and sdlc artifact write); a setting the
-   project's commands need goes in the configured command itself, in .sdlc/config.json, which a
-   person edits
-
-5. Anything else, Bash's other refusals among them: a line that names the call without holding
-   it, or that gives a made program the call's words, sdlc a parenthesised operand, or `iex` a
-   literal or an expression:
-
-   > sdlc gate implementation pass and sdlc freeze run the configured commands with the environment
-   > they start with, and record the result; a line that changes it could make them pass or fail
-   > for a reason that is not the code
-
-   *Instead:* run the call with nothing in front of it; a setting the project's commands need goes
-   in the configured command itself, in .sdlc/config.json, which a person edits
-
-A line that only names the call, such as a commit message on PowerShell, gets the fifth text; its
-cure is the file above.
-
-What the rule cannot read, and so does not refuse, is in [Not held](#not-held), each entry naming
-this rule. The forms a session is likeliest to meet: a script or a file the line runs through a
-runner whose line does not name the call (`bash ./x.sh`, `make gate`); the binary run under
-another name, a copy (`cp "$(command -v sdlc)" ./x`), a hard link, or `go build -o x ./cmd/sdlc`
-in a project that builds sdlc; inline interpreter code that builds the name (`python3 -c` joining
-`"sd"` and `"lc"`); and a made word that is the whole call behind a program other than the words
-above (`sudo $(printf 'sd%s freeze' lc)`), which cannot be told from a substitution that is an
-argument. None of these gives more than `bash ./x.sh` already does. So a result `run by sdlc` was
-run as configured from a line the rule could read; it is not proof that nobody chose the
-environment, and the verifier's gaming check stays the net.
-
-The evasions tried against the rule are in the headers of `internal/shellpolicy/us134_test.go`,
-`us134_wrappers_test.go` and `us134_agentenv_test.go`: settings, exports, declarations and options
-before the call; made words, wrappers and limits; every builtin the protected names' rule reads
-as writing a name; the keyword option through `set`, `setopt` and `shopt`; assigning heads with
-flags or a nested name; PowerShell's compound assignments and the `Env:` drive named alone; a
-builtin reached through a made program word; made words that stand for the whole call or a tail of
-it; a made sdlc word behind a wrapper; and, on PowerShell, every statement beside the call, a line
-naming it, `Invoke-Expression`, an encoded command and a typographic quote. Bash and zsh ran the
-Bash rows; no PowerShell was at hand for the PowerShell rows.
+*Instead:* if a rule is wrong, the agent says which one and why, and stops. It
+runs a git command without a `GIT_EDITOR` in front. To drop some other
+variable for one program, it uses `env -u NAME`, not `env -i`. You turn
+enforcement off yourself, as [Turning it off](#turning-it-off) shows.
 
 ### `story-stays-in-its-session`
 
-Refuses running `claude`, or running `@anthropic-ai/claude-code` through a
-package runner such as `npx`, `npm exec` or `pnpm dlx`, from the session
-working the story, and running `"$CLAUDE_CODE_EXECPATH"`, the path of the
-`claude` a model's tools run under, as a program there as it refuses `claude`.
-Installing the package is not refused.
+Refuses starting another Claude Code session from the session working the
+story: `claude`, `@anthropic-ai/claude-code` through a runner such as `npx`,
+or the path in `CLAUDE_CODE_EXECPATH` run as a program. Installing the package
+is not refused.
 
-A Claude Code session started from a shell is a session of its own, and the
-story holds only the session working it, so none of these rules would hold
-what the new one did. The shell rules do not read a script file, so they
-cannot tell what one runs. A script file that runs `claude` starts a session
-whose hook has `CLAUDE_CODE_SESSION_ATTENDED=0`, so a person's slash command
-expanded there answers that it did not run, and records no decision. One that sets
-`CLAUDE_CODE_SESSION_ID` and runs a person's command is refused by the command
-itself, with SDLC-E0079.
+In every session of a project set up for the loop, it also refuses starting a
+Claude Code session that could type one of your slash commands:
 
-*Instead:* hand the work to this session's agents. A person who wants another
-session opens one in their own terminal.
+- one whose prompt names `/sdlc:approve` or another of them, or whose prompt
+  the hook cannot read;
+- one given a terminal of its own: through `tmux`, `screen`, `expect`,
+  `script` or Python's `pty` module, through `osascript` telling Terminal or
+  iTerm to run `claude`, or through a `socat` address that runs it. The path
+  in `CLAUDE_CODE_EXECPATH` counts as `claude` here, and so does a shell on
+  such a terminal that is fed its commands on standard input;
+- an `osascript` or a `socat` whose text the hook cannot read to the end,
+  whatever it names.
 
-In every session in a project that takes part, the rule also refuses starting a
-Claude Code session that could expand one of the person's slash commands, such
-as `/sdlc:approve`: a slash command typed by a model in a session of its own is
-not a person's. It refuses:
+A story holds only the session working it. One started from its shell is a
+new session, and nothing here would hold what it did. And a slash command
+typed by an agent in a session of its own is not yours. A session with a
+terminal of its own looks to the hook like one you attend, so this rule is
+all that stands in front of it.
 
-- `claude`, or the package through a runner, given a prompt that names
-  `/sdlc:approve`, `/sdlc:unfreeze`, `/sdlc:ack`, `/sdlc:remap`,
-  `/sdlc:release` or `/sdlc:assign`, with or without the plugin's name in front;
-- `claude` given a prompt the hook cannot read: one substituted with `$( )`,
-  piped or redirected in, or written with a variable;
-- `claude` run through a program that gives it a terminal to type into, such as
-  `tmux`, `screen`, `zellij`, `expect`, `unbuffer` or `script`, or Python's
-  `pty` module, as in `python3 -m pty claude`. The native installer's binary, a
-  path under `claude/versions/` that `CLAUDE_CODE_EXECPATH` holds on that
-  install, is `claude` wherever these rules read text for it: given to `tmux`,
-  `screen`, `zellij` or `expect` in one string, in a `socat` address and in the
-  text of an `osascript`, and so is a Windows path to it written with
-  backslashes;
-- a program that could be `claude` (a variable, a glob, the versioned binary
-  under `~/.local/share/claude/versions/`, `Start-Process`) given a prompt that
-  names one of those commands;
-- inline code, such as `python3 -c` or `node -e`, whose words run `claude`, or
-  that reads its program from standard input in a command that does: with
-  `python3 -`, or with a bare `python3` or `node` given its program through a
-  pipe, a here-document or a here-string;
-- a line that copies or links a program, names `claude`, or its package, by
-  name, and names one of those commands, such as
-  `ln -s "$(which claude)" /tmp/x && /tmp/x -p "/sdlc:approve US-001"`: the
-  copy starts under a name no rule knows, in the same call. That line is
-  refused with the copy's own reason: "this line copies or links a program and
-  names both Claude Code and a person's slash command, ...". The same line with
-  `"$(command -v claude)"` is refused too, under the same rule, earlier and with
-  the session's reason, "a Claude Code session started from here could expand a
-  person's slash command, ...", because `command -v claude` is read as a run of
-  `claude`;
-- `osascript` given text that tells Terminal or iTerm (iTerm2 too) to run
-  `claude` or `"$CLAUDE_CODE_EXECPATH"`, as in
-  `osascript -e 'tell application "Terminal" to do script "claude"'`, with
-  `do script`, `create window ... command` or `write text`, in AppleScript or
-  in JavaScript for Automation, in `-e` words, a here-document or a
-  here-string. A terminal app's own shell has none of the variables a model's
-  tool has, so a session started there looks attended and these rules are the
-  only ones in front of it, which is why a person's command in the line is not
-  needed. Text that tells a terminal to run something, with `do script`,
-  `write text` or iTerm's `command`, has to hand it a string in
-  double quotes: a command held in a variable, as in
-  `set c to system attribute "X"` followed by `do script c`, and one built from
-  `do shell script`, `the clipboard`, `read`, `run script` or a text operation,
-  is refused as unreadable, since plain words can build a name too, and a
-  `do script` with no command is refused with them. The price is a command
-  held in a variable, `set c to "ls"` and then `do script c`, which is
-  written as `do script "ls"`;
-- `socat` given an `EXEC:`, `SYSTEM:` or `SHELL:` address that runs `claude` or
-  `"$CLAUDE_CODE_EXECPATH"`, in any case, quoted, a Windows path to it
-  written with backslashes in single quotes included, after options, beside a
-  listener or after the `!!` of a dual address, including one whose first half
-  is a dash address, as in `socat - EXEC:claude,pty` and
-  `socat -,raw!!EXEC:claude,pty /dev/null`, with a person's command in the line
-  or not. A word that begins with a dash is an option unless it holds a comma, a
-  `!`, a colon or an expansion (`$`, a brace or a backtick), since
-  `X=,raw!!EXEC:claude,pty; socat -$X /dev/null` builds a dual address. An
-  option with an expansion in its own word, as in `socat -T$N - TCP:...`, is
-  refused as unreadable with them, which is the price;
-- `"$CLAUDE_CODE_EXECPATH"` given to a program that gives a terminal, as
-  `claude` is, and, in the session working the story only, run as the program
-  itself: a second session may start a session of its own whose prompt it reads,
-  as `claude -p x`, so that is not held there;
-- an `osascript` or `socat` whose text the rules cannot read to the end,
-  whatever it names. An `osascript` is refused that is given its script on
-  standard input or from `xargs`, or whose text holds any character other than
-  letters, digits, spaces, `. , : / = _ -` and quotes: an `&`, a `+`, a
-  backslash, a parenthesis, a `$` or a brace can join, escape or expand the
-  letters of an app's name, so none is let through, and the commands a plain
-  text hands a terminal are held as the bullet above says. A `socat` address
-  word that holds `$`, a brace, a backtick, a glob character (`*`, `?` or `[`)
-  or an open parenthesis, or begins with `@`, the text of an `exec:`,
-  `system:` or `shell:` address held to the plain characters above, and the
-  addresses `xargs` gives it, are refused alike: a glob can build an address
-  from a file the same call makes
-  (`touch 'EXEC:claude,pty'; socat - ?XEC:claude,pty`), bash's extended
-  patterns do it with `?(EXEC:claude,pty)`, and PowerShell splats an array into
-  `socat @A`. That costs an IPv6 address such as `socat - TCP:[::1]:8080`, a
-  parenthesis in a quoted address, as in `socat - 'EXEC:sh -c "(cd /x && make)"'`,
-  and an option written with a glob or an expansion in its own word, as in
-  `socat -T? ...`, which are written out in another form or run by the person.
-  The refusal says how to write the line: as one plain string, one command per
-  call, or in the person's own terminal. It also stops
-  `do script "cd /repo && make"` and `socat TCP:localhost:$PORT -`, which are
-  written out or run by the person. An `osascript` that types a keystroke is
-  read as text and not as a keystroke: `keystroke "claude"` is allowed, and one
-  with a character outside that set is refused as unreadable, whatever it
-  types;
-- a shell on a terminal that is fed on standard input, where what is fed is
-  not read: a `socat` whose `exec:`, `system:` or `shell:` address runs a shell
-  with no script and no command line, given input through a pipe, a
-  here-string or a file, as in `printf 'claude\n' | socat - EXEC:bash,pty`, is
-  refused as a start where the line names `claude` and as unreadable where it
-  does not, and so is Python's `pty` module given such a shell and input, as in
-  `printf 'claude\n' | python3 -m pty bash`. The shell is read as the rules
-  read any program: behind `exec`, `env`, `nohup`, `sudo`, `timeout` and the
-  other wrappers, as in `EXEC:'env bash',pty`, and with options of its own, as
-  in `EXEC:'bash -o posix',pty` and `EXEC:'bash --rcfile /dev/null',pty`. A
-  shell given `-c` or a script is not read as one that takes its commands from
-  the input. The shells are `sh`, `bash`, `zsh`, `dash`, `ksh`, `fish`, `ash`,
-  `csh` and `tcsh`. That costs a shell on a terminal that is fed by a pipe or
-  a file for any other reason, which the person runs in their own terminal;
-- a program word the rules cannot name, a variable, a substitution or a glob,
-  as in `P=osascript; script -q /dev/null "$P" -e '...'` and
-  `/usr/bin/osascrip? -e '...'`, given text that names Terminal or iTerm and
-  `claude`, or an address that runs it, is read as `osascript` and as `socat`.
-  A glob is a word of more than one character with `*`, `?` or `[` in it,
-  which the shell runs as the program it matches, so `/usr/bin/osa*`,
-  `/usr/bin/[o]sascript` and `/usr/bin/soca?` are refused as `claude` with a
-  glob already is, and `ls *.md` and `[ -f x ]` are not. A glob in the place of
-  a program that gives a terminal, as in `/usr/bin/scrip? -q /dev/null claude`
-  and `/opt/homebrew/bin/tmu? new-session -d claude`, is refused when `claude`
-  or `"$CLAUDE_CODE_EXECPATH"` is among its words, as `script` and `tmux` are,
-  and `/usr/bin/scrip? -q /dev/null make test` is not. So is any other glob in
-  the place of a program, since it may match one that gives a terminal:
-  `./build/*.sh claude` is refused too, with the reason about a Claude Code
-  session, and that is the price of reading a glob as the program it may match.
-  Text that is only unreadable is not refused there, since the program may be
-  neither.
+Refusing what cannot be read costs some honest commands. An `osascript` has to
+hand a terminal its command as one plain string in double quotes, and a
+`socat` address may hold no variable, glob or bracket. So
+`do script "cd /repo && make"` and `socat - TCP:[::1]:8080` are refused, and
+the refusal names the character it stopped at.
 
-The rule's name says "story", and in another session there may be none: it is
-the same rule, about a session started from this one, and a later rename is the
-clean fix. A session started with a prompt the hook can read and that names
-none of those commands is not refused there.
+*Instead:* the agent hands the work to this session's agents. It writes an
+`osascript` or `socat` line as plain text, with one command to a call, or asks
+you to run it. If you want another session, open one in your own terminal.
 
-Not caught by this rule, and caught after it. Each of these starts a Claude Code
-session that keeps the environment of the model's tool that started it, with no
-terminal of its own, and Claude Code counts a session started that way as one
-nobody attends: its hook has `CLAUDE_CODE_SESSION_ATTENDED=0`, so a person's
-slash command expanded there answers that it did not run, and records no
-decision (Claude Code 2.1.321). A session given a terminal of its own, as
-`script` or `tmux` gives one, counts as attended; the starts the list above
-names are refused, and one hidden from the rules, or given by a program that
-gives a terminal and is not on that list, is in Not held:
+## When a command cannot be checked
 
-- A script file that starts `claude` starts a session whose hook answers that
-  the command did not run.
-- A prompt built inside a program by a means the hook does not read, such as
-  one decoded from base64 by a program it does not recognise as inline code, or
-  a program name built inside code (`"cl" + "aude"`), reaches a session whose
-  hook answers that the command did not run.
-- An alias, whether the person's shell profile defines it or the same line
-  does, is not something this rule reads, and a shell run by a tool expands
-  none unless `expand_aliases` is set. A session an alias starts answers in
-  its hook that the command did not run all the same.
-- An interpreter is read as taking its program from standard input only where
-  no word after its options could be its script: an option that takes a value
-  in the next word, other than the few the hook knows (`-W` and `-X` for
-  Python, `-r`, `--require`, `--import` and `-C` for Node, `-I` for Perl, and
-  the like), makes its value look like the script, as with
-  `python3 --check-hash-based-pycs default`, `ruby --disable gems` or
-  `node --title x`. A session such a program starts with `claude` answers in
-  its hook that the command did not run.
-- A link the copy above does not read as `claude`, one made from the versioned
-  binary's path or from a glob such as `cla*`, and a copy made in one call and
-  run in the next, each start a session whose hook answers that the command
-  did not run.
-- `su me -c` starts a session whose hook answers that the command did not run.
-- An editor or a pager that runs a shell, as in
-  `vim -c '!claude -p /sdlc:approve' -c q`, starts a session whose hook answers
-  that the command did not run.
-- An interpreter's own call to the system, as in
-  `awk 'BEGIN{system("claude -p /sdlc:approve")}'`, and AppleScript's
-  `do shell script`, as in
-  `osascript -e 'do shell script "claude -p /sdlc:approve"'`, start a session
-  whose hook answers that the command did not run.
-- A program a git setting runs, as in
-  `git -c core.pager='claude -p /sdlc:approve' log`, starts a session whose
-  hook answers that the command did not run. An editor set in front of
-  `git commit` with `GIT_EDITOR` is refused in every session, under
-  [`enforcement-stays-on`](#enforcement-stays-on).
-- Code handed to an interpreter that runs `sdlc` itself, as `python3 -c` does
-  with `subprocess.run(["sdlc", "approve", ...])`, is refused by the command
-  itself, with SDLC-E0079, and the hook run that way answers that the command
-  did not run, since the process has a tool's label in `AI_AGENT`.
+These rules name no file and no decision. Each refuses a command the hook
+could not read to the end, because a command it cannot read could hide
+anything the other rules refuse. None of them says the command was harmful,
+and each refusal says how to write the command so that the hook can read it.
 
-`launchctl submit -l x -- claude -p /sdlc:approve` starts `claude` with a
-clean environment, and is not caught (in
-[Not held](#not-held), with the other programs that start clean).
+### `not-checked-in-time`
 
-### Claude config through the shell
+Refuses a call the hook could not check in time: a command it had not finished
+reading, or a change to a file it had not checked. The refusal says that the
+hook ran out of time. No rule was broken, and none was applied.
 
-A command is refused under
-[`claude-config-is-the-persons`](#claude-config-is-the-persons) when it writes
-the person's Claude Code configuration:
+Claude Code gives a hook 30 seconds and then kills it, and a killed hook lets
+the call through unchecked. So the hook keeps a deadline of its own, 25
+seconds, and a call it has not decided by then is refused. Without it, a
+command long enough to be slow to read would get round every rule on this page
+with nobody told.
 
-- a redirect into it, or a command that changes a file there, such as `cp`,
-  `mv`, `tee`, `sed -i`, `touch` or PowerShell's `Set-Content`;
-- a recursive copy or move, or a removal, of a directory that holds it, such as
-  `rm -rf ~` or `cp -r dotfiles ~` (refused under
-  [`agents-config-is-the-persons`](#agents-config-is-the-persons), which is
-  asked first, because the home holds `~/.agents` too; in a story session where
-  the home holds a checkout, the removal is refused under
-  [`loop-state-through-the-tool`](#loop-state-through-the-tool));
-- a command that writes into a directory it is given, such as `tar -x -C`,
-  `unzip -d`, `make -C` or a `git -C` that writes, and a `find` rooted there
-  that changes what it finds;
-- inline code, such as `python3 -c` or `node -e`, or a program an interpreter
-  reads from standard input, that names it by name, since where a program
-  writes is the program's to work out: `expanduser("~/.claude")` and
-  `HOME + "/.claude.json"` are never a path the shell sees. Code that only
-  reads it is refused too; `cat` reads it. A regular expression in the code,
-  such as `.*`, is not a name;
-- a copy, link or install into a directory that holds it, by the name it lands
-  under: `cp x/.claude.json ~`, and an `ln -s` of it into the home spelled out
-  in full, both write `~/.claude.json`, even where the home's name holds a dot;
-- `xargs` or GNU `parallel` fed from a pipe whose words name it;
-- Claude Code's own commands that change it: `claude config set`, `add` and
-  `remove` (or `rm`); `claude mcp add`, `add-json`, `add-from-claude-desktop`
-  and `remove`; `claude plugin` (or `plugins`) `install` (or `i`), `uninstall`,
-  `remove`, `enable`, `disable` and `update`; and `claude plugin marketplace
-  add`, `remove` (or `rm`) and `update`. Their `--help` is not refused, nor is
-  any other `claude` command: `claude install`, `update`, `setup-token` and
-  `migrate-installer` change the program, not the configuration.
+It is given for any call from the session working a story, and for a command
+from any session in a project set up for the loop. So a session that holds no
+story can meet it too, for a command and never for a file.
 
-Those commands are read by the word `claude`. `"$CLAUDE_CODE_EXECPATH" mcp add`
-is not read by this rule, so in a session that holds no story it is not
-refused; the session working the story refuses `"$CLAUDE_CODE_EXECPATH"` as a
-program whatever follows it
-([`story-stays-in-its-session`](#story-stays-in-its-session)).
+*Instead:* the agent runs a long command again in shorter parts, one call for
+each, and tries a change to a file again as it is. If a short command, a
+commit or the same change is refused this way twice, the call is not what is
+slow: the agent stops and tells you, and
+[Troubleshooting](troubleshooting.md#warnings-the-hook-prints) says where to
+look. [`SDLC_HOOK_DEADLINE_MS`](configuration.md#sdlc_hook_deadline_ms) can
+shorten the deadline, and nothing lengthens it.
 
-A path is placed as the shell would place it: `~`, `$HOME`, `${HOME}`,
-`$env:HOME`, `$env:USERPROFILE`, `%USERPROFILE%` and `%HOMEDRIVE%%HOMEPATH%`,
-`CLAUDE_CONFIG_DIR` in each of those forms, and a relative path from the
-directory the command runs in. A word `xargs` or `parallel` is fed from
-elsewhere on the line is placed the same way, as the shell hands it over, quoted
-or escaped: `echo ~/.claude/settings.json | xargs rm` is refused as `rm
-~/.claude/settings.json` is, and `echo '~/.claude/settings.json' | xargs rm` as
-`rm '~/.claude/settings.json'` is. A word written to that cannot be placed, such as
-a variable or a glob, is refused where the command names the configuration by
-name, `.claude` or `.claude.json`, or by one of the two variables, or where the
-word is itself a glob the shell expands, such as `.*`, that could match them. So
-`cd ~ && rm -rf .*` and `rm -rf "$HOME"/.cla*` are refused, and `sed -i
-'s/.*//' "$FILE"` is not: its `.*` is in quotes, a script for sed and not a
-name. A glob elsewhere on the line, such as one kept in a variable and used
-later, is not read as a name. A script file that writes there is not read, like
-any other.
-
-A project that is itself inside `~/.claude` has every write refused, since every
-file in it is part of the configuration.
-
-The same readings hold the person's `~/.agents`, under
-[`agents-config-is-the-persons`](#agents-config-is-the-persons), in every
-session of a project that takes part. A program that
-[writes a file it is given](#programs-that-write-a-file-they-are-given), writing
-there, is refused too.
+One limit is left, and it is the first listed under
+[Commands the rules do not read](#commands-the-rules-do-not-read): a hook that
+is killed before it knows whether the call is one it checks.
 
 ### `command-too-deep-to-read`
 
-<!-- The figure 16 is shellpolicy's maxReadings, and 32 is maxNesting: change them here with
-     the constants. -->
+Refuses a command that nests `$( )` or backticks more than 32 deep, that hands
+a shell or `eval` a string holding another such string more than four deep, or
+that leaves more than 16 ways to read which programs it runs. It holds in
+every session of a project set up for the loop.
 
-Refuses a command that nests `$( )` or backticks more than 32 deep, or the
-strings it hands a shell, `eval`, `trap`, `emulate -c` or `mapfile -C` more
-than four deep, or that has more than 16 other readings, or that has more after
-a line holding a `#` that may open a comment and ending in a backslash.
+Every level of a command is read for what it runs. Past those limits the hook
+stops reading, and it refuses the command rather than let it run unread.
+Nothing a person writes by hand comes near them.
 
-Every level is read for the commands it runs, and a line nested thousands deep
-took longer to read than Claude Code gives the hook, which then lets the command
-run unchecked. Nothing a person writes nests that deep. A string handed over is
-read for the commands it runs, as `$( )` is, and past four the rules stop
-reading, so the command is refused rather than run unread. A shell or an
-`eval` inside four such strings is refused even where it is handed no string,
-as in `eval eval eval eval bash x.sh`.
+*Instead:* the agent writes it as separate commands, in separate calls where
+a line holds many, and runs the inner command on its own instead of inside
+another `eval` or `bash -c`.
 
-A command is read more than one way where the shell's grammar leaves open which
-program runs. An option a wrapper does not know may or may not take the word
-after it, so `strace -J 1 git commit -m x` runs `1` or `git`. zsh's `]]`, a `}`
-before `always`, `else` or `elif`, a `{` after a function's name, and `coproc`
-each start another command. Every reading is checked. A command with more than
-16 other readings is refused, and so is a line whose commands have more than 16
-other readings between them, counted through the scripts it hands a shell,
-since the rules did not finish reading it. The refusal names the command. A
-test such as `[[ -f a ]]`, or a function's body, starts no reading, so an
-ordinary script does not come near 16.
+### `git-command-cannot-be-read`
 
-A line that [assigns a variable](#protected-path-through-the-tool) is read once for each value it gives
-that variable. A line those values give more than 16 readings, as one name given more than 16 values
-and used does, is refused, and so is a line its values make more than 64 KB longer, as one value of
-1,000 bytes used 70 times does. Past either, what it writes was not checked, and the refusal says
-which it met. A document can hit this: one holding many spellings of an assignment, in a here-document
-or a `--note`. It cannot be split, so give it from a file: `sdlc artifact write` and
-`sdlc review add` read one with `--file`.
+Refuses a git command whose subcommand or alias the hook cannot read: one the
+shell has yet to fill in, such as `git $CMD prune`, an alias the command
+defines that the hook cannot follow, or configuration pulled in from a file
+with an include or `GIT_CONFIG_GLOBAL`. A line whose program and next word are
+both variables, such as `$EDITOR "$FILE"`, is refused as well, because it
+could be git with any subcommand.
 
-A line that holds a `#` that may open a comment and ends in a backslash, with
-anything but blanks after it, is refused when no other rule has refused it. A
-comment ends at its newline, so a backslash at its end continues nothing, while
-anywhere else a backslash at the end of a line joins the next line to it.
-Whether the `#` opens a comment depends on the quotes around it, which this rule
-does not read, so where the commands of such a line start and end was not
-checked. A `#` counts at the start of a line, or after a blank or one of
-`;&|(){}=,<>`, quoted or not, and so does one in a string handed to a shell, and
-one a `$'…'` string spells as an escape. An even number of backslashes at the
-end of the line continues nothing, and does not count. A here-document's body is
-text, and is not read for it, and nor is a `PowerShell` command. The refusal
-says to write that part of the command on one line, or to put the comment on a
-line of its own with no backslash at its end.
+Several rules turn on which git command runs: a commit, a push, the removal of
+a worktree. One the hook cannot read could be any of them.
 
-These are over-refused, and each has a plain way on:
+*Instead:* the agent spells git's subcommand and any alias out in the command
+itself, and names a program that is not git, such as `python3`, instead of a
+variable.
 
-- `echo ]] git commit -m x` and `echo { git commit -m x }`, which zsh reads as
-  a second command, are held to the gate: quote the words, as
-  `echo ']] git commit -m x'`;
-- a zsh line of more than 16 short `if [[ … ]] cmd` forms: split it across
-  calls, or write each as `if [[ … ]]; then cmd; fi`;
-- five nested strings of anything, such as `eval eval eval eval eval echo hi`:
-  run the inner command on its own;
-- a `#` the shell reads as a character of a word, quoted after a blank or
-  straight after `{`, `}`, `=` or `,`, on a line that ends in a backslash with
-  more after it, as `git commit -m "fix #12" \` with `--amend` on the next line:
-  write that part of the command on one line.
+### `archive-members-unknown`
 
-It applies to any
-command: it is refused in any session, in any project with `.sdlc/config.json`
-the call reaches (the session's, the working directory's, or one a path in the
-command names), whether or not a story is being worked on, because `sdlc ack`
-or an approval could be buried in it. The rule for a line ending in a backslash
-after a `#` is the exception: it is asked only while a story is being worked
-on, when there are paths the session may not write.
+Refuses extracting an archive into the project when the hook cannot read what
+is in it: the archive does not exist yet, comes on standard input, is in a
+format other than tar, tar.gz, tar.bz2 and zip, or is extracted with an option
+that renames its members, such as `--strip-components`.
 
-*Instead:* write it as separate commands, in separate calls where a line holds
-many, and run the inner command on its own, not inside another `eval` or
-`bash -c`. Where the command can be read too many ways, remove the options sdlc
-does not know, or split the line, so that no command and no line has more than
-16 other readings. Where a line holding a `#` ends in a backslash, write that
-part of the command on one line, or put the comment on a line of its own with no
-backslash at its end.
+The hook reads an archive's member names and judges each where it would land,
+so an archive holding a `CLAUDE.md` is refused as a write to it would be.
+Where it cannot read them, any member could be an instruction file or one of
+the loop's records.
+
+*Instead:* the agent extracts the archive outside the project, under the temp
+directory, and copies in by name the files it needs. If an earlier part of the
+same command makes the archive, it runs that part first, as a command of its
+own.
+
+### `directory-entries-unknown`
+
+Refuses a write or removal by glob, or a copy of a directory's contents into
+the project, when the directory could not be listed in full: it holds more
+than 20,000 entries, or the listing failed. A glob after a `cd` the hook
+cannot follow, as in `cd - && rm -f *.o`, is refused the same way.
+
+To judge a glob, the hook lists what it matches. A listing it could not finish
+may hide an instruction file or one of the loop's records.
+
+*Instead:* the agent names the files it means, or uses a narrower glob. To
+empty a large directory, it removes the directory itself with `rm -rf dist`
+and makes it again.
 
 ### `too-many-links`
 
-<!-- The figure 64 is pathrules' maxLinks, and 512 is pathrules.CommandLinks: change them here
-     with the constants. -->
+Refuses a command one of whose paths goes through more symbolic links than
+the hook follows: more than 64 on the way to one path, or more than 512 across
+the whole command. A link that leads back to itself is refused the same way.
+The refusal carries [SDLC-E0081](troubleshooting.md#sdlc-e0081) for one path
+and [SDLC-E0082](troubleshooting.md#sdlc-e0082) for the command.
 
-Refuses a command one of whose paths goes through more symbolic links
-(symlinks) than sdlc follows: more than 64 on the way to one path, or more than
-512 across all the paths of one command.
+The hook judges a path by where it lands, so it follows each link on the way.
+A path through more links than it follows has no place the hook can be sure
+of.
 
-To know where a path leads, the hook follows each link on the way to it, as
-the system does, and judges the path by where it lands. A path through more
-links than the hook follows has no place it can be sure of, so it is refused
-rather than guessed at. A link that leads back to itself, directly or round a
-loop, never lands, and is refused the same way.
-
-A path within 64 links can still pass what the system itself follows in one
-lookup (32 on macOS, 40 on Linux). The system then cannot say where it leads,
-and a program that walks one directory at a time, as `mkdir -p` does, still
-writes through it, so that path is refused too.
-
-Following links takes time, and the hook has 25 seconds for a call. So one
-command may follow 512 links, counted across all its words. 512 is a count,
-not a time: a command is refused for it the same way on a fast machine as on a
-slow one.
-
-The links on the way to the project itself count towards a path's 64 but not
-towards the command's 512.
-
-The refusal carries a code: `SDLC-E0081` for one path, and `SDLC-E0082` for the
-command. [Troubleshooting](troubleshooting.md#sdlc-e0081) shows how to find
-where a chain of links leads without the hook.
-
-*Instead:* name the place a path leads to directly, without the links, or ask
-the person where it leads. For a command past 512, split it into several, each
-naming fewer paths through links. From a working directory reached through
-too many links, `cd` to a directory with a shorter path, one that names
-the place without the links, then run the command again, or ask the person to
-run it.
+*Instead:* the agent names the place the path leads to directly, without the
+links, and splits a command over the limit into several.
 
 ### `path-too-long`
 
 Refuses a command one of whose paths is longer, in full, than the system looks
-up in one go: about 1,024 bytes on macOS and 4,096 on Linux, from the root of
-the disk.
-
-The hook places a path by looking it up from the root, following the links on
-the way, as it does for [`too-many-links`](#too-many-links). A path past that
-length cannot be looked up, so the hook cannot tell where it leads, while a
-shell already part of the way down still reaches it by a shorter name, through
-any link on the way. So it is refused rather than read by its name. From a
-working directory whose own path is that long, every command is refused, and
-the refusal names the working directory.
-
-The refusal carries the code `SDLC-E0083`, which
-[Troubleshooting](troubleshooting.md#sdlc-e0083) explains.
-
-*Instead:* make the full path shorter, by moving or renaming the directories on
-the way to it, or ask the person to run the command. Running it from a nearer
-directory does not help: the hook reads the full path either way. From a
-working directory whose own path is that long, `cd` to a directory with a
-shorter path, then run the command again, or ask the person to run it.
-
-## A repository with more than one checkout
-
-Every checkout of a repository, the main checkout and each linked worktree made
-with `git worktree add`, works one backlog and one record of each story, kept in
-the main checkout. Its `.sdlc/state` is its own. A session is held in the
-checkout it started its story in, and the rules follow it into the others.
-
-The parts below say how a session is found from another checkout, what it is
-refused there, what happens to branches, how a path is placed in a checkout,
-what happens when the main checkout cannot be found, and, last, the gaps that
-are known and [not held](#not-held).
-
-### Finding the session
-
-A call is judged as the session's wherever it runs. When no checkout the call
-reaches holds the session, the hook asks the repository: first every checkout a
-claim names, whatever their number, and then the first 64 linked worktrees, for
-an iteration that was running when this release was installed and has no claim
-yet.
-
-The first `sdlc` command that writes there turns that into a claim, and
-`sdlc doctor` says when a repository has more than 64 worktree entries, since a
-session past the 64th is not found until then. Adding worktrees does not move a
-checkout a claim names out of reach, and the claims are refused to a held
-session wherever it names them.
-
-### The other checkouts
-
-From any checkout, a session held in one is refused, in every other checkout of
-the repository, what it is refused in its own:
-
-- writing the backlog, `.sdlc/` (the story records, the configuration and that
-  checkout's own `.sdlc/state`), `.git/` (the claims included), `.claude/` and
-  `CLAUDE.md`, by an absolute path, a link, `..` through a link, `~`, `cd`,
-  `find`, `xargs` or code handed to an interpreter;
-- discarding what that checkout holds, with `git stash`, `git reset --hard`,
-  `--merge` or `--keep`, a forced `checkout` or `switch`, `git read-tree -u`,
-  or a clean, restore or checkout of the whole tree, however git is pointed
-  there;
-- taking the checkout away, or a directory that holds it
-  ([`loop-state-through-the-tool`](#loop-state-through-the-tool));
-- and committing there, however git is pointed at it
-  ([`commit-in-another-checkout`](#commit-in-another-checkout)).
-
-Every `git worktree` action but `list` is refused in any checkout
-([`worktree-through-the-tool`](#worktree-through-the-tool)), and so is changing
-`core.worktree` or `core.bare`
-([`worktree-setting-through-the-tool`](#worktree-setting-through-the-tool)).
-
-Reading anything, and writing with the shell files no rule protects, are not
-refused. The file tools are refused everything outside the checkout the session
-is held in, as they always were, and every other checkout nested inside it,
-such as a story's worktree under `.sdlc/worktrees/` seen from the main checkout
-([`write-outside-repository`](#write-outside-repository)).
-
-### Branches
-
-While a session holds a story, the hook refuses it any command
-that moves trunk or a story branch, the story's own or another story's, other
-than by the story's own gated commit, from the story's worktree and from the
-main checkout alike ([`branch-through-the-tool`](#branch-through-the-tool)). By
-class, it refuses:
-
-- a ref written directly, with `git update-ref` (`--stdin` included) or the
-  other plumbing that writes refs;
-- a branch forced, deleted, renamed or copied with `git branch`;
-- a checkout or switch that resets a branch that exists (`-B`, `-C`,
-  `--force-create`), or checks out one another worktree has
-  (`--ignore-other-worktrees`);
-- `git symbolic-ref` writing HEAD;
-- `git push`, `git fetch`, `git pull` and `git remote update`, whatever they
-  name;
-- a `git reset` naming a commit in another checkout, and in the session's own
-  once the story is committed;
-- a rebase, but for the one below;
-- a merge or any other commit in another checkout
-  ([`commit-in-another-checkout`](#commit-in-another-checkout)), and
-  `git worktree add` with a forced branch
-  ([`worktree-through-the-tool`](#worktree-through-the-tool)).
-
-Each is refused however git is spelled, aliased or pointed at the checkout, as
-far as the rules read those, and nothing that only reads branches is. Refusing
-every push and fetch while a story is held, one to another repository included,
-is a choice: the words cannot always tell another repository from a path to one
-of this repository's own checkouts, and the loop never pushes.
-
-#### The two moves that are the session's
-
-Two moves of the story's own branch are the session's.
-
-- After the commit gate, the plain rebase of its worktree's branch onto trunk,
-  `git rebase <trunk>`, named by trunk's branch or as `refs/heads/<trunk>` and
-  with nothing but `--quiet`; and a bare `git rebase --abort` there. Nothing
-  asks for that rebase any longer, since `sdlc stop` puts the story onto a trunk
-  that moved itself. The hook still admits it for a session that runs one
-  before it stops, and the abort for a rebase the session started; a story
-  rebased that way is judged at the landing as one rebased by hand
-  ([SDLC-E0029](troubleshooting.md#sdlc-e0029),
-  [SDLC-E0037](troubleshooting.md#sdlc-e0037)).
-- After the retro, one commit of the root `CODEMAP.md` alone. Nothing asks for
-  it any longer, since the bookkeeper stores its sections with
-  `sdlc codemap write` and `sdlc stop` puts them on trunk; the hook still admits
-  it, and a story that makes one lands with it.
-
-The landing checks what either did before trunk moves, and it holds the purpose
-whatever the spelling: nothing lands that is not the story's reviewed change on
-top of trunk, with no merge in it, nothing under `.sdlc/` or in the backlog,
-and the root `CODEMAP.md` only as a plain file by exactly that name.
-
-Those last checks are the landing's, so they hold only for stories worked in
-their own worktree: with `git.worktrees` off, a story's commit can carry any of
-them, as it always could. The check for the markers of an unresolved conflict
-is the exception: the commit gate makes it too, so with `git.worktrees` off it
-is the one look, from the commit the record names as where the story started
-([`SDLC-E0080`](troubleshooting.md#sdlc-e0080)).
-
-### Which checkout a path is in
-
-Which checkout a path is in is worked out from where it lands on disk, links
-followed, by walking up to the nearest directory whose `.git` belongs to this
-repository. A `.git` that leads elsewhere is walked past rather than stopped
-at, so a repository made with `git init` inside a checkout cannot hide that
-checkout's files.
-
-The price is that an unrelated repository inside a checkout, such as vendored
-code or a submodule never initialised, is under the `.git` name rule like any
-other path in that checkout, and a commit made in it is refused as a commit in
-that checkout.
-
-A worktree nested inside the project, as a story's worktree under
-`.sdlc/worktrees/` is inside the main checkout, counts as another checkout for
-what it holds, to the shell and to the file tools. A linked worktree moved by
-hand to somewhere outside the project is still a checkout of this repository,
-even where git's own record of it names its old place.
-
-On macOS a path spelled through `/System/Volumes/Data`, in any case, is the
-path it names, where both spellings are the same file: a file tool's write to
-the project spelled that way is a write to the project. Where they are not the
-same file, as with the data volume's own root or a directory of the system
-volume spelled through it, the path is read as written.
-
-### Failing closed
-
-When the main checkout cannot be found — a bare repository, `core.bare` set, a
-rewritten `commondir` — the hook does not read the worktree's own copy of the
-records. The commit is refused, every test counts as frozen, no story counts as
-finished, and a person's decision counts as waiting.
-
-Where not even git's directory can be read, every path outside the checkout that
-might be the main checkout's evidence is refused by name, and the refusal says
-to run `sdlc doctor`.
-
-### Not held
-
-These are known and not closed. Each says what could happen, and
-how you would notice.
-
-#### Branches and the landing
-
-- **A branch moved by a spelling the rules do not read.** Every way below of
-  getting a command past the rules unread gets a branch move past
-  [`branch-through-the-tool`](#branch-through-the-tool) as well. Trunk moved
-  that way holds work no gate passed: in the main checkout, `git status` shows
-  changes nobody made there, the difference reversed, because the branch moved
-  and its files did not, and `git reflog <trunk>` shows when. Another story's
-  branch moved or deleted that way is reported by that story's next gate
-  ([SDLC-E0046](troubleshooting.md#sdlc-e0046)). A story's own branch moved
-  that way does not land: the landing refuses what is not the reviewed change
-  on top of trunk ([SDLC-E0054](troubleshooting.md#sdlc-e0054),
-  [SDLC-E0029](troubleshooting.md#sdlc-e0029)).
-- **A reset of the session's own branch before the commit gate.** A soft or
-  mixed reset, such as `git reset --soft HEAD~1` or `git reset HEAD~1`, is not
-  refused. It is the session's own work, and the next gate names it
-  ([SDLC-E0046](troubleshooting.md#sdlc-e0046)). A reset with `--hard`,
-  `--merge` or `--keep` is refused, by
-  [`loop-state-through-the-tool`](#loop-state-through-the-tool).
-- **A commit after the commit gate that the commit rule allows.** The landing
-  lands only the change that was reviewed, or one whose reviews are recorded
-  again and whose commands pass, so a person sees
-  [SDLC-E0029](troubleshooting.md#sdlc-e0029) at `sdlc stop`.
-- **The root `CODEMAP.md` reaches trunk with no reviewer.** The sections the
-  bookkeeper stores are put on trunk by `sdlc stop`, after the story's own
-  commits and outside the range `sdlc log` prints, in a commit named
-  `docs: map <ID>` that the story's record names as `codemap_commit`. `sdlc`
-  makes that commit itself: it is not signed, no hook of the repository runs
-  for it, and it changes that one path as a plain file or is not made
-  ([SDLC-E0076](troubleshooting.md#sdlc-e0076)). Any agent of the story can
-  store sections, at any gate, and the last set stored is the one applied; the
-  record has a `codemap` event for each storing. A commit of `CODEMAP.md` on
-  the story's own branch after the retro is still taken too, only as a plain
-  file by exactly that name ([SDLC-E0055](troubleshooting.md#sdlc-e0055)); the
-  hook's check of that commit answers not fresh for files beneath it, and
-  wherever the tree cannot be measured with `CODEMAP.md` as that commit has it.
-  Read both with `git show`.
-- **Git settings that name a program.** The session can write settings such as
-  `core.hooksPath`, `core.fsmonitor` or a filter in `.gitattributes`, and git
-  runs the program they name during commands the rules allow, the bookkeeper's
-  commit and the allowed rebase among them, and while the landing's
-  fast-forward checks and writes the files of a checkout with trunk checked
-  out: a clean filter runs as it hashes them, before anything is written. Such a
-  program can do anything a branch move can. The landing refuses what it did to
-  trunk's history, the loop's files and the change, and a person notices the
-  program only by reading the repository's configuration with
-  `git config --show-origin --list` and its `.gitattributes`; `sdlc` does not
-  report it. While `sdlc stop` puts a story's commits onto trunk, every merge
-  driver the configuration named when the stop read it, one with an empty name
-  included, is replaced by one that stops as a conflict, and a merge driver whose
-  name holds an equals sign, the text `{sdlc-private}` or a byte that is not
-  UTF-8 makes a stop that has to put the story onto a trunk that moved refuse
-  before git runs (`SDLC-E0055`, naming the key), commits are not signed, no
-  editor runs, and no
-  attributes file outside the repository is read; a filter the configuration
-  names does run, as it does on any checkout, and an attribute in the
-  repository's own `info/attributes` counts as one committed in
-  `.gitattributes` does, `merge=union` among them. So does an attributes file
-  in the worktree that `git status` does not show.
-  Wherever the landing measures a story's change it sets every
-  `diff.<name>.algorithm` the configuration holds to `myers`, one with an empty
-  name included, and a diff driver whose name holds any of those three makes
-  every stop refuse before the change is first measured, in the same words,
-  whether or not trunk moved. A stop with trunk where the story left it replays
-  nothing, so it does not refuse a merge driver. `sdlc` asks git for every key
-  and chooses the drivers' itself, so the locale git runs in does not decide
-  which are found. The commit gate measures the change the same way and does
-  not apply the rule: it passes where git takes the setting, and fails with
-  `SDLC-E0021` in git's words for a name git's own command line will not take.
-- **Repository configuration that changes what the allowed rebase does to other
-  refs.** The landing refuses a range that is not the story's alone. A person
-  sees other refs move in `git reflog` for them.
-- **A ref of another kind with trunk's short name, made earlier in the same
-  command as the allowed rebase.** A tag named as trunk, made before the
-  command, makes the rebase by trunk's short name refused; made in the same
-  command, it is not seen. The landing refuses the result
-  ([SDLC-E0054](troubleshooting.md#sdlc-e0054) or
-  [SDLC-E0029](troubleshooting.md#sdlc-e0029)), and a person sees the ref in
-  `git show-ref`.
-- **The hold ending before the landing.** Escalating ends the iteration, and so
-  does `sdlc stop`'s way out of a broken state. Until a person answers, the
-  session holds nothing and none of this binds it. The escalation is on the
-  record and in `sdlc status`, the way out prints its own line on standard
-  error, and the landing still asks every check.
-- **Ignored files in the story's worktree take part in the commands.**
-  Workspace files, local environment files and caches the story's worktree
-  ignores can make a command pass there that would fail on trunk, and nothing
-  in the stop's output shows them. List them with
-  `git -C .sdlc/worktrees/<ID> status --ignored` before trusting a pass.
-- **A person's stop runs what the session planted.** A stop a person runs,
-  after the 600 seconds the runbook gives it or after answering an escalation,
-  runs the story's code and the repository's program-naming settings with that
-  person's privileges and credentials. [SDLC-E0055](troubleshooting.md#sdlc-e0055),
-  the runbook and [configuration](configuration.md#at-landing) say so before
-  sending a person there.
-- **Two identical stretches of context give one fingerprint.** The change the
-  reviewers saw is compared with its hunk headers cut down to their marker, so a
-  change that moved to an identical stretch elsewhere in a file compares equal.
-  A person reading the landed range sees where the lines went. Where `sdlc stop`
-  itself puts a story onto a trunk that moved, the result is compared with the
-  reviewed change without the lines around it, from both sides: the story's
-  change on the new trunk, and trunk's change on top of the story. A line moved
-  among lines identical to it is the same file and is not seen. Nothing else is
-  compared this way: a commit after the reviews and a rebase by hand are
-  measured with their context, as before.
-- **An ignored file is not part of any tree the loop measures.** One left in the
-  worktree is there when the landing's commands run, and one at a path trunk has
-  come to track is overwritten when the story is put onto trunk.
-- **A frozen test put back by hand over trunk's change.** In a story's own
-  worktree a test file that only trunk changed is trunk's, and one the story and
-  trunk both changed is refused. A commit made by hand after a rebase that puts
-  a frozen test trunk changed back to its frozen copy reads as an intact freeze,
-  and takes trunk's change to that test away. The reviewers see the test in the
-  diff when the change is reviewed again; the stop's own replay cannot make such
-  a commit.
-- **A commit of the story's own that no `sdlc gate` run has noted, once trunk's
-  branch points at it.** A test file that only trunk changed is trunk's, and
-  the story's commits are told from trunk's by a list in the story's record
-  (`forks`). `sdlc start` begins the list; every `sdlc gate` run in the story's
-  worktree adds to it, passed or refused, and so do a stop that puts the story
-  onto trunk and a freeze that follows a person's unfreeze. A commit made on
-  the story's branch since the last of those is on no list: one a person made by
-  hand, one the session made, or one made again by an amend or a rebase. If
-  trunk's branch then comes to point at it, by a fast-forward or any other
-  move, before any `sdlc gate` run, the test files that commit added or changed
-  read as trunk's and are accepted as trunk's at the next gate and at the stop.
-  The plainest case leaves nothing to tell it by at all: a test file committed
-  by hand directly on the trunk commit the story sits on, and trunk
-  fast-forwarded to it before any sdlc command ran, is the same commits and
-  branches as a story put onto a commit trunk gained. Three more things are
-  not on the list: a commit that reaches the branch only through a merge's
-  other parent, because an entry covers the commits that descend from the
-  lowest one on the branch's own line; an entry a person edits out of the
-  record; and an entry whose commit git no longer has, which is passed over.
-  You would notice by the line the accepting command prints, `accepted as
-  <trunk>'s`, and by `trunk_tests` in the story's record, which names the files
-  and the trunk commit: a file there that the story wrote is this. The record
-  names what was accepted by the latest gate that checked the freeze and was
-  recorded as passed (`tests_frozen`, `plan`, `implementation`, `verification`
-  or `commit`), or by the stop that landed the story. It is the tree as that
-  gate saw it: the record keeps it through later gates that do not check the
-  freeze, a gate that is refused changes nothing, and it is not checked again
-  until the next gate that does. `trunk_tests` is empty if no such gate has accepted
-  anything, if the latest one accepted nothing, if the commit gate was reopened
-  by a command that accepted nothing itself, or if a person ran `sdlc unfreeze`.
-  Emptying it writes no event, so an empty field with earlier `trunk_tests`
-  events means one of these happened, not that nothing was ever accepted. Take
-  the file out of the branch, or have a person unfreeze so that it is frozen in
-  their sight.
-  The list also refuses in three states where the files really are trunk's,
-  each with [SDLC-E0043](troubleshooting.md#sdlc-e0043) or SDLC-E0025 naming
-  the commit: a gate ran while the local trunk was behind a commit the branch
-  already held, trunk was moved back and then forward again, or commits the
-  branch held reached trunk by another story's landing. One unfreeze by a
-  person and a freeze is the way out of each. A freeze taken after the stop
-  itself lifted the last one, on a landed story reopened in a worktree that was
-  kept, leaves the list as it was: a session can take that freeze alone, and it
-  neither resets a list nor gives one to a record that had none.
-- **A rebase a person runs is not sealed.** [SDLC-E0075](troubleshooting.md#sdlc-e0075)
-  sends a person to rebase a story by hand. That rebase runs the hooks, merge
-  drivers, editor and filters the configuration names, with that person's
-  privileges; read the configuration first, as above.
-- **A shallow repository** can only hide ancestry, and the landing then refuses
-  with [SDLC-E0054](troubleshooting.md#sdlc-e0054). A commit it hides is one git
-  does not have, so an entry of a story's list of its own commits that names it
-  is passed over; the freeze still takes nothing as trunk's there while the
-  commit the story was cut from is hidden too, as it is in a history that is
-  one line.
-- **Ignored files go with a landed story's worktree.** They are removed with it,
-  and the stop's last line says so.
-
-#### The review policy
-
-- **What the shell rules do not read reaches the story's copy.** A target whose value the line does
-  not hold, scripts and programs, the other listed classes, and a nested policy's parent directory
-  are declined, because the landing refusal stops them reaching trunk. `sdlc init` writing the
-  template where no file exists during a story is declined for the same reason.
-
-  The other listed classes are these: a target carried by a substitution, `for`, `read`, `set --` or
-  `printf -v`; a program name the shell makes, a function, or an alias defined outside the
-  command (one the line defines is read as the command it runs); text piped to a shell;
-  `xargs` fed by a program; an interpreter's or a tool's own output that the rules do not read, a
-  patch, a sync of a directory; git moving a file by a branch, a merge, the index, a sparse checkout
-  or a submodule; PowerShell through a variable or a .NET call; a copy whose source is not on the
-  disk yet; a change to no content, such as an attribute. A nested policy's parent directory is
-  removing, renaming, linking or replacing the directory that holds a policy in a subdirectory.
-
-  Of the values a line holds, these are read: `NAME=value` wherever the word stands, including after
-  `export`, `declare` or `env` and inside a script given to a shell or a backtick substitution;
-  quoted any way, and as `$'...'` and `$"..."`, across a line continuation in the value, the name or
-  the use, and through another variable the line assigned. A use is read as `$NAME`, or `${NAME...}`
-  taken as the whole value. These are not read: an array; indirection; a value an expansion
-  transforms or assigns, such as `${T%x}` or `${T:=x}`; an escape inside `$'...'`; `+=`; what a
-  substitution prints, so `rm "$(echo "$T")"` is not read as the path; an assignment inside a value
-  that holds a `$`; and a pairing of two names' values other than the one the line's order gives.
-  Each name's values are kept in the order each was last given, and the i-th of one is read with the
-  i-th of another, so the values each name was last given are read together; a pairing made
-  otherwise, by a branch, a loop, or a value given again after the use, is not read. Each adds
-  nothing to what a substitution already gets past. A use inside a substitution is read as the
-  command it is, so `x=$(rm "$T")` is refused as `rm` of the value, and so is a line that only
-  mentions it. `nano` is not read as a writer either: it is interactive, with no batch mode.
-
-  A change left in the story's commits is in its diff, the commit gate warns of it, and `sdlc stop`
-  refuses it with [SDLC-E0055](troubleshooting.md#sdlc-e0055). A copy changed and restored before
-  the commit leaves nothing in the diff or at the landing, so reviewers may have read a changed copy
-  with no trace of it. The landing is this second line only with
-  [`git.worktrees`](configuration.md#git) on: with it off there is no landing to refuse. And it
-  looks only at what the story's commits change, so this reason does not reach the loop's state
-  under `.sdlc/state`.
-
-- **A link's target.** Where the configured name is a link to another file in the repository, a file
-  tool can write through the name, the shell rule refuses the name and leaves the target, and the
-  landing goes by the name, so a change to the target lands. This is a person's own layout, and the
-  backlog behaves the same way. A change left in the story's commits shows in its diff under the
-  target's name.
-
-#### The findings ledger
-
-- **A record two releases share.** An `sdlc` older than the findings drops them when it saves the
-  story's record, and keeps the `findings` events `sdlc review add` writes beside them; the
-  verification and commit gates count the two and refuse with
-  [SDLC-E0093](troubleshooting.md#sdlc-e0093). Three cases get past that count. An older `sdlc`
-  that also dropped events would, though none does. A later round of the same reviewer, numbered
-  from F-1 again on the erased record, can list as many findings as were lost and hide the loss:
-  the verifier reads the review documents wherever two `findings` events of one gate and role
-  start over. And an older `sdlc` that runs `sdlc gate verification pass` or `sdlc gate commit
-  pass` itself checks no findings at all. That last is the general problem of an older release
-  running the loop, which every gate check added since shares and this ledger does not widen. A
-  story the project pauses, by its risk tier (`high`, by default) or a path its change touches,
-  still waits at the commit gate for a person's `sdlc approve`. Keep the plugin's `sdlc` and the
-  one on your `PATH` on one release.
-- **A path the match does not read.** A glob, or a path written only inside a finding's text, is
-  not matched against the story's changes, so such a finding can be referred while the story
-  changes the file. The verifier reads every referred finding's path and text against the diff.
-
-#### Commands the rules do not read
-
-- **A call the hook is killed on before it knows whether it checks it.** The
-  hook refuses a call it could not check in time only once it knows the call is
-  one it checks
-  ([`not-checked-in-time`](#not-checked-in-time)). A command that keeps the
-  hook finding the project for the whole of Claude Code's 30 seconds runs with
-  no rule applied and nothing said in the session. A person's decision run in
-  such a call is refused by the command itself, with SDLC-E0079. With
-  `SDLC_DEBUG_FILE` set, the log has no `hook decision` line for that call.
-- **A commit in the next call.** Each call is read on its own. A call that
-  stages another checkout's work into the session's index, with
-  `git --work-tree=<main> add` or `GIT_INDEX_FILE`, followed by a plain
-  `git commit` in a later call, puts that work in the story's commit. The commit
-  gate then does not pass: the reviews no longer match the tree
-  ([SDLC-E0029](troubleshooting.md#sdlc-e0029)), or the tree no longer matches
-  the commit ([SDLC-E0032](troubleshooting.md#sdlc-e0032)), and
-  `git show --stat HEAD` in the story's worktree lists files the story never
-  touched.
-- **What the persistent shell keeps.** The Bash tool keeps one shell from call
-  to call, and the hook sees only the environment the session started with. A
-  variable exported in an earlier call, such as `export GIT_DIR=<main>/.git`,
-  or set by a file run with `source` or `.`, is not seen, so a later
-  `git commit` can land on the branch another checkout has checked out, trunk
-  included. `git log` there shows a commit no gate passed, and `git reflog`
-  when it came. A person's decision run from that shell is refused by the
-  command itself, with SDLC-E0079, whatever an earlier call exported, while
-  Claude Code's markers are still set; a person's decision run after an
-  earlier call unset or blanked those markers is not caught (the last entry
-  of this list). The story's `gate-record.json` lists every approval and
-  unfreeze with when it was made.
-- **A program the rules do not read through.** The rules read past the
-  wrappers [the shell rules](#wrappers-the-rules-read-through) list, and no others. A
-  command that any other program runs, or that code handed to an interpreter
-  runs as a command of its own, is not read for what it runs. A commit and the
-  removal of a worktree or a checkout get past the rules that way, as in
-  `faketime 2020-01-01 git commit -m x`, or `docker run img git commit -m x`
-  with the checkout mounted. `faketime` is left off the list on purpose: the
-  time it takes before the program can start with a dash, and only its own
-  options, written out exactly, end them, so no table of options reads it as it
-  reads itself. A person's decision inside a string, code or a script that such
-  a program runs, as in `fish -c 'sdlc approve A-1'` or `make approve`, is
-  refused by the command itself, with SDLC-E0079.
-  `faketime 2020-01-01 sdlc approve A-1`, with `sdlc` written out as a word of
-  the command, is refused by the shell rules before it runs, and by SDLC-E0079
-  had it run.
-  `tmux new-session 'sdlc approve A-1'` is refused with SDLC-E0079 where it
-  starts the `tmux` server, which then has the session's environment; where a
-  server a person started is already running, it runs the command with an
-  environment of its own, and a person's decision run that way is not caught
-  (the last entry of this list). `git log` and `git reflog` show a commit no gate passed,
-  `git worktree list` a worktree gone or prunable, and the story's
-  `gate-record.json` every approval and unfreeze with when it was made.
-- **A command line for another kind of shell.** A string handed to a shell of
-  another kind than the tool's, such as `pwsh -Command` or `powershell -c` in
-  a `Bash` command, or `bash -c` or `sh -c` in a `PowerShell` one, is read
-  with the rules of the tool the command came from, not as that shell reads
-  it. So PowerShell's ways of setting a variable are not read in a string
-  handed to PowerShell from `Bash`, nor `${NAME:=…}` and `${NAME=…}` in one
-  handed to a POSIX shell from `PowerShell`, and a `git commit` after them can
-  land in another checkout as a plain commit, which only
-  [`commit-gate`](#commit-gate) holds. Where that shell's quoting and escapes
-  make a word into something other than the tool's would, the word is read as
-  the tool's would make it, by every rule that turns on which program a
-  command runs. A person's decision in such a string, as in
-  `pwsh -Command 'sdlc approve A-1'` from `Bash`, is refused by the command
-  itself, with SDLC-E0079. `git log` and `git reflog` in the other checkout show a commit
-  no gate passed, and when it came; `git worktree list` shows a worktree gone,
-  or marks it prunable; and the story's `gate-record.json` lists every
-  approval and unfreeze with when it was made.
-- **`parallel`'s own command lines.** GNU `parallel` runs its command once
-  for each argument after `:::`, with the argument put after it, and runs
-  each argument as a command line of its own where no command comes before
-  `:::`. The rules read the command, `:::` and its arguments as one command
-  line instead, so an argument run as a command line of its own is not read
-  for what it runs. A commit, the removal of a worktree or a checkout, and a
-  write to the loop's own record with a program such as `rm`, `cp` or `tee`
-  can each get past that way. Two things in such an argument are refused all
-  the same: a redirect onto a file a rule protects, as in
-  `parallel ::: 'echo x > .sdlc/state/active'`, and `sdlc` written out, as in
-  `parallel ::: 'sdlc approve A-1'`. `git log` and
-  `git reflog` show a commit no gate passed, `git worktree list` a worktree
-  gone or prunable, and `sdlc doctor` a loop record it can no longer read.
-- **Other ways of setting git's place.** `GIT_DIR`, `GIT_WORK_TREE` and
-  `GIT_INDEX_FILE` are read only where they are set in the ways
-  [`commit-in-another-checkout`](#commit-in-another-checkout) lists. Set
-  another way, as a `for` or `select` loop's variable, through a name
-  reference (`declare -n`), with bash's `+=`, `mapfile`, `getopts` or
-  arithmetic, with PowerShell's `Copy-Item` or `Rename-Item` on `Env:`, with
-  a parameter PowerShell binds in a way the rules do not follow, or with a
-  name held in a variable, as in `Set-Item "Env:$n"`, a later `git commit`
-  can land in another checkout as a plain commit, which only
-  [`commit-gate`](#commit-gate) holds. `git log` and `git reflog` in the other
-  checkout show a commit no gate passed, and when it came.
-- **Your own git configuration.** Aliases and includes in `~/.gitconfig`, the
-  system configuration, a file `GIT_CONFIG_GLOBAL` or `GIT_CONFIG_SYSTEM` named
-  when the session started, and anything those include, are not read. A bare
-  alias of yours, such as `git st`, is allowed; so would be one whose value
-  removes a worktree or makes a commit. `git config --show-origin
-  --get-regexp '^alias\.'` lists every alias git would run, and where it came
-  from.
-- **A path given as a default.** `${X:-…}`, `${X:=…}` and `${X=…}` are read
-  without the default, so `rm -rf "${D:-..}"` or `rm -rf "${D:=..}"`, run from
-  a story's worktree, is not taken for removing the directory that holds the
-  checkout.
-- **Code that works out its own path.** A program handed to an interpreter is
-  read for the paths it names outright, not for a path relative to where it
-  runs or one it works out, such as its own current directory. So
-  `node -e 'require("fs").rmSync("..", {recursive: true})'` and
-  `python3 -c 'import os, shutil; shutil.rmtree(os.getcwd())'` are not
-  refused. For this and the entry above, you would notice the checkout gone:
-  `git worktree list` marks it prunable, and every `sdlc` command on its story
-  says the checkout holding it no longer exists
-  ([SDLC-E0051](troubleshooting.md#sdlc-e0051)).
-- **PowerShell spellings of git.** `& (Get-Command git) worktree prune`,
-  dot-sourcing a variable, as in `. $G worktree prune`, and a git command whose
-  output is assigned, as in `$x = git worktree prune`, are not read as git, so
-  no git rule refuses them. A commit made this way is refused at the next gate
-  instead ([SDLC-E0046](troubleshooting.md#sdlc-e0046)); anything else shows
-  only in what it did, such as a worktree `git worktree list` no longer lists,
-  or lists as prunable.
-- **Words or a script from standard input, or from a file.** The rules read a
-  command as it is written. What reaches a program on its standard input, or
-  in a file it is told to read, is not read for what it runs:
-  `echo prune | xargs git worktree`, `xargs -a args.txt git worktree`,
-  `echo 'git worktree prune' | sh`, `echo commit -m x | xargs git -C <main>`,
-  and a script run from a file, such as `sh tidy.sh`. Such a command can remove
-  or prune a worktree, or commit in another checkout, and the same holds for
-  every rule that turns on which program a command runs. A here-string
-  handed to a shell given no script, as in `bash <<< 'sdlc approve US-001'`,
-  is read as the script it is, and refused by the hook and by the command
-  itself, with SDLC-E0079. A person's decision run another
-  way, as in `echo 'sdlc approve US-001' | sh`,
-  `echo 'sdlc unfreeze --reason x' | sh` or a script run from a file, is
-  refused by the command itself, with SDLC-E0079, in every session, the one
-  holding the story included. Run after
-  a command has removed Claude Code's markers, a person's decision is not
-  caught this way, and a model working a story could lift its own freeze
-  (the last entry of this list). Ending the iteration part-way with
-  `sdlc stop`, which turns every rule off, still gets through this way:
-  [`stop-is-a-human-decision`](#stop-is-a-human-decision) reads it only
-  written out, and `sdlc stop` does not refuse itself inside Claude Code,
-  since the runbook's last step runs it there. `git worktree list`
-  shows a worktree gone, or marks it prunable; `git log` and `git reflog` in
-  the other checkout show a commit no gate passed, and when it came; and the
-  story's `gate-record.json` lists every approval and unfreeze with when it was
-  made.
-- **A line the readers do not follow.** The rules read a command with
-  readers that follow the common forms of the shell's grammar, not all of it,
-  and they read these forms apart from bash or zsh, or do not follow them as
-  far:
-  - A `case` inside a substitution. The `)` after a pattern is taken to close
-    the substitution, so in `echo $(case x in x) git commit -m x;; esac)` the
-    commit is read as words of `echo`, and in
-    `rm $(case x in a) echo ;; esac) .sdlc/state/tests.lock` the lock is not
-    read as a file `rm` is given. bash 5 and zsh run both; bash 3.2 and sh
-    refuse the line. It is left open because reading a `case` to its `esac`
-    would change where every substitution ends, for every rule at once.
-  - A `${…}` inside a double-quoted string. The rules that read which program
-    a command runs do not follow it: they read its text as the string's, so
-    a `"` in it ends the string and a `'` in it is a character. The shells
-    read a `"` there as a quote
-    within the `${…}`, so in `echo "${x:-"'"}"; git commit -m x` bash 3.2,
-    bash 5, zsh and sh all run the commit, which the rules take for text
-    inside a single-quoted string. bash and sh read a `'` there as a quote,
-    and zsh as a character, as the rules do, so in
-    `echo "${x:-'"'}"; git commit -m x` bash and sh run the commit and zsh
-    does not. An `rm` of the lock after either is refused, by the rules that
-    read which files a command writes. The here-document
-    reader reads such a `'` as bash does, and both ways where it is not sure
-    ([Here-documents](#here-documents)). It is left open because following a
-    `${…}` there would change where every double-quoted string ends, for
-    every rule that reads which program runs, and bash and zsh disagree on
-    its `'`, so no one reading is right for both.
-  - A `#` just after the `)` of an array, as in `a=(x)#y`, which bash 3.2,
-    bash 5 and sh read as one word, the string `(x)#y`, and zsh as an array
-    and a comment. The rules read a comment there, as zsh does, so after
-    `a=(x)#'`, a newline and `';git commit -m x`, bash and sh run the
-    commit, which the rules take for text inside a quote. It is left open
-    because the rules read the `(` of `a=(` as they read a subshell's, after
-    whose `)` every shell starts a comment, and telling the two apart would
-    change how every rule reads every `(`.
-  - A line bash refuses inside an array. For `a=(x;'`, bash 3.2 and bash 5
-    report a syntax error and go on to the next line, where zsh and sh run
-    nothing more. The rules read the `'` as a quote that runs on, so after
-    `a=(x;'` and a newline, `git commit -m x` is taken for text, and both
-    bashes run it. It is left open because what bash runs after a syntax
-    error comes from how it recovers from the error, not from the shell's
-    grammar, and zsh and sh do not recover that way.
-  - A here-document the hook is not sure of
-    ([Here-documents](#here-documents)) is read a second time with every body
-    taken as commands. A quote left open in a body can hide the lines after it
-    in that reading too: a body is text, and a reading that takes it for
-    commands cannot tell which of its quotes the shell would have closed.
-  - A redirect to a file a substitution prints. In
-    `echo x > $(echo .sdlc/state/tests.lock)`, in
-    `eval 'echo x > $(echo .sdlc/state/tests.lock)'`, and in the same with
-    its blanks and operators escaped,
-    `eval echo\ x\ \>\ \$\(echo\ .sdlc/state/tests.lock\)`, the file written
-    is what the substitution prints when it runs, and bash, zsh and sh all
-    write the lock. It is left open because the rules would have to run the
-    substitution to know what it prints.
-
-  A `${…}` inside a double-quoted string and the two array forms above still
-  leave the rules reading a quote the shells close, but a line whose quotes
-  the rules cannot follow is now refused where `sdlc` or `git` is in its text
-  ([A line whose quotes the rules cannot follow](#a-line-whose-quotes-the-rules-cannot-follow)),
-  so `echo "${x:-"'"}"; git commit -m x` no longer runs a commit unseen. The
-  `case` item, whose line closes, stays as it is.
-
-  A here-document opened on or after a line with a `case` in a substitution,
-  a `'` in a double-quoted `${…}` or a `#` just after an array's `)` is read
-  as one the hook is not sure of. None of these reaches more than commands
-  the rules already do not read: a commit run by `eval` of a variable, as in
-  `c=$(cat x.txt); eval "$c"`, or spelt as a parameter's default, as in
-  `${x:-git commit -m x}`, which bash and sh run and zsh does not; a file
-  written through a path the command does not spell out, as in
-  `p=$(cat x.txt); echo x > $p.lock` or `eval "$(cat x.txt)"`; and a
-  script run from a file, as in `sh tidy.sh`. A person's decision run this
-  way is refused by the command itself, with SDLC-E0079. `git log` and
-  `git reflog` show a commit no gate passed, `sdlc doctor` a loop record it
-  can no longer read, a test freeze that no longer reads included, and the
-  story's `gate-record.json` every approval and unfreeze with when it was
-  made.
-- **Deleting through the Finder.** AppleScript run with `osascript`, telling
-  the Finder to delete a checkout or move it to the Trash, is not read. The
-  checkout is then in the Trash, and can be put back from there. Until it is,
-  `git worktree list` marks it prunable, and every `sdlc` command on its story
-  says the checkout holding it no longer exists
-  ([SDLC-E0051](troubleshooting.md#sdlc-e0051)).
-- **The shell command a `!` alias runs.** An alias whose value starts with `!`
-  runs a shell command. The rules on git and on commits read that command, so
-  `git -c alias.x='!git worktree prune' x` is refused. A redirect in it onto a
-  file a rule protects is refused too, as in
-  `git -c alias.x='!echo y > CLAUDE.md' x`. No other rule reads it: a file it
-  writes or deletes with a program, as in
-  `git -c alias.x='!rm -rf .sdlc/state' x`, is not refused, nor is anything
-  else only the other rules would refuse. The rules on `sdlc` read the command
-  line too, so `git -c alias.x='!sdlc approve A-1' x` is refused by the hook,
-  and by the command itself with SDLC-E0079. `git status` shows a file it changed, and the
-  story's `gate-record.json` lists every approval and unfreeze with when it
-  was made, so one nobody remembers making shows there.
-- **`sdlc` reached under another name.** The shell rules find `sdlc` only
-  where the word is written out, or where the line assigns it to the variable
-  it runs. An alias the line defines is read as the command it runs, so
-  `alias s=sdlc; s approve A-1` is refused by the hook, and by the command
-  itself with SDLC-E0079. Reached through a
-  variable the line does not assign, as in `"$SDLC_BIN" approve A-1`, or a
-  command substitution, as in `$(command -v sdlc) approve A-1`, the hook
-  refuses it where the words after read a person's command
-  ([How a review's command is read](#how-a-reviews-command-is-read)), and the
-  command itself refuses it with SDLC-E0079. As a
-  copy under another name, as in `cp bin/sdlc /tmp/s && /tmp/s approve A-1`,
-  a person's command is refused by the command itself, with SDLC-E0079. The
-  story's `gate-record.json` lists every approval and unfreeze with when it was made.
-- **Code or a string that runs `sdlc`.** Code handed to an interpreter that
-  runs `sdlc` itself, as `python3 -c` does with
-  `subprocess.run(["sdlc", "approve", "A-1"])`, runs it where the shell rules
-  cannot read it, and the command itself refuses it with SDLC-E0079. Given
-  `["sdlc", "hook", "UserPromptExpansion"]` and a payload it wrote, the hook
-  answers that the command did not run, and records no decision, since the
-  process has a tool's label in `AI_AGENT`, and `CLAUDE_CODE_EXECPATH`.
-  PowerShell's `Invoke-Expression` or `iex` runs a
-  command it is given as a string, which the shell rules do not read;
-  `Invoke-Expression 'sdlc approve A-1'` is refused by the command itself,
-  with SDLC-E0079. The story's `gate-record.json` lists every approval and
-  unfreeze with when it was made.
-- **The hook under another name, on an event it cannot read.** A copy of
-  `sdlc` or of the plugin's launcher under another name, given an event the
-  shell rules cannot read, as in `/tmp/x hook "$E"`, reaches the hook, which
-  answers that the command did not run and records no decision, since the
-  process has a tool's label in `AI_AGENT`, and `CLAUDE_CODE_EXECPATH`
-  ([`slash-command-is-a-human-decision`](#slash-command-is-a-human-decision)
-  refuses that copy before it runs only with the event written out). The
-  story's `gate-record.json` lists every approval and unfreeze with when it
-  was made.
-- **A PowerShell expression in parentheses.** In a `PowerShell` command, a word
-  given as an expression in parentheses is read as a command of its own, not
-  as a word of the command it is given to, so the shell rules read neither the
-  subcommand nor the event given that way. `sdlc ('ap'+'prove') US-1` is
-  refused by the command itself, with SDLC-E0079, and
-  `sdlc hook ('User'+'PromptExpansion')` reaches the hook, which answers that
-  the command did not run, since the process has a tool's label in
-  `AI_AGENT`. The story's `gate-record.json` lists every approval and unfreeze
-  with when it was made.
-- **A session in a project that does not take part.** Its calls are not read.
-  A plain `sdlc approve` run there that reaches a project that does take part,
-  through a directory the command does not spell, such as
-  `cd "$(cat /tmp/d)"`, is refused by the command itself, with SDLC-E0079.
-  Running the hook there on a payload whose `cwd` names a project that does
-  take part answers that the command did not run, and records no decision,
-  since the process has a tool's label in `AI_AGENT`. Since none of that
-  session's calls are read, though, a run of the hook there after a command has
-  overridden `AI_AGENT` with a hook's label and removed the other markers a
-  model's tool carries, all written out, records a person's decision on such a
-  payload: it is not caught. Besides the label, the hook reads
-  `CLAUDE_CODE_EXECPATH` and `GIT_EDITOR=true` there, which a model's tool has
-  and a hook Claude Code runs itself does not. That project's
-  `gate-record.json` lists every approval and unfreeze with when it was made.
-- **A project MCP server, or a project hook.** Any session can write
-  `.mcp.json`, which no rule protects, and Claude Code starts a server named
-  there once the person approves it, or with no question where
-  `enableAllProjectMcpServers` is set. A session that holds no story can write
-  the project's `.claude/settings.json` or `.claude/settings.local.json`,
-  which are protected only in the session that holds the story, and Claude
-  Code runs a hook named there when its event comes. Claude Code starts either
-  with an environment of its own, which has `CLAUDECODE`, so a person's
-  command it runs is refused with SDLC-E0079. A hook Claude Code runs that way
-  has the environment the hook's check on the slash route accepts, as a hook of
-  Claude Code's own does (read in Claude Code 2.1.321), and a person's slash
-  command it feeds the hook on a payload it wrote, with
-  `sdlc hook UserPromptExpansion`, is not caught, since it starts with an
-  environment of its own. A server from `.mcp.json`, and a `statusLine`
-  command, were not checked, and are taken to be alike. It can run
-  `sdlc hook SubagentStop`, or any event the hook records, on a payload it
-  wrote too, and since recording asks no variable, the story's
-  agent events and trace are then what it wrote, whatever its environment.
-  You would notice Claude Code asking you to approve a server you did not add,
-  `git status` showing `.mcp.json` or a file under `.claude` changed (a
-  `.claude/settings.local.json` that git ignores does not show there), and the
-  story's `gate-record.json` listing a decision nobody remembers making.
-- **A slash command a program types into your own prompt.** Where you run
-  Claude Code inside `tmux` or `screen`, or on macOS, a command the model runs
-  can type into your session's prompt: `tmux send-keys` into the session's
-  pane, `screen -X stuff`, a keystroke sent with `osascript` through System
-  Events, or `cliclick`. No rule reads any of these as typing, so the line that
-  types is not refused. An `osascript` that also tells Terminal or iTerm to run
-  `claude` is refused as a start, and one with a character outside the plain
-  set is refused as unreadable whatever it types, but no rule reads a keystroke
-  as one. Plain text that tells iTerm to
-  `write text "/sdlc:approve US-001"` into its current session, or Terminal to
-  `do script "/sdlc:approve US-001" in front window`, types a person's command
-  into a window already open, which has an environment of its own, so no rule
-  refuses it and it is not caught. Claude Code takes what was typed as your
-  typing, and its own hook, which starts with an environment of its own,
-  records a person's decision typed that way: it is not caught. In Claude
-  Desktop a slash command typed that way runs too (Claude Code 2.1.321); a `!`
-  line typed that way ran on Claude Code 2.1.309 and was not checked on
-  2.1.321. This is not new: in 0.4.0 the same keystrokes typed a
-  `!sdlc approve` line, which SDLC-E0079 now refuses. You would notice a
-  command in your session's prompt or transcript that you did not type, and the
-  story's `gate-record.json` listing a decision nobody remembers making.
-- **A path no rule can tell is the same file.** On macOS,
-  `/.vol/<device>/<inode>` names a file by its volume and inode, and a hard
-  link is a second name for the same file. Neither resolves to the path a rule
-  protects, so a write through one is placed where it is spelled. `ls -i`
-  shows the same inode for both names, and `git status` in the checkout shows
-  the protected file changed.
-- **A program that starts clean, or removes Claude Code's markers.** The
-  routes above are caught only while the process keeps the environment of the
-  model's tool that started it. A person's decision run by a program that
-  starts it with a clean environment is not caught: `launchctl submit`, a
-  launchd agent, `cron`, Claude Code's own daemon, Terminal told by
-  AppleEvents to run it, a `tmux` server a person started that is already
-  running, `su -`, `sudo -i`, plain `sudo` and `doas` as they are set up by
-  default, `ssh`, `schtasks`, WMI's `Win32_Process` and `Start-Process
-  -UseNewEnvironment` each start it with none of the markers. Terminal or iTerm
-  told to run `claude` is refused as a start
-  ([`story-stays-in-its-session`](#story-stays-in-its-session)), but Terminal
-  told to run a person's decision in its terminal form, as in
-  `do script "sdlc approve US-001"`, is not caught, since its shell has an
-  environment of its own. `at` keeps the environment it is given, and so does
-  an app `open` starts. A person's
-  decision in an `at` job submitted after a command removed Claude Code's
-  markers is not caught, and neither is one `open` hands to an app that was
-  already running, which has an environment of its own. A person's decision
-  run after a command has removed or blanked Claude Code's markers, in the
-  same call or an earlier one of the persistent shell, or by a program that
-  clears its own environment, is not caught either. A person's slash command
-  fed to the hook on a payload a model wrote is not caught once a command the
-  rules do not read has overridden `AI_AGENT` with a hook's label and removed
-  the other markers the hook reads, since the hook hands the command none of
-  the markers. A nested session started by a spelling the rules do not read,
-  after a command removed `CLAUDE_CODE_CHILD_SESSION` or overrode
-  `CLAUDE_CODE_ENTRYPOINT`, or with an environment of its own, is not caught
-  either. On Claude Code 2.1.312 and later, before US-130 the hook refused a
-  person's slash command in every nested session, since every hook it ran had
-  `AI_AGENT`; now it refuses one only where it can tell that nobody attends it.
-  Run after removing Claude Code's markers,
-  `sdlc unfreeze --reason x` lifts a story's freeze, and so a model working a
-  story could lift its own. The story's `gate-record.json` lists every
-  approval and unfreeze with when it was made.
-- **A protected name changed where the rules cannot see it.** The six names
-  [`enforcement-stays-on`](#enforcement-stays-on) protects guard a person's
-  typed command on the slash route alone. The commands that rule reads are
-  refused, and these are not:
-  - a program that starts clean or drops the environment by its own setup:
-    `sudo` and `doas` as set up by default, `su -`, `ssh`, `systemd-run`,
-    `setpriv --reset-env`, `launchctl`, `at`, `cron`, and a `tmux` or `screen`
-    session, each running the launcher or a copy of it, and the commands
-    `launchctl` and `tmux` have for the environment they hand on to what they
-    start later, as in `launchctl setenv CLAUDE_CODE_EXECPATH x`,
-    `launchctl unsetenv CLAUDE_CODE_SESSION_ATTENDED`,
-    `tmux set-environment -g CLAUDE_CODE_ENTRYPOINT x` and
-    `tmux setenv -gu CLAUDE_CODE_EXECPATH`, which both sessions allow for any of
-    the six names, as trunk allows them for its one;
-  - a program the shell makes that clears the environment (`$X -i …` with
-    `X=env`), and a name the shell makes handed to a program the shell makes
-    (`$X $Y`), with the variables set in this call or an earlier one of the
-    persistent shell;
-  - a name the shell makes, handed to one of zsh's module builtins;
-  - interpreter code, PowerShell's included, that builds the name, as
-    `'AI_' + 'AGENT'` or `'GIT_' + 'EDITOR'`;
-  - a script run from a file, words or a script fed to a shell, `xargs` or
-    `parallel` on standard input or from a file
-    (`echo 'unset AI_AGENT; …' | sh`), `eval "$cmd"`, a process substitution
-    run as a script, and an alias or a function defined in an earlier call;
-  - interpreter code that empties its environment without naming the variable
-    (`os.environ.clear()`, `env={}`, `os.execve(…, {})`, `%ENV=()`,
-    `ENV.clear`, `process.env = {}`), as
-    [code that works out its own path](#commands-the-rules-do-not-read) is;
-  - a shell the rules do not read (`fish`, `csh` and `tcsh`, `nu`, `elvish`,
-    `xonsh`), as [a command line for another kind of
-    shell](#commands-the-rules-do-not-read) is;
-  - a command git runs (`core.fsmonitor`, a `!` alias), as
-    [git settings that name a program](#branches-and-the-landing) are;
-  - `parallel ::: …`, as [`parallel`'s own command
-    lines](#commands-the-rules-do-not-read) are;
-  - `osascript`, `vim -c`, `emacs`, `gdb` and `lua`, as
-    [a program the rules do not read through](#commands-the-rules-do-not-read)
-    is.
-
-  Through them a payload a model wrote can reach the hook as a person's typed
-  command, as the entry before this one says, and a session a model starts can
-  look attended. Recording does not need any of them changed: the next entry
-  says what gets past it.
-- **A nested session given a terminal of its own.** Claude Code counts a
-  session started from a model's tool as attended where it has a terminal of
-  its own, as `script` or `tmux` gives one. The shell rules refuse these starts
-  ([`story-stays-in-its-session`](#story-stays-in-its-session)): `script`,
-  `tmux` and their kind, and Python's `pty` module, given `claude` or
-  `"$CLAUDE_CODE_EXECPATH"`, an `osascript` that tells Terminal or iTerm to run
-  `claude`, or hands it a command that is not a string in quotes, and `socat`
-  given an `EXEC:`, `SYSTEM:` or `SHELL:` address that runs it, or that runs a
-  shell it is fed. Whether the hook of such
-  a session keeps the model's `CLAUDE_CODE_EXECPATH` and `GIT_EDITOR=true` was
-  not checked on Claude Code 2.1.321; where it does not, its hook looks like the
-  person's, and only those rules stand in front of it. These starts get past
-  the rules:
-  - a script file that starts it, run by `osascript x.scpt`, by
-    `open -a Terminal x.command`, or as an address, as in
-    `socat - EXEC:'sh /tmp/x.sh'`, in the call that writes it or in a later
-    one;
-  - `open -a Terminal /usr/local/bin/claude`, which hands Terminal the path of
-    the program, and which was not tried against a real Terminal;
-  - another terminal app told by AppleScript to run it;
-  - a program that holds or opens a terminal and is not one of those the rules
-    read through, each tried with the program and a slash command in letters:
-    `dtach -n /tmp/s claude`, `abduco -n s claude`, the same two given
-    `"$CLAUDE_CODE_EXECPATH"`, `asciinema rec -c "claude ..." /tmp/x.cast`,
-    `xterm -e claude`, `gnome-terminal -- claude` and
-    `open -na kitty --args claude`;
-  - a program word the rules cannot name, run in a session that holds no story:
-    `X=claude; script -q /dev/null "$X"`, and the same with
-    `X="$CLAUDE_CODE_EXECPATH"`, and a program word and the text it is given
-    both held in variables, as in `P=socat; X=EXEC:claude,pty; "$P" - "$X"`.
-    The session working the story refuses all of them;
-  - a whole `osascript` or `socat` command held in a variable and run with
-    `eval` or `sh -c`, as in
-    `S="osascript -e 'tell application \"Terminal\" to do script \"claude\"'"; eval "$S"`
-    and the same with `bash -c "$S"`, where the text holds no slash command.
-    One that holds a slash command is refused as a start;
-  - PowerShell's `Start-Process` given `osascript` or `socat`, as in
-    `Start-Process osascript -ArgumentList '-e','tell application "Terminal" to do script "claude"'`
-    and `Start-Process socat -ArgumentList '-','EXEC:claude,pty'`, with or
-    without a slash command in the text;
-  - the path `CLAUDE_CODE_EXECPATH` holds, or the one `which claude` prints,
-    reached through a substitution, the `read` builtin or `xargs` and then run:
-    `p=$(printenv CLAUDE_CODE_EXECPATH); "$p" -p x`,
-    `xargs -I{} {} -p x <<< "$CLAUDE_CODE_EXECPATH"`, and PowerShell's
-    `& ([Environment]::GetEnvironmentVariable("CLAUDE_CODE_EXECPATH")) -p x`.
-    A `claude -p` started that way has no terminal, so its hook answers that the
-    command did not run;
-  - the same path handed to a program that gives a terminal the same way, which
-    is the interactive start: `script -q /dev/null $(which claude)`,
-    `tmux new-session -d "$(printenv CLAUDE_CODE_EXECPATH)"`,
-    `p=$(printenv CLAUDE_CODE_EXECPATH); script -q /dev/null "$p"`,
-    `read X <<< "$CLAUDE_CODE_EXECPATH"; script -q /dev/null "$X"` and
-    `printenv CLAUDE_CODE_EXECPATH | xargs script -q /dev/null`, which the
-    rules read as nothing that names claude. The session working the story
-    allows them too, and where `xargs` gives the path they allow a slash command
-    written in the line, as in
-    `which claude | xargs -I{} script -q /dev/null {} "<slash command>"`;
-  - a shell that `script` or `unbuffer` gives a terminal, fed on standard
-    input: `printf 'claude\n' | script -q /dev/null bash` and
-    `printf 'claude\n' | unbuffer bash`, since what is left of the line once the
-    program that gives the terminal is taken off is a shell with no command,
-    which the reader does not give as a run. The same shell fed from a file
-    where nothing in the line names claude, as in
-    `script -q /dev/null bash < /tmp/c`, and `expect` given a shell to spawn
-    and to `interact` with, as in `expect -c 'spawn bash; interact' < /tmp/c`,
-    are not read either;
-  - a program on a terminal that takes what it is fed and that the reading of
-    a shell does not reach: `socat - EXEC:'su -',pty`,
-    `socat - EXEC:'ssh localhost',pty`, `socat - EXEC:python3,pty` and
-    `socat - EXEC:tmux,pty`, each fed a line that names claude; Python code
-    that starts the shell itself, as in
-    `python3 -c 'import pty; pty.spawn("bash")'`; and a file given as the first
-    address in place of standard input, as in
-    `socat OPEN:/tmp/in EXEC:bash,pty`;
-  - a `socat` word that a pattern builds, which the shell reader cuts at its
-    parenthesis: `shopt -s extglob; socat - +(EXEC:claude,pty)`,
-    `socat - !(EXEC:claude,pty)` and zsh's `socat - EXEC:cla(u|)de,pty`, each
-    given a file that the pattern matches and that an earlier command made. The
-    rules read a glob character in the word and a parenthesis in a quoted one,
-    and not these;
-  - a program word the rules cannot name, given text that builds the command
-    and names no claude, as in
-    `P=osascript; "$P" -e 'set c to system attribute "X"'
-    -e 'tell application "Terminal" to do script c'`: it is read for what it
-    names, which here is nothing, in both sessions;
-  - text a terminal app is told to run that runs a file the rules do not read,
-    `do script "sh /tmp/x.sh"`. Text that decodes a name before it runs it, as
-    in `do script "echo ... | base64 -d | sh"`, is refused, but only because a
-    `|` is not plain.
-- **A later Claude Code.** The hook's check on the slash route rests on what
-  Claude Code 2.1.321 sets, read in Claude Desktop on 2026-11-13. A release
-  that renames the label, stops writing `CLAUDE_CODE_SESSION_ATTENDED` afresh
-  for each hook, or changes what a model's tools are given fails closed only
-  where the change leaves the hook a variable it cannot read; one that makes a
-  nested session's hook look like the person's does not.
-- **The hook run on an event it records, where the rules cannot see it.**
-  The hook does not ask `AI_AGENT` on the events it records, since Claude Code
-  in Claude Desktop ran its hooks with it set before 2.1.321, so
-  [`recorded-event-comes-from-the-host`](#recorded-event-comes-from-the-host)
-  is what holds them. These get past it:
-  - a copy of the launcher, or of sdlc under another name, given `Stop` or
-    `Notification` alone, which reads as `docker stop web` does, and
-    `c='sdlc hook SubagentStop'; eval "$c"`;
-  - a script run from a file or fed on standard input;
-  - interpreter code that builds the event, the name or the path
-    (`'Subagent' + 'Stop'`), and a program the rules do not read as an
-    interpreter (`lua`, `osascript`, `tclsh`, `gdb -ex`, `vim -c`, and lldb's
-    own commands, `-o 'platform shell …'` and `script`);
-  - a shell the rules do not read.
-
-  With `AI_AGENT` kept, each records the event it names: agent events in
-  `gate-record.json`, and records in the trace. Agent events can be forged this
-  way until the hook can tell Claude Code's events from others, which US-077 is
-  for. You would notice `agent_start` and `agent_end` events in the story's
-  `gate-record.json` with no agent run in the session's transcript, and
-  `sdlc trace` figures that do not match it.
-- **Refusal records from a hand-run hook.** `sdlc hook PreToolUse` run by hand,
-  with a payload that carries the session's id, adds a `refusal` record to the
-  held story's trace, whatever `AI_AGENT` holds. A loop of them fills the trace
-  to its 4 MiB, after which nothing more is recorded for the story, and
-  `sdlc trace` says `truncated`, with the instant. No rule refuses it; the
-  routes of both rules above say to use a `session_id` of the payload's own.
-- **The gate record's growth.** An agent event forged by a route the rules do
-  not see (`eval`, a script file or a built name) is written to
-  `gate-record.json`, which has no cap. A loop of them grows the file that
-  every later gate command reads and rewrites, and that a person approves
-  from. You would notice agent runs in `sdlc trace` far above the agents the
-  session ran, or the file's size.
-- **How to check the agent events against what ran.** List the ids with
-  `grep -o '"agent_id": "[^"]*"' .sdlc/stories/<ID>/gate-record.json | sort | uniq -c`.
-  Claude Code keeps each subagent's transcript as `agent-<id>.jsonl`, in the
-  session's `subagents` directory under `~/.claude/projects/`. An id counted
-  once (a start or an end alone), more than twice, or with no such transcript
-  was not a run Claude Code reported. A forged run fakes the cost figures,
-  never a gate: `first_pass`, the review rounds, the escalations and every gate
-  come from reviews and gate events, which agent events do not touch.
-- **A run of the configured commands from a line the rule cannot read.**
-  [`commands-run-as-configured`](#commands-run-as-configured) narrows what can choose the
-  environment of `sdlc gate implementation pass` and `sdlc freeze`, and does not remove it. A
-  result `run by sdlc` was run as configured from a line the rule could read, which is not proof
-  that nobody chose the environment; the verifier's gaming check stays the net. None of the lines
-  below gives more than `bash ./x.sh` already does. You would notice a recorded pass whose tests
-  did not run, or ran fewer than the story's, in the output file the gate names. The rule does not
-  read:
-  - a script or file the line runs through a runner whose line does not name the call:
-    `bash ./x.sh`, `make gate`, `npm run`, `python3 x.py`;
-  - the binary run under another name: a copy (`cp "$(command -v sdlc)" ./x`), a hard link, or,
-    in a project that builds sdlc, `go build -o x ./cmd/sdlc`, then `./x gate implementation pass`
-    with a setting in front;
-  - inline interpreter code that builds the name, such as `python3 -c` or `node -e` joining `"sd"`
-    and `"lc"`;
-  - a made word that is the whole call, behind a program other than the words the rule allows
-    (`sudo $(printf 'sd%s freeze' lc)`), which cannot be told from a substitution that is an
-    argument; and a made sdlc word followed by a made subcommand behind a wrapper
-    (`sudo $(command -v sdlc) $(echo freeze)`), which cannot be told from `cp "$a" "$b"`;
-  - an `eval` given text the line builds, and on Bash a shell given a script the line builds:
-    `export GOFLAGS=-v; bash -c "$(echo c2RsYyBmcmVlemU= | base64 -d)"`. On PowerShell,
-    `Invoke-Expression` given a variable or piped text that the line builds without naming the
-    call: `$c = '{0}lc freeze' -f 'sd'; iex $c`;
-  - the call as a command string handed to a program the hook does not know as taking one,
-    beyond `su`, `runuser`, `man`, `less`, `more` and `rg --pre`;
-  - on Bash, `pwsh` or `powershell` given an encoded command, whose script the hook does not
-    decode, and `export GOFLAGS=-v; pwsh -c '& (gcm sdl?) freeze'`, whose call operator Bash's
-    readings do not read;
-  - a tool's persistent configuration (`go env -w GOFLAGS=…`), a shell's startup files, the
-    person's shell, and a variable set in the agent host's settings;
-  - an export made in one shell call reaching the next, where the host keeps the shell between
-    calls; and in the same way a function, filter or alias named sdlc, `Set-Location` or `cd`, or
-    a `LocationChangedAction`, that one call defines and a later call runs, and a variable that one
-    call sets to an assignment, which arithmetic in a later call evaluates by its bare name
-    (`(( y ))`, with `y` holding `HOME=1`).
-- **On PowerShell, lines that may run the configured commands and that
-  [`commands-run-as-configured`](#commands-run-as-configured) does not read as the call.** Each
-  sets a variable and runs `sdlc freeze` or `sdlc gate implementation pass` without naming the
-  call. You would notice as above.
-  - A process the line starts, through `Start-Process` or .NET, for a program name or call words
-    it builds other than by joining quoted parts with `+`: `-f`, `-join`, `-replace`, character
-    codes or variables (`$p.StartInfo.FileName = '{0}lc' -f 'sd'`).
-  - Text the line builds without naming the call, handed to an invoker other than `iex`: a script
-    block from `[scriptblock]::Create` run through `&` or `.`, `InvokeScript`, `AddScript`,
-    `Invoke-Command` or `Start-Job`: `& ([scriptblock]::Create(('{0}lc freeze' -f 'sd')))`.
-  - A single-quoted script given to `pwsh` or `powershell` after `-Command`, `-c`,
-    `-CommandWithArgs` or any start of them, or to Windows PowerShell as its first bare word, that
-    runs the call without naming it: `$env:GOFLAGS = '-v'; pwsh -NoProfile -Command '& (gcm sdl?)
-    freeze'`. A single-quoted string is a literal word, and the rule does not open it.
-  - `pwsh` or `powershell` started other than as its statement's program, which goes unread
-    whatever it is given, the encoded switch and built words among them:
-    `Start-Process pwsh -ArgumentList '-ec', '<b64>' -Wait -NoNewWindow`, `cmd /c pwsh -ec <b64>`,
-    `[Diagnostics.Process]::Start('pwsh', '-ec <b64>')`, `& (gcm pws?) -ec <b64>`,
-    `wsl pwsh -ec <b64>` and `Set-Alias p pwsh; p -ec <b64>`.
-  - An apostrophe in a `#` comment or in `<# … #>`, where PowerShell opens no string, but the
-    rule's split pairs it with a later quote, so a statement reads as text to it.
-  - A script piped to `pwsh` whose words are all literal:
-    `$env:GOFLAGS = '-v'; '& (gcm sdl?) freeze' | pwsh -NoProfile -Command -`.
-
-#### What the reading of `sdlc` leaves out
-
-This is a discipline tool, not a sandbox: the hook reads what a line shows and the scripts and
-strings it hands on, and a session that means to get past it can. These have no reading built
-for them, each led by its example.
-
-*A script handed to a shell in a way the rules do not read:*
-
-- a script a shell reads from standard input, other than a here-string to a shell given no
-  script or given `-s`: `echo '...' | sh`, and `bash /dev/stdin <<< '...'`;
-- a process substitution: `bash <(echo '...')`, `source <(echo '...')`;
-- a file the line writes and then runs: `printf '...' > /tmp/x.sh && sh /tmp/x.sh`;
-- `fish -c '...'` and `su -c '...'`;
-- a string the shell expands later as a prompt: `PS4='$(sdlc …)'` with `set -x`;
-- a function handed to a child shell in its environment:
-  `env 'BASH_FUNC_s%%=() { sdlc …; }' bash -c s`.
-
-*`sdlc` under another name:*
-
-- a symbolic link to `sdlc`, or a copy of it, under another name:
-  `ln -s "$(command -v sdlc)" s && ./s ...`;
-- a zsh global or suffix alias whose value holds words of `sdlc`'s own command:
-  `alias -g R='review add design_review architect'`, then `sdlc R approve`. Every later command
-  on the line after such an alias is read as after a change to what any name runs, so
-  `alias -g Q='| sdlc'`, then `echo Q approve US-001`, is refused; what the rules cannot read is
-  `sdlc`'s own words hidden in the value.
-
-*Set up outside the command:*
-
-- an alias, a function, a trap or a git alias defined outside the command, in a person's shell
-  profile or git configuration, or by the session in an earlier command: after
-  `git config alias.r '!sdlc approve US-001'`, let through while no story waits, a later `git r`
-  is read without it;
-- a program git runs from its own settings or variables: `GIT_SSH_COMMAND`, `core.sshCommand`,
-  `core.editor`, `credential.helper`, the command of `git submodule foreach`, and a `!` alias
-  given standard input, `git -c 'alias.r=!sh' r <<< '...'`.
-
-*A program or a variable in front of `sdlc`:*
-
-- a program the rules do not read in front of `sdlc`: `docker run sdlc ...`,
-  `perl -e 'exec @ARGV' sdlc ...`;
-- a whole command a variable or a substitution holds: `$C`, `eval "$C"`, `sh -c "$C"`,
-  `bash <<< "$C"`;
-- an option of `env`, `timeout` or `sudo` that a variable fills in, with nothing written after
-  `sdlc`: `env $X sdlc`, `timeout $D sdlc`;
-- a directory a substitution fills in front of a written `sdlc`: `$(go env GOPATH)/bin/sdlc`,
-  kept because that is how a Go install runs it.
-
-What has a second check behind these: `approve`, `unfreeze`, `ack`, `remap`, `release` and
-`staffing assign` reached any of these ways are still refused by the command itself, with
-SDLC-E0079. What has none: a review recorded this way, and a push. `sdlc review add` makes no
-such check.
-
-#### Spellings the hook should refuse and does not
-
-These are spellings the hook is meant to refuse and does not. Each is listed with the kind of
-line it belongs to, what still stops it, and how you would notice. They differ from the commands
-in the list above, which the hook does not read on purpose. This is a discipline tool, not a
-sandbox.
-
-- **A git command the shell makes, on a line whose quotes the rules cannot follow:**
-  `echo "${x:-"'"}"; $(echo g)it push --force`. On such a line the rules read `sdlc` however it
-  is made, and `git` only where it is written, quoted or escaped. What still stops it: nothing
-  after the hook stops a push, so protect the branch on the server. How you would notice: a push
-  in the remote's history that nobody ran by hand.
-- **A change to what a name runs, made through a builtin whose name the shell fills in:**
-  `X=alias; $X s=sdlc` in one command, then `s approve US-001` in a later one. What still stops
-  it: `sdlc approve`, `unfreeze`, `ack`, `remap`, `release` and `staffing assign` refuse
-  themselves when an agent session runs them (SDLC-E0079); nothing after the hook stops
-  `sdlc review add`. How you would notice: SDLC-E0079 in the session's output, or a review in
-  `sdlc review list` with no run of its reviewer behind it in `sdlc trace`.
-- **A person's command written as the arguments of a shell or a function whose program name the
-  shell fills in:** `sh -c '"$(printf sdlc)" "$@"' x approve US-001`, and zsh's
-  `() { "$(printf sdlc)" "$@" } approve US-001`. What still stops it, and how you would notice:
-  as for the entry above.
-- **A command after an assignment whose subscript holds a blank or a separator:**
-  `a[x y]=v git push --force origin HEAD`, the same after `then`, `do`, `!` or `time`,
-  `a[x;y]=v git push --force origin HEAD`, and
-  `BASH_CMDS[s s]=/path/to/sdlc; 's s' review add design_review architect approve`. bash reads
-  the subscript to its `]` and runs the command after it; the rules read the word up to the blank
-  or the separator as the program, so the command after it is not checked. What still stops it,
-  and how you would notice: for a push, as for the first entry; for `sdlc`'s commands, as for the
-  second.
-- **A command after an assignment behind `time`:** `time a[1]=x git push --force origin HEAD`.
-  The shells run the push; the rules read the assignment as the program `time` runs, so the push
-  is not checked. What still stops it, and how you would notice: as for the first entry.
-- **A nameref the command does not declare itself:** `declare -n x=BASH_ALIASES` in a file the
-  command sources, or in an earlier command while the same shell session stays open between
-  commands, then `x[s]='sdlc approve US-001'` and `s`. The rules read one command at a time, so
-  `x[s]=...` looks like an ordinary write to a variable named `x`, and `s` is not seen as running
-  `sdlc approve`. What still stops it, and how you would notice: as for the second entry.
-- **A zsh named directory built on one the line already gave:**
-  `c=/; c+=work/project; rm -rf ~c/.sdlc/state`, where the project is `/work/project`. The rules
-  keep the first directory the line gives `c` and do not join an append to it, since joining
-  would let through lines that only look as if they reach the project. What still stops it:
-  nothing for the files themselves. How you would notice: the next `sdlc` command that reads the
-  loop's state fails, and `sdlc doctor` reports it.
-- **A value a zsh module builtin hands on from its own store:**
-  `zstyle ':x' y s 'sdlc approve US-001'; zstyle -a ':x' y functions; s`. The rules read the line
-  as changing what any name runs, but the value is not written where the change is made, and `s`
-  carries no words to read. What still stops it, and how you would notice: as for the second
-  entry.
-- **A setting whose value the shell splits into the program, after `env` or `sudo`:**
-  `env A=$(printf "1 sdlc") approve US-001`, and
-  `env A=$(printf "1 git -c x.y=a") push --force origin HEAD`. The shell splits the unquoted
-  value, so `env` is handed `A=1` and runs `sdlc approve US-001`, or git; the rules read the
-  whole word as a setting and `approve` or `push` as the program, so the command is not checked.
-  What still stops it, and how you would notice: for `sdlc`'s commands, as for the second entry;
-  for a push, as for the first.
-- **A program name and a subcommand that the shell makes from substitutions:**
-  `$(printf 'sdlc approve') US-001`, and the same inside `bash -c "..."`. The shell builds
-  `sdlc approve` from the one substitution, so the hook sees a program it cannot name and no
-  subcommand to check, and lets the line through in every session. Two more spellings of the
-  kind are let through in a session that holds no story, though a session working one refuses
-  them: each word made by a substitution of its own, `"$(printf sdlc)" "$(printf approve)" US-001`,
-  which the `PowerShell` tool also lets through in every session; and the substitution handed to
-  `find`, `find . -exec $(printf 'sdlc approve') US-001 \;`. What still stops it: `sdlc approve`
-  run this way refuses itself, with SDLC-E0079, as `unfreeze`, `ack`, `remap`, `release` and
-  `staffing assign` do; nothing after the hook stops `sdlc review add`. How you would notice: as
-  for the second entry.
-
-These kinds of line are not covered by the rules, because each hands a command on in a way the
-rules did not read:
-
-- a shell or a string handed a script, a git `!` alias, an alias's use, a renamed program word,
-  or a shell's standard input;
-- the shell's lists of what names run (`commands`, `functions`, `aliases`, `BASH_CMDS`,
-  `BASH_ALIASES`), an alias chain, or a program git runs from its settings;
-- zsh's disabled, global and suffix lists and the builtins that move names between them, a
-  not-found handler, a DEBUG hook, or a trap on any condition, a signal the line sends itself
-  included;
-- a name written through a nameref, however the nameref is pointed and wherever its function
-  body is written, through an expansion, through `read` or `set -A`, or through a whole-list
-  literal, each with a use that has no words;
-- a builtin whose name the shell makes, a definition hidden in an ANSI-C string handed to `eval`
-  or a shell, a person's command passed as a shell's or a function's arguments, or one whose
-  program name and subcommand substitutions make;
-- a program word made on a line no reading closes; a subscripted or appending assignment in front
-  of the program, and the same word where it is not an assignment: in a shell that has none of
-  that kind, such as dash, and after `env` or `sudo`, where the shell first splits an expansion in
-  it; a subscript holding a blank or a separator there.
-
-Changes to the hook itself can open the same kind of gap, in four ways: a change to which words
-are settings, since bash and zsh read some words as settings that dash runs as the program, and
-that the shell splits into the program after `env` or `sudo`; a change to how a subscript is
-read, since joining one the shells read two ways would hide commands zsh runs; a change to which
-name a reader takes, which can put a wrong value on a name a path rule trusts; and a test that
-places no path the way the hook does, which hides such a change until the hook runs.
-
-The rules read a line the way bash and zsh do, and a line can be built that one of them reads
-differently: where a quote ends, where a `$'…'` string ends, or through a change to what names
-run that this page does not list. Such a line meets the rules as they read it, so what still
-stops it is what stops the entries above. If you find one, report it as `SECURITY.md` says, and
-it will be added here with the kind of line it is.
-
-#### Other checkouts and claims
-
-- **Ordinary files in another checkout.** The shell can write a file no rule
-  protects in another checkout: a story worktree's source from the main
-  checkout, or the main checkout's from a story's worktree. Another story's
-  frozen tests are among them, except one at a path this story's freeze also
-  holds: a write to that path in any checkout is refused by
-  [`frozen-test-through-the-tool`](#frozen-test-through-the-tool). `git status`
-  in that checkout shows the change, and a frozen test changed that way is
-  reported by that story's next gate as a broken freeze
-  ([SDLC-E0025](troubleshooting.md#sdlc-e0025)).
-- **`GIT_WORK_TREE` around `sdlc` itself.** An `sdlc` command run with
-  `GIT_WORK_TREE` set treats that directory as the checkout, `sdlc start`
-  included. The paths `sdlc start` prints say where it made and recorded the
-  story.
-- **A finished story between its retro and `sdlc stop`, outside a worktree.**
-  Its claim goes when the story is done, and a checkout's `active` holds only a
-  story in progress or waiting for a person, so from a call that reaches only
-  other checkouts the session working it is not found, and is held there to
-  nothing until `sdlc stop` ends the iteration. In its own checkout it is held
-  as before. Nothing says so; the runbook runs `sdlc stop` straight after the
-  retro, which closes it. A story worked in its own worktree is not done until
-  it lands, and keeps its claim until then.
-- **Claims written by a session that holds nothing.** Such a session can write
-  or remove a claim or another checkout's `.sdlc/state/active`, and so make two
-  checkouts name one story. Each is then refused it
-  ([SDLC-E0050](troubleshooting.md#sdlc-e0050), which lists them) until a person
-  runs `sdlc stop` in all but one. What the refusal says about each checkout is
-  read from files anybody can write: it helps a person choose, and proves
-  nothing.
+up in one go: about 1,024 bytes on macOS and 4,096 on Linux. From a working
+directory whose own path is that long, every command is refused. The refusal
+carries [SDLC-E0083](troubleshooting.md#sdlc-e0083).
+
+The hook places a path by looking it up from the root of the disk. One it
+cannot look up, it cannot place.
+
+*Instead:* make the full path shorter, by moving or renaming a directory on
+the way to it, or run the command yourself. Running it from a nearer directory
+does not help, because the hook reads the full path either way.
 
 ## Stopping mid-story
 
-A session that ends its turn while a story is being worked on — without handing
-the story to a person or ending the iteration — leaves the story where nobody
-is looking. Finishing a gate is not a place to stop: the next one is waiting.
-The `Stop` hook sends that stop back, with what to do instead: work the next
-gate or `sdlc escalate`, or, once every gate has passed, `sdlc stop`.
+A session that ends its turn while a story is being worked on, without handing
+the story to you or finishing it, leaves the story where nobody is looking. So
+there is one more check, which has no rule name. When the session working a
+story stops, the hook sends it back to work and says what comes next: work the
+next gate, hand the story to you with `sdlc escalate`, or, once every gate has
+passed, end it with `sdlc stop`.
 
-A stop it has already sent back goes through, so a session is never held in a
-loop. The count is kept per story and starts again whenever anything is recorded
-on it. Once [`loop.max_stop_blocks`](configuration.md#loop) stops in a row have
-been sent back with nothing recorded — three, by default — the next one hands
-the story to a person with a `loop_stalled` escalation and ends the iteration.
-`sdlc status` lists it as waiting, and `sdlc approve` lets it start again.
+A session is never held in a loop. After
+[`loop.max_stop_blocks`](configuration.md#loop) stops in a row with nothing
+recorded on the story (three, by default), the next one hands the story to you
+and ends the iteration. `sdlc status` lists the story as waiting, and
+`sdlc approve` lets it start again. Setting `max_stop_blocks` to `0` turns
+the check off.
 
-In an interactive session this is felt: a reply that ends mid-story is sent back.
-`"max_stop_blocks": 0` turns the guard off, and so does `SDLC_ENFORCE=0`.
+A session waiting for a subagent it started is not giving up: it has nothing
+to record until the subagent reports. While Claude Code reports a subagent of
+the session still running, the stop is let through and not counted. That wait
+lasts 30 minutes from the first stop let through, and the 30 minutes is not a
+setting. After it a stop counts as any other, so a subagent that never ends is
+still handed to you.
 
-### Waiting for a subagent
-
-A session that stops while a subagent it started is still running is waiting,
-not giving up: it has nothing to record until the subagent reports, and Claude
-Code wakes it then. Claude Code lists what a session has left running in
-`background_tasks` on the `Stop` event, and while an entry there has the type
-`subagent` the stop is let through and not counted. Other background work — a
-shell command, a monitor, a workflow, a teammate — does not hold the count.
-
-The hook does not watch the subagent; it looks only when the session stops.
-When the list is missing or cannot be read, the stop is counted as before and
-the [debug log](#seeing-what-happened) says the hook could not tell. A Claude
-Code version that sends no list is counted that way too. A stop that was
-counted with no line about a subagent had a list the hook read, with no
-subagent in it.
-
-### How long the wait lasts
-
-The wait has an end. It lasts 30 minutes from the first stop let through, and
-`waiting_since` in `.sdlc/state/stop-blocks.json` is when that was, in UTC. The
-30 minutes is fixed, not a setting.
-
-The wait belongs to what is recorded on the story, not to the session or to the
-subagent, so only recording something on the story starts a new one: another
-stop does not, and neither does a second or later subagent started with nothing
-recorded since the first.
-
-After the 30 minutes a stop is counted even with a subagent listed, so a
-subagent that never ends is still handed to a person. The stops let through
-during the wait are not in the number the hand-over reports.
+Other background work, such as a shell command left running, does not hold the
+count. Nor does anything where Claude Code does not report what a session has
+left running, as an older version does not: every stop is counted there.
 
 ## Rules the command enforces
 
-The hook is only half of it. `sdlc gate <name> pass` refuses when the gate did
-not actually happen:
+The hook is half of it. The other half is `sdlc gate`, which refuses to record
+a pass for a gate that did not happen:
 
-| Refused | Code |
+| `sdlc gate <name> pass` is refused when | Code |
 | --- | --- |
-| an earlier gate has not passed | `SDLC-E0031` |
-| definition of ready, for a story with no acceptance criteria | `SDLC-E0044` |
-| the gate's documents are not on disk | `SDLC-E0020` |
-| a reviewer has not reported, or reviewed something that has changed since | `SDLC-E0029` |
-| a blocking reviewer blocked, or perf found a stated performance budget broken | `SDLC-E0030` |
-| the tests are not frozen, or the freeze belongs to another story | `SDLC-E0023` |
-| a frozen test changed or vanished | `SDLC-E0025` |
-| a test file the freeze does not hold, at `tests_frozen`, `plan`, `implementation`, `verification` and `commit` | `SDLC-E0043` |
-| the commit gate, with work still uncommitted | `SDLC-E0032` |
-| the commit gate, with a note naming a commit its range does not hold | `SDLC-E0049` |
-| any gate before the commit, once HEAD has moved since `sdlc start` | `SDLC-E0046` |
+| an earlier gate has not passed | [SDLC-E0031](troubleshooting.md#sdlc-e0031) |
+| the story has no acceptance criteria, at the first gate | [SDLC-E0044](troubleshooting.md#sdlc-e0044) |
+| the gate's documents have not been stored | [SDLC-E0020](troubleshooting.md#sdlc-e0020) |
+| a reviewer has not reported, or reviewed something that has changed since | [SDLC-E0029](troubleshooting.md#sdlc-e0029) |
+| a blocking reviewer blocked, or perf found a stated performance budget broken | [SDLC-E0030](troubleshooting.md#sdlc-e0030) |
+| the tests are not frozen, or the freeze is another story's | [SDLC-E0023](troubleshooting.md#sdlc-e0023) |
+| a frozen test changed or vanished | [SDLC-E0025](troubleshooting.md#sdlc-e0025) |
+| there is a test file the freeze does not hold | [SDLC-E0043](troubleshooting.md#sdlc-e0043) |
+| one of your configured commands fails when the gate runs them, at the implementation gate | [SDLC-E0095](troubleshooting.md#sdlc-e0095) |
+| work is still uncommitted, at the commit gate | [SDLC-E0032](troubleshooting.md#sdlc-e0032) |
+| the note names a commit the story's range does not hold, at the commit gate | [SDLC-E0049](troubleshooting.md#sdlc-e0049) |
+| the branch has moved under the story since it started, at any gate before the commit | [SDLC-E0046](troubleshooting.md#sdlc-e0046) |
 
-A `fail` is always recordable. A gate can fail precisely because its work could
-not be done, and refusing to record that would leave the loop with nowhere to
-put the truth.
+A `fail` can always be recorded. A gate can fail because its work could not be
+done, and refusing to record that would leave the loop nowhere to put the
+truth.
 
-`sdlc start` holds new work to the same standard before it begins. A story
-picked up again is not held to it, because its own work is in the tree:
+`sdlc freeze` is held the same way. Where the story has a test reviewer, the
+freeze [waits for it](troubleshooting.md#sdlc-e0029) to approve the tests as
+they are. And it [refuses](troubleshooting.md#sdlc-e0085) new tests that
+already pass, since a test written before its code has nothing to pass on.
 
-| Refused | Code |
-| --- | --- |
-| HEAD is not on `git.trunk_branch`, with `git.worktrees` false | `SDLC-E0038` |
-| uncommitted work that belongs to no story, with `git.worktrees` false | `SDLC-E0039` |
-| trunk is behind `origin`, with `git.remote` on | `SDLC-E0040` |
-| trunk fails `commands.smoke`, in the story's new worktree with `git.worktrees` on | `SDLC-E0041` |
-| the story's worktree or branch cannot be made, with `git.worktrees` on | `SDLC-E0053` |
+[`sdlc gate`](commands.md#sdlc-gate-gate-status) has the rest, and
+`sdlc stop` checks a finished story once more
+[before it lands](the-loop.md#done-when-it-lands).
+
+## What sdlc does not stop
+
+**This is a discipline tool, not a sandbox.** It holds an agent that is trying
+to do the right thing and takes the shortest route to it. It does not defend
+against one that is set on getting out, and it would be dishonest to imply
+otherwise.
+
+Three things are worth knowing about how it is built:
+
+- **The hook reads, and does not confine.** It runs before a tool call and
+  refuses what it reads as breaking a rule. A command it cannot read that way
+  runs with your privileges, like any other.
+- **What matters most has a second line.** Your six decisions refuse
+  themselves in any process Claude Code started. A commit made behind the
+  hook's back, a frozen test that changed and work that changed after its
+  reviews are each refused again by `sdlc gate`, and once more when the story
+  lands.
+- **It uses Claude Code's own hooks and nothing else.** `sdlc` installs no git
+  hooks and never writes to `.git/hooks`.
+
+### When the hook cannot do its job
+
+The hook never blocks your session because of a fault of its own. A call it
+cannot read, a configuration that is missing or a path it cannot resolve ends
+in the call going through. In the session working a story it says so, in a
+message that starts `sdlc:` and names what is off.
+[Warnings the hook prints](troubleshooting.md#warnings-the-hook-prints) lists
+each message with what it switches off.
+
+Four things are not let through that way, because breaking them would
+otherwise be the way round them:
+
+- **A freeze or a gate record that cannot be read** is not treated as absent.
+  The tests stay frozen and the commit waits until the file reads, and
+  `sdlc doctor` names it.
+- **A main checkout the hook cannot find** from a story's worktree: the commit
+  is refused, and every test counts as frozen.
+- **A working tree the hook cannot measure**, for a story whose commit waits
+  for your approval: the commit is refused under
+  [`commit-gate`](#commit-gate). A commit nothing pauses goes through with a
+  warning.
+- **Running out of time**, which is refused under
+  [`not-checked-in-time`](#not-checked-in-time).
+
+### Not held
+
+These gaps are known and not closed. Each says what can happen and, where
+there is a way, how you would notice.
+
+#### Commands the rules do not read
+
+- **A call the hook is killed on before it knows whether it checks it.**
+  Claude Code kills a hook after 30 seconds, and a hook it kills before the
+  hook has learnt whether the call is one it checks still lets the call
+  through, with nothing said in the session. A person's decision run in such a
+  call is refused by the command itself, with
+  [SDLC-E0079](troubleshooting.md#sdlc-e0079).
+- **Words or a script from standard input, or from a file.** The rules read a
+  command as it is written, and not what a file or a pipe hands a program:
+  `sh tidy.sh`, `echo 'git worktree prune' | sh`,
+  `echo prune | xargs git worktree`. A command run that way can commit in
+  another checkout or remove a worktree. A person's decision run that way is
+  refused by the command itself, with SDLC-E0079. Ending a story part-way with
+  `sdlc stop` is not one of the six, and gets through.
+- **A program the rules do not read through.** The rules read past the common
+  wrappers, such as `env`, `sudo`, `timeout` and `xargs`, and no others. A
+  commit or the removal of a worktree behind any other program is unread, as
+  in `docker run img git commit -m x` with the checkout mounted. A person's
+  decision run by such a program is refused by the command itself, with
+  SDLC-E0079.
+- **A command line for another kind of shell.** A string handed to a shell of
+  another kind than the tool's, such as `pwsh -Command` in a `Bash` command or
+  `bash -c` in a `PowerShell` one, is read by the rules of the tool it came
+  from. A commit written that way can land in another checkout as a plain
+  commit, which only [`commit-gate`](#commit-gate) holds. A person's decision
+  in such a string is refused by the command itself, with SDLC-E0079.
+- **What the persistent shell keeps.** The `Bash` tool keeps one shell from
+  call to call, and the hook sees only the environment the session started
+  with. A variable exported in an earlier call, such as `GIT_DIR`, is unseen,
+  so a later `git commit` can land on the branch another checkout has checked
+  out, trunk included. A call that stages another checkout's work, followed by
+  a plain commit in the next call, puts that work in the story's commit.
+- **A place the command does not spell.** A path given only as a default, as
+  in `rm -rf "${D:-..}"`, and code that works out its own path, as in
+  `python3 -c 'import os, shutil; shutil.rmtree(os.getcwd())'`, can remove the
+  checkout itself. `git worktree list` then marks it prunable, and every
+  `sdlc` command on its story says the checkout
+  [no longer exists](troubleshooting.md#sdlc-e0051).
+- **Your own git configuration.** Aliases and includes in `~/.gitconfig` and
+  the system configuration are unread. An alias of yours that commits or
+  removes a worktree is allowed as `git st` is.
+  `git config --show-origin --get-regexp '^alias\.'` lists every alias git
+  would run.
+- **`sdlc` reached under another name.** Through a variable, a substitution, a
+  copy of the binary, or code that runs it, `sdlc` is not always found by the
+  hook. The six commands that are a person's still refuse themselves, with
+  SDLC-E0079. Nothing behind the hook stops `sdlc review add` reached that
+  way: you would notice a review in `sdlc review list` with no run of its
+  reviewer behind it in `sdlc trace`.
+- **A line built to be misread.** The rules follow the common forms of shell
+  grammar, in `Bash` and `PowerShell`, and not all of it. A line built on a
+  corner of it can run a command the rules took for something else: a `case`
+  inside `$( )`, a program name made from substitutions, an alias, a function
+  or a trap defined in an earlier call, or GNU `parallel` given command lines
+  as its arguments. A push that gets out that way is stopped only by
+  protecting the branch on your server.
+- **A program that starts clean, or removes Claude Code's markers.** A
+  person's decision run by a program that starts it with a clean environment
+  is not caught: `launchctl submit`, `open`, `at`, `cron`, Terminal told by
+  AppleEvents to run it, a `tmux` server you started that is already running,
+  `su -`, `sudo -i`, `ssh`, `schtasks`, WMI and
+  `Start-Process -UseNewEnvironment` each start it with none of the markers. A
+  person's decision run after a command has removed Claude Code's markers from
+  its environment is not caught either. Nor is a slash command fed to the hook
+  on a message an agent wrote, once a command the rules do not read has
+  overridden `AI_AGENT` with a hook's label and removed the other markers the
+  hook reads. Each story's `gate-record.json` lists every approval and
+  unfreeze, with when it was made.
+- **A protected name changed where the rules cannot see it.**
+  [`enforcement-stays-on`](#enforcement-stays-on) refuses the commands it
+  reads that change one of its six names, `CLAUDE_CODE_EXECPATH` and
+  `GIT_EDITOR` among them. It does not read a script run from a file,
+  interpreter code that builds a name from parts, or the commands `launchctl`
+  and `tmux` have for the environment they hand on, such as
+  `launchctl setenv` and `tmux set-environment`. Through one of those, a
+  message an agent wrote can reach the hook as your typed command, and a
+  session an agent starts can look attended.
+- **A session an agent starts in a terminal of its own.** Claude Code counts a
+  session with a terminal of its own as one you attend, so a slash command
+  typed there may run as yours.
+  [`story-stays-in-its-session`](#story-stays-in-its-session) refuses the
+  starts it reads. It does not read a file that starts one, run by `osascript`
+  or opened in a terminal app. Nor does it read a terminal program it does not
+  know, such as `xterm`, `dtach` or `asciinema`, or the path to Claude Code
+  reached through a substitution and then handed to `tmux`. Whether the hook
+  of such a session still carries the agent's `CLAUDE_CODE_EXECPATH` and
+  `GIT_EDITOR` has not been checked. Where it does not, that rule is all that
+  stands in front of it.
+- **A project MCP server, or a project hook.** Any session can write
+  `.mcp.json`, which no rule protects, and a session that holds no story can
+  write the project's `.claude/settings.json`. Claude Code starts a hook named
+  there with an environment of its own, which passes the hook's check of a
+  typed slash command. A server named in `.mcp.json` has not been checked, and
+  is taken to be alike. You would notice Claude Code asking you to approve a
+  server you did not add, or `git status` showing one of those files changed.
+  A `.claude/settings.local.json` that git ignores does not show there.
+- **A slash command a program types into your own prompt.** Where you run
+  Claude Code inside `tmux` or `screen`, or on macOS, a command an agent runs
+  can type into your session's prompt: with `tmux send-keys`,
+  `screen -X stuff`, or a keystroke sent by `osascript`. Claude Code takes it
+  as your typing, in Claude Desktop too, and no rule reads a keystroke as one.
+  An `osascript` that tells Terminal or iTerm to type into a window already
+  open goes through the same way. You would notice a command in your
+  transcript that you did not type.
+- **A later Claude Code.** The hook's check of a typed slash command rests on
+  what Claude Code 2.1.321 sets, as read in Claude Desktop, whose entrypoint
+  is `claude-desktop`: a label in `AI_AGENT` that ends `_harness` for a hook
+  Claude Code runs itself, and a `CLAUDE_CODE_SESSION_ATTENDED` it writes
+  afresh for each hook from `CLAUDE_CODE_CHILD_SESSION` and
+  `CLAUDE_CODE_ENTRYPOINT`. A release that changes those so that the hook can
+  no longer read them fails closed: your slash command answers that it did not
+  run. A release that makes the hook of a session an agent started look like
+  yours does not fail closed.
+- **A path no rule can tell is the same file.** A hard link, or on macOS a
+  `/.vol/<device>/<inode>` path, is a second name for a protected file, and a
+  write through it is placed where it is spelled. `git status` shows the
+  protected file changed.
+- **A session in a project that is not set up for the loop.** Its calls are
+  unread, and it is held to nothing. So a command there can give `AI_AGENT` a
+  hook's label, remove the other markers, and run the hook on a message of its
+  own for a project that is set up: a person's decision recorded that way is
+  not caught.
+- **The story's figures.** An agent's run or a refusal recorded by a route the
+  rules do not see, such as a script file that runs the hook, goes into the
+  story's record and its trace. That can change what
+  [`sdlc trace`](commands.md#sdlc-trace) reports about cost, and never whether
+  a gate passed.
+
+#### Branches and the landing
+
+- **A branch moved by a spelling the rules do not read.** Every gap above gets
+  a branch move past [`branch-through-the-tool`](#branch-through-the-tool) as
+  well. Trunk moved that way holds work no gate passed: in your main checkout,
+  `git status` shows changes nobody made there, and `git reflog` shows when. A
+  story's own branch moved that way does not land, and another story's is
+  reported by that story's
+  [next gate](troubleshooting.md#sdlc-e0046).
+- **A reset of the story's own branch before the commit gate.** A soft or
+  mixed `git reset` there is the session's own work and is not refused. The
+  next gate names it.
+- **The hold ending before the landing.** Escalating ends the iteration. Until
+  you answer, the session holds nothing and none of this binds it. The
+  escalation is on the record and in `sdlc status`, and the landing still
+  makes every check.
+- **Git settings that name a program.** A session can write `core.hooksPath`,
+  `core.fsmonitor` or a filter in `.gitattributes`, and git then runs the
+  program during commands the rules allow, the landing among them. `sdlc` does
+  not report it: read `git config --show-origin --list` and `.gitattributes`.
+- **A stop or a rebase you run.** `sdlc stop` run by you, and a rebase the
+  loop [sends you to do by hand](troubleshooting.md#sdlc-e0075), run the
+  story's code and the repository's hooks, filters and merge drivers with your
+  privileges. Read the configuration first.
+- **`CODEMAP.md` reaches trunk with no reviewer.** `sdlc stop` commits the
+  story's sections of it to trunk after the story lands, in a commit named
+  `docs: map <ID>`. Read it with `git show`.
+- **Ignored files.** Files the story's worktree ignores are in no tree the
+  loop measures, yet they are there when the landing's commands run, and can
+  make a command pass that would fail on trunk. List them with
+  `git -C .sdlc/worktrees/<ID> status --ignored`. They are removed with the
+  worktree when the story lands.
+- **A change moved between identical lines.** The landing compares a change
+  with the one its reviewers saw by its lines, so a change moved to an
+  identical stretch elsewhere in the same file compares equal.
+- **A frozen test put back by hand over trunk's change.** A commit made by
+  hand after a rebase, restoring a frozen test that trunk changed, reads as an
+  intact freeze and takes trunk's change to that test away. The reviewers see
+  it in the diff when the change is reviewed again.
+- **A test file committed by hand, with trunk fast-forwarded to it.** A test
+  file committed by hand on the story's branch, where trunk's branch then
+  comes to point at that commit before any command of `sdlc` has run, reads
+  as trunk's test and is accepted as one. The accepting command prints
+  `accepted as <trunk>'s` and names the file.
+- **A shallow repository** can hide ancestry. The landing then
+  [refuses](troubleshooting.md#sdlc-e0054).
+
+#### The review policy
+
+- **What the shell rules do not read reaches the story's copy.** A change left
+  in the story's commits is in its diff, and
+  [`sdlc stop` refuses it](troubleshooting.md#sdlc-e0055). A copy changed and
+  restored before the commit leaves no trace, so reviewers may have read a
+  changed policy. With [`git.worktrees`](configuration.md#git) off there is no
+  landing to refuse.
+- **A link's target.** Where the configured name is a link to another file in
+  the repository, a file tool can write through the name, the shell rule
+  leaves the target alone, and a change to the target lands. The backlog
+  behaves the same way.
+
+#### The findings ledger
+
+- **A record two releases share.** An `sdlc` older than the findings drops
+  them when it saves a story's record. The verification and commit gates
+  [count them and refuse](troubleshooting.md#sdlc-e0093), but an older `sdlc`
+  that records those gates itself checks no findings at all. Keep the plugin's
+  `sdlc` and the one on your `PATH` on one release.
+- **A path the match does not read.** A glob, or a path written only inside a
+  finding's text, is not matched against the story's changes. The verifier
+  reads every such finding against the diff.
+
+#### The run of your commands
+
+- **A run from a line the rule cannot read.**
+  [`commands-run-as-configured`](#commands-run-as-configured) narrows who
+  chooses the environment of `sdlc gate implementation pass` and
+  `sdlc freeze`, and does not settle it. It does not read a script or a file
+  the line runs, as in `bash ./x.sh`, `make gate` or `npm run`. Nor does it
+  read `sdlc` run under another name: a copy, a hard link, or `go build -o` in
+  a project that builds `sdlc`. Inline interpreter code that builds the name,
+  an `eval` given text the line builds, and a substitution that is the whole
+  call behind another program, as in `sudo $(printf 'sd%s freeze' lc)`, get
+  past it too. None of these gives more than `bash ./x.sh` already does. You
+  would notice a recorded pass whose tests did not run, or ran fewer than the
+  story's, in the output file the gate names.
+- **A setting made somewhere other than the line.**
+  [`commands-run-as-configured`](#commands-run-as-configured) reads one
+  command line. It does not see a tool's own saved settings, such as
+  `go env -w GOFLAGS=...`, your shell's startup files, a variable set in
+  Claude Code's settings, or a variable exported in an earlier call of the
+  persistent shell.
+- **In `PowerShell`, a line that runs the call without naming it.**
+  [`commands-run-as-configured`](#commands-run-as-configured) reads a
+  `PowerShell` line for the call's own words. A line that builds them, with
+  `-f`, `-join` or a script block, or that hands them to `pwsh -Command` in a
+  single-quoted script, can set a variable and run the call unread.
+
+#### A repository with more than one checkout
+
+- **Ordinary files in another checkout.** The shell can write a file no rule
+  protects in another checkout: your main checkout's source from a story's
+  worktree, or another story's. `git status` there shows the change, and a
+  frozen test changed that way is reported by that story's
+  [next gate](troubleshooting.md#sdlc-e0025).
+- **`GIT_WORK_TREE` around `sdlc` itself.** An `sdlc` command run with it set
+  treats that directory as the checkout, `sdlc start` included.
+- **A finished story with worktrees turned off.** Between its retro and
+  `sdlc stop`, the session working it is held to nothing in the repository's
+  other checkouts. The loop runs `sdlc stop` straight after the retro, which
+  closes it.
+- **Two checkouts naming one story.** A session that holds no story can write
+  the files that say which checkout holds one. Each checkout is then
+  [refused the story](troubleshooting.md#sdlc-e0050) until you run `sdlc stop`
+  in all but one.
+
+### Report a hole
+
+A shell spelling that gets past a rule, and is not on the list above, is the
+most useful report this project gets. Please send it privately, through
+[GitHub's private vulnerability reporting](https://github.com/bbsnly/sdlc/security/advisories/new),
+and not as a public issue. [SECURITY.md](../SECURITY.md) says what is in scope
+and what to expect.
+
+A rule that is wrong for your project is not a hole. Open an issue and say
+which rule, and why.
 
 ## Turning it off
 
-`SDLC_ENFORCE=0` in the environment you start the session from disables every
-hook rule. It cannot be set from inside a session.
+If you are debugging the loop itself, you may switch enforcement off for one
+session. Start Claude Code with `SDLC_ENFORCE` set to `0`:
 
-Use it when you are debugging the loop itself. If you find yourself reaching for
-it during ordinary work, the rule that is in your way is probably wrong — please
-open an issue and say which one.
+```console
+$ SDLC_ENFORCE=0 claude
+```
+
+It must be exactly `0`, and it is read from the environment the session starts
+with. An agent that tries to set it from inside a session is refused, under
+[`enforcement-stays-on`](#enforcement-stays-on).
+
+With it set, every part of the hook stands down for that session, and says
+nothing about it:
+
+- no file write and no command is refused, a person's decisions included;
+- a session that [stops mid-story](#stopping-mid-story) is not sent back;
+- your formatter, [`commands.fmt_file`](configuration.md#commands), is no
+  longer run on the files an agent writes.
+
+Three things carry on. Your slash commands still run. The six commands that
+are yours still [refuse themselves](troubleshooting.md#sdlc-e0079) when an
+agent runs one. And the story's trace is still recorded, with no refusals in
+it, because none were made.
+
+If you find yourself reaching for this during ordinary work, the rule in your
+way is probably wrong for your project. Please open an issue and say which
+one.
 
 ## Seeing what happened
 
-A hook that allows a call says nothing unless something is wrong, and its stderr
-goes to Claude Code's debug log, which makes "why did nothing happen" the
-hardest question to answer from outside. This turns the hook's decisions into a
-log you can read:
+A hook that allows a call says nothing about it, which makes "why did nothing
+happen?" the hardest question to answer from outside. To see every decision,
+start Claude Code with `SDLC_DEBUG_FILE` set to a file of your choosing:
 
 ```console
-$ export SDLC_DEBUG_FILE=/tmp/sdlc-hook.log
+$ SDLC_DEBUG_FILE=/tmp/sdlc-hook.log claude
 ```
 
-`SDLC_DEBUG=1` without a file writes the same log to stderr. `SDLC_TRACE=1` adds
-how long each call to `sdlc` took, which is how to tell whether a slow session is the hook.
+Each tool call then adds a few lines to that file. The last of them is the
+decision:
 
-The decision line of a shell command also gives `via`, the reading of the
-command that refused it, and `code`, where the refusal carries an `SDLC-E`
-code. A `hook considered a tool` line names each program a rule looked at, as
-`candidate`, with the reading it came in by.
-[See every decision](guides/why-was-i-refused.md#see-every-decision) says what
-each value means.
+```text
+time=2026-11-24T10:50:42.155+01:00 level=DEBUG msg="hook decision" event=PreToolUse considered=true allowed=false rule=commit-gate via=released
+```
 
-To read a single refusal, see [Why was I refused?](guides/why-was-i-refused.md).
-For an `SDLC-E` code, see [Troubleshooting](troubleshooting.md).
+`allowed` says whether the call went through, and `rule` names the rule that
+refused it. `considered` is `false` when the hook never got as far as the
+rules, for instance because the session is not the one working the story.
+[See every decision](guides/why-was-i-refused.md#see-every-decision) reads the
+other lines with you.
+
+Two more variables change what is logged:
+
+| Variable | What it does |
+| --- | --- |
+| `SDLC_DEBUG=1` | writes the same log to the hook's standard error, which Claude Code keeps in its own debug log |
+| `SDLC_TRACE=1` | adds a line saying how long the hook took, which is how to tell whether a slow session is the hook |
+
+With `SDLC_TRACE` on, each call ends with a line like this one, in
+milliseconds:
+
+```text
+time=2026-11-24T10:50:42.243+01:00 level=DEBUG msg=stage name=hook ms=2
+```
+
+To look back at a story without a log, run `sdlc trace <ID>`. Among other
+things, it counts the story's refusals by rule and by agent.
+
+## Where to go next
+
+- [Why was I refused?](guides/why-was-i-refused.md): reading one refusal, and
+  what to check when nothing was refused
+- [Troubleshooting](troubleshooting.md): every error code, and the hook's
+  warnings
+- [Human approval gates](guides/human-approval-gates.md): the decisions the
+  loop keeps for you
+- [When a frozen test is wrong](guides/when-a-frozen-test-is-wrong.md):
+  lifting the freeze, on the record
+- [The loop](the-loop.md): the gates these rules protect
+- [SECURITY.md](../SECURITY.md): what counts as a security report, and how to
+  send one

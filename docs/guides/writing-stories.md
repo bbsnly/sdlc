@@ -1,65 +1,152 @@
-# Writing stories the loop can run
+# Writing stories
 
 - [Introduction](#introduction)
-- [A story](#a-story)
-  - [A fuller story](#a-fuller-story)
-  - [Fields](#fields)
+- [Write your first story](#write-your-first-story)
+- [Write criteria that can be tested](#write-criteria-that-can-be-tested)
+  - [The sentence patterns](#the-sentence-patterns)
+  - [Say what is out of scope](#say-what-is-out-of-scope)
+- [Say more about a story](#say-more-about-a-story)
+  - [Every field](#every-field)
+- [Choose what runs next](#choose-what-runs-next)
+  - [Hold a story back](#hold-a-story-back)
+  - [Make one story wait for another](#make-one-story-wait-for-another)
+  - [Start a story by name](#start-a-story-by-name)
 - [Statuses](#statuses)
-- [Acceptance criteria that become tests](#acceptance-criteria-that-become-tests)
-- [The backlog file](#the-backlog-file)
-  - [What `sdlc` checks](#what-sdlc-checks)
-  - [What the tool writes](#what-the-tool-writes)
-  - [Editing while a story runs](#editing-while-a-story-runs)
-- [Priority and dependencies](#priority-and-dependencies)
-  - [How the next story is chosen](#how-the-next-story-is-chosen)
-  - [Dependencies that never finish](#dependencies-that-never-finish)
-  - [More than one checkout](#more-than-one-checkout)
-  - [Naming a story](#naming-a-story)
-- [What the definition-of-ready gate refuses](#what-the-definition-of-ready-gate-refuses)
-  - [Problems that surface later](#problems-that-surface-later)
+- [When the loop turns a story away](#when-the-loop-turns-a-story-away)
+- [Editing the backlog](#editing-the-backlog)
 - [Where to go next](#where-to-go-next)
 
 ## Introduction
 
-The loop takes one story at a time, and the quality of what comes out depends a great
-deal on what goes in. A story whose criteria are vague gives the test author nothing to
-pin down, and the first gate will turn it away.
+A story tells the loop what you want built and how you will know it is done.
+Everything the loop does afterwards is measured against it. The tests are
+written from your acceptance criteria, the plan is reviewed against them, and
+the verifier checks the finished code against them once more.
 
-Each checkout, and each Claude Code session, works on one story at a time: one
-iteration, one commit. This guide shows you how to write a story, and how to write
-acceptance criteria that can become frozen tests. It then explains where stories live,
-how the next story is chosen, and what stops a story before any work starts.
+So the time you spend on a story is the best-spent time in the whole loop. A
+vague criterion gives the test author nothing to pin down, and the first gate
+turns the story away before any work starts.
 
-Don't worry about the whole schema to begin with. A title and one good criterion are
-enough for your first story.
+This guide shows you how to write a story, and how to write acceptance criteria
+that can become tests. Then it covers the optional fields, how the loop chooses
+which story to run next, and what to do when a story is turned away. Don't
+worry about the optional fields to begin with: a title and one good criterion
+are enough for your first story.
 
-## A story
+## Write your first story
 
-The smallest story the loop can run has an `id`, a `title`, a `status` and one
-acceptance criterion:
+Your stories live in the backlog, `user_stories.json`, at the root of your
+repository. `sdlc init` put one example story in it. Open the file and replace
+the example with a story of your own:
 
 ```json
 {
-  "id": "AUTH-3",
-  "title": "Reject expired sessions",
-  "status": "ready",
-  "acceptance_criteria": [
+  "_schema": ".sdlc/templates/story.schema.json",
+  "stories": [
     {
-      "id": "AC-1",
-      "text": "WHEN a request carries a session token whose expiry is in the past, the API shall respond 401 and shall not read the session store."
+      "id": "AUTH-3",
+      "title": "Reject expired sessions",
+      "status": "ready",
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "text": "WHEN a request carries a session token whose expiry is in the past, the API shall respond 401 and shall not read the session store."
+        }
+      ]
     }
   ]
 }
 ```
 
-Everything else is optional. The `ready` status tells `sdlc start` that the story may
-be picked, and the criterion is what the tests will be held to. The next section shows
-how to write criteria like this one.
+That is the smallest story the loop can run. It has four parts:
 
-### A fuller story
+- **`id`** names the story everywhere: in commands, in the commit, and in the
+  directory that keeps its record. Use a prefix and a number, such as `AUTH-3`.
+- **`title`** is what the commit and the retro call the story.
+- **`status`** says where the story stands. `ready` tells the loop it may be
+  started.
+- **`acceptance_criteria`** is the behaviour you are asking for. Each criterion
+  has an `id`, numbered `AC-1`, `AC-2` and so on, and a `text`.
 
-In addition, a story can say who it is for, how urgent it is, what it depends on and
-what it leaves out:
+When you have saved the file, ask `sdlc` what it makes of your backlog:
+
+```console
+$ sdlc story list
+> AUTH-3  ready   -  Reject expired sessions
+
+> is what `sdlc start` would pick.
+```
+
+The `>` marks the story the loop will take next, and the `-` says it has no
+priority yet. You don't need to commit the backlog before you run the story:
+the loop reads it from your checkout.
+
+## Write criteria that can be tested
+
+The loop turns every criterion into at least one test that fails, before any
+code is written. Those tests are then frozen: nobody edits them for the rest of
+the story. So a criterion has to say something a test can observe from outside,
+before the code exists.
+
+Let's take a look at the difference:
+
+| Criterion | Can it be tested? |
+| --- | --- |
+| The handler shall use `TokenValidator`. | No. It names a class, so a test could only check how the code is built. |
+| The API shall handle bad tokens gracefully. | No. It gives a test nothing to assert. |
+| IF the token cannot be parsed, THEN the API shall respond 401 with no detail about why. | Yes. A caller sees the response, and a test can check it. |
+
+A few habits keep a criterion testable:
+
+- **Name the exact outcome.** Give the status code, the error value or the
+  stored state. A response, a returned value and a saved record are all things
+  a test can see.
+- **Keep to one behaviour.** Two outcomes of the same event belong together,
+  as in `AC-1` above. Two separate behaviours do not: put them in one criterion
+  and you get a test that can pass for one of them.
+- **Write the whole criterion in `text`.** It is the only part of a criterion
+  the loop reads. A criterion split across fields of your own, such as `given`,
+  `when` and `then`, is empty as far as the loop can tell.
+- **Keep the ids stable.** The contract `init` wrote asks for a criterion's id
+  in the name of the test that covers it, so every test can be traced back to
+  its criterion. Renumbering breaks the trail.
+
+You don't need a criterion for every edge. The test author adds the boundary
+cases itself: the empty input, the zero, the second call.
+
+### The sentence patterns
+
+The capitals in the examples are deliberate. Each criterion follows one of five
+sentence patterns, known as EARS, and each pattern suits a different kind of
+behaviour:
+
+| Pattern | Use it for | Example |
+| --- | --- | --- |
+| `WHEN` | what happens in response to an event | WHEN a request carries a session token whose expiry is in the past, the API shall respond 401. |
+| `WHILE` | what holds for as long as a state lasts | WHILE two signing keys are active, the API shall accept a token signed by either. |
+| `IF ... THEN` | what happens when something goes wrong | IF the token cannot be parsed, THEN the API shall respond 401 with no detail about why. |
+| `WHERE` | what applies only when an option is turned on | WHERE single sign-on is turned on, the API shall refuse a password sign-in with 403. |
+| "The system shall" | what is always true | The API shall include a `Request-Id` header in every response. |
+
+`sdlc` does not check the pattern, so nothing refuses a criterion written
+another way. The patterns earn their place because each one forces you to name
+a trigger and an outcome, which is exactly what a test needs.
+
+### Say what is out of scope
+
+When you leave something out on purpose, say so in `non_goals`. Every agent
+reads the whole story, so this tells the test author and the reviewers what not
+to go looking for:
+
+```json
+"non_goals": ["refresh tokens", "rate limiting"]
+```
+
+## Say more about a story
+
+A story may also say who it is for, how urgent it is, what it depends on and
+how much a mistake in it would cost. Here is the same story with those filled
+in:
 
 ```json
 {
@@ -79,241 +166,211 @@ what it leaves out:
     },
     {
       "id": "AC-2",
-      "text": "IF the token cannot be parsed, THEN the API shall respond 401 with a body that does not say why."
+      "text": "IF the token cannot be parsed, THEN the API shall respond 401 with no detail about why."
     }
   ],
   "non_goals": ["refresh tokens", "rate limiting"]
 }
 ```
 
-### Fields
+The one to think about is `risk_tier`. A story marked `high` stops before its
+commit and waits for you to read the work and approve it. A story with no tier
+counts as `low`. A story of any tier also waits where its change touches a path
+your project lists in `pre_commit_pause_paths`, so a tier set low does not take
+that away. You may change which tiers and which paths wait with
+[`human_gates`](../configuration.md#human_gates).
+
+### Every field
 
 | Field | Required | What it is for |
 | --- | --- | --- |
-| `id` | yes | the schema asks for `PREFIX-123`; it also becomes `.sdlc/stories/<id>/` |
-| `title` | yes | what the commit and the retro refer to |
+| `id` | yes | the story's name, such as `AUTH-3` |
+| `title` | yes | what the commit and the retro call the story |
 | `status` | yes | where the story stands; see [Statuses](#statuses) |
-| `acceptance_criteria` | the schema requires it; the loop needs one with `text` to pass Gate 1 | the behaviour the tests will pin down, as `{id, text}` objects |
-| `priority` | no | an integer; lower runs first |
-| `depends_on` | no | ids of stories that must be `done` first |
-| `as_a`, `i_want`, `so_that` | no | the user-story sentence |
-| `risk_tier` | no | `low`, `medium` or `high`; none is `low`, and by default `high` waits for a person before it is committed. A story of any tier also waits where its change touches a path `pre_commit_pause_paths` lists, so a tier set low does not take that away ([`human_gates`](../configuration.md#human_gates)) |
-| `non_goals`, `notes` | no | what is deliberately out of scope, and anything else |
-| `decisions` | no | human choices made about the story, as `{at, by, text}` |
-| `created`, `updated` | no | timestamps; the tool sets `updated` when it changes the status |
+| `acceptance_criteria` | yes | the behaviour the tests will hold the code to, each with an `id` and a `text` |
+| `priority` | no | a whole number, and the lowest runs first; `0` is for urgent fixes |
+| `depends_on` | no | the ids of the stories that must be `done` before this one starts |
+| `as_a`, `i_want`, `so_that` | no | the user-story sentence: who it is for, what they want, and why |
+| `risk_tier` | no | `low`, `medium` or `high`; a `high` story waits for you before its commit, and a story of any tier waits where its change touches a path `pre_commit_pause_paths` lists |
+| `non_goals` | no | what is out of scope on purpose |
+| `notes` | no | anything else worth saying |
+| `decisions` | no | choices a person has made about the story, each with `at`, `by` and `text` |
+| `created`, `updated` | no | timestamps; `sdlc` sets `updated` whenever it changes the status |
 
-## Statuses
+The story schema that `init` wrote, `.sdlc/templates/story.schema.json`,
+describes all of these, and you may point your editor at it for completion.
+`sdlc` itself checks less than the schema does:
+[Editing the backlog](#editing-the-backlog) says what it insists on.
 
-Every story has one of seven statuses. You set some of them yourself, and the tool sets
-the rest as the story moves along.
+## Choose what runs next
 
-| Status | Picked by `sdlc start` | Set by |
-| --- | --- | --- |
-| `todo` | no, only by name | you |
-| `ready` | yes | you |
-| `in_progress` | resumed first, in the checkout that holds it | `sdlc start` and `sdlc approve`; also a gate recorded as failed on a story that was done |
-| `awaiting_human` | resumed first, once a person has answered, in the checkout that holds it | `sdlc escalate`, and the loop when it hands a story to a person |
-| `blocked` | no | you |
-| `done` | no | the tool, when the last gate passes; for a story in its own worktree, when `sdlc stop` lands it on trunk |
-| `dropped` | no | you |
+When you type `/sdlc:next`, the loop picks a story for you. It considers only
+the stories that are `ready` and are not waiting on another story, and it takes
+the one with the lowest `priority`. A story with no priority goes last: it
+counts as 999. Where two stories tie, the lower id goes first, with its numbers
+read as numbers, so `AUTH-2` comes before `AUTH-10`.
 
-Because a bare start passes over a `todo` story, a story you are not ready to
-run can stay `todo` until you mark it `ready`. Use `blocked` for one that
-cannot go on at all.
-
-## Acceptance criteria that become tests
-
-At Gate 3 the test author turns every criterion into at least one test that fails now.
-`sdlc freeze` then records those tests by content, and nobody edits them for the rest
-of the story. So a criterion has to say something a test can observe before the code
-exists.
-
-Let's take a look at the difference. "The handler shall use `TokenValidator`" names a
-class, and a test can only check how the code is built. "The API shall respond 401"
-names something a caller sees, and a test can check it directly. The second is the kind
-of criterion to aim for.
-
-Each criterion is one object with an `id` and a `text`:
-
-```json
-{
-  "id": "AC-1",
-  "text": "WHEN a request carries a session token whose expiry is in the past, the API shall respond 401 and shall not read the session store."
-}
-```
-
-A few habits make criteria easier to test:
-
-- **Name the exact outcome.** Give the status code, the error value, the stored
-  state. "Shall handle bad input gracefully" gives a test nothing to assert.
-- **One behaviour per criterion.** A criterion that fails for two reasons
-  becomes a test that passes for one.
-- **Write the whole criterion in `text`.** It is the only field of a criterion
-  the loop reads. A criterion written as separate `given`, `when` and `then`
-  fields is empty to it, and a story with no criterion text cannot pass Gate 1.
-- **Use EARS form.** The schema lists the patterns `WHEN`, `WHILE`,
-  `IF ... THEN`, `WHERE` and plain "the system shall". An optional `type`
-  field can record which one you used; nothing in the loop reads it.
-- **Keep `AC-n` ids stable.** The contract template's test conventions ask
-  for the id in the name of the test that covers it, so every test can be
-  traced back to its criterion.
-
-You do not need a criterion for every edge. The test author adds boundary cases
-itself. Write what is deliberately excluded in `non_goals`, so the reviewers do
-not flag its absence.
-
-## The backlog file
-
-Stories live in the file named by `backlog.path` in `.sdlc/config.json`.
-`sdlc init` sets it to `user_stories.json` at the repository root and puts one
-example story in it. An empty backlog looks like this:
-
-```json
-{
-  "_schema": ".sdlc/templates/story.schema.json",
-  "stories": []
-}
-```
-
-`_schema` records which schema the file follows. The schema itself is the JSON
-Schema file `init` wrote, and you can point your editor at it.
-
-### What `sdlc` checks
-
-`sdlc` itself checks less than the schema does. When it reads the backlog it
-requires valid JSON and, on every story, an `id`, a `title` and a `status` from
-the list under [Statuses](#statuses), spelled exactly. The id must be letters,
-digits, dots, dashes and underscores, starting with a letter or a digit. Break
-any of those and every command that reads the backlog stops with
-[SDLC-E0008](../troubleshooting.md#sdlc-e0008) or
-[SDLC-E0015](../troubleshooting.md#sdlc-e0015), naming the story.
-
-A misspelt status is refused rather than ignored, because a story whose status
-the loop does not know would never be picked. The rest of the schema, such as
-the `PREFIX-123` shape of an id, is not checked.
-
-### What the tool writes
-
-The tool also writes this file. `sdlc start`, `sdlc escalate`, `sdlc approve`
-and the gates change a story's `status` and set its `updated` time. They edit
-those two values in place and leave every other byte as you wrote it: the key
-order, the indentation, and any key the schema does not name.
-
-Reviews are stamped without those two fields, so the loop moving a story along
-does not make an approval stale. Changing anything else in the story does, the
-acceptance criteria above all.
-
-### Editing while a story runs
-
-Edit the backlog between stories. While a story is running, the hook refuses
-any attempt by the assistant to write it
-([`backlog-is-not-edited`](../enforcement.md#backlog-is-not-edited)), so the
-criteria the tests are held to and the tier that, with the paths a project
-lists, decides who approves the commit stay the ones the story started with.
-
-## Priority and dependencies
-
-Most of the time you only need to set `priority` and, where one story needs another,
-`depends_on`. Then run `sdlc start` and the loop picks for you. The rest of this
-section explains exactly how it chooses, for when the order surprises you.
-
-### How the next story is chosen
-
-`sdlc start` with no argument picks a story like this:
-
-1. A story that is `in_progress` or `awaiting_human` is resumed. This comes
-   before everything else. One that is waiting for a person is refused with
-   [SDLC-E0036](../troubleshooting.md#sdlc-e0036) until someone answers with
-   `sdlc approve`.
-2. Otherwise, it considers only stories that are `ready` and whose every
-   `depends_on` entry is `done`. A `todo` story is passed over.
-3. The lowest `priority` wins. The schema gives `0` to fix-forward work. A
-   story with no priority counts as 999, so it sorts after every story with a
-   lower number.
-4. Ties go to the id, with the numbers in it read as numbers, so `AUTH-2` comes
-   before `AUTH-10`.
-
-### Dependencies that never finish
-
-A dependency that never reaches `done` holds the story back forever. That
-includes an id that is not in the backlog and a story that was `dropped`.
-`sdlc story list` names every unfinished dependency, and says when one will
-never be done:
+To see what it would pick, and why the others are not in the running, run
+`sdlc story list`:
 
 ```console
 $ sdlc story list
-  AUTH-1  done      1  Issue session tokens
-> AUTH-3  ready     1  Reject expired sessions
-  AUTH-4  ready     2  Revoke sessions on logout  (waiting on AUTH-9 (not in the backlog))
-  AUTH-5  blocked   3  Rotate signing keys
+  AUTH-1  done    1  Issue session tokens
+> AUTH-3  ready   1  Reject expired sessions
+  AUTH-4  ready   2  Revoke sessions on logout  (waiting on AUTH-9 (not in the backlog))
+  AUTH-5  todo    3  Rotate signing keys
 
 > is what `sdlc start` would pick.
 ```
 
-### More than one checkout
+Each line shows a story's id, status, priority and title. `sdlc start` is the
+command `/sdlc:next` runs to begin a story.
 
-In a repository with linked worktrees, every checkout picks from the one
-backlog, kept in the main checkout, and passes over a story another checkout
-holds: one it started and has not finished, whether running, stopped or waiting
-for a person. A story that depends on a held story waits, as it does on any story
-that is not done. So two checkouts that start at once never pick the same story.
+### Hold a story back
 
-`sdlc story list` says which checkout holds each story, and marks what start
-would pick in the checkout you run it in. With
-[`git.worktrees`](../configuration.md#git) on, the default, every new story gets
-a worktree of its own, so this is every repository once a story has started. A
-story that depends on another is cut from trunk, so it starts only once that
-story is done, and sees that story's work only once a person has brought it to
-trunk ([more than one checkout](../the-loop.md#more-than-one-checkout)).
+A story you have written but are not ready to run stays `todo`. The loop passes
+over a `todo` story until you mark it `ready`, so you can keep half-formed
+stories in the backlog without any of them starting by surprise.
 
-### Naming a story
+### Make one story wait for another
 
-`sdlc start AUTH-4` names a story directly. That puts it ahead of the priority
-order and changes nothing else. A story that is `dropped`, `blocked` or `done`,
-or that waits on a dependency that is not done, is refused with
-[SDLC-E0010](../troubleshooting.md#sdlc-e0010), and the message says which.
+List the ids a story needs in its `depends_on`. The story is held back until
+every one of them is `done`.
 
-## What the definition-of-ready gate refuses
+> [!WARNING]
+> Check the ids in `depends_on`. A story waits for ever on an id that is not in
+> the backlog, and on a story that was `dropped`. `sdlc story list` says so
+> beside the story, as it does for `AUTH-4` above.
 
-`sdlc gate dor pass` checks one thing for itself: that the story has at least one
-acceptance criterion with `text`. Without one it refuses with
-[SDLC-E0044](../troubleshooting.md#sdlc-e0044). With
-[`human_gates.dor_advocate_check`](../configuration.md#human_gates) on, it also
-waits for the human advocate's review.
+### Start a story by name
 
-Beyond that, Gate 1, `dor`, is mostly a judgement. The runbook reads each
-criterion the way a test author would. It records a failure when one names an
-implementation rather than an observable behaviour, or cannot be turned into a
-failing test. A failure is always recordable:
+To run a particular story ahead of the others, name it:
 
-```console
-$ sdlc gate dor fail --note "AC-2 describes an implementation, not a behaviour"
+```text
+/sdlc:next AUTH-5
 ```
 
-Then it hands the question to a person with `sdlc escalate spec_unclear`,
-rather than inventing an interpretation.
+Naming a story puts it ahead of the priority order, and it is the one way to
+start a story that is still `todo`. It changes nothing else. A story that is
+`done`, `blocked` or `dropped`, or that waits on a story that is not done, is
+[refused](../troubleshooting.md#sdlc-e0010), and the message says which.
 
-### Problems that surface later
+> [!NOTE]
+> A story that is already under way has a worktree of its own, a second
+> checkout under `.sdlc/worktrees/`. Other checkouts pass over it, and
+> `sdlc story list` says where it is held.
+> [Stopping and resuming a story](stopping-and-resuming-a-story.md) shows how
+> to pick one up again.
 
-Problems with a story can still surface after Gate 1:
+## Statuses
 
-- **Gate 2, `analysis`,** fails when the researcher finds questions the
-  specification does not settle.
-- **Gate 3, `tests_frozen`,** fails when the test author reports a criterion it
-  cannot test.
+Every story has one of seven statuses. You set four of them, and `sdlc` sets
+the other three as the story moves along.
 
-In each case the runbook records the failure and hands the question to a person
-with `sdlc escalate`. That ends the iteration and marks the story
-`awaiting_human`. Fix the story in the backlog, answer with `sdlc approve` in
-your own terminal, and run `/sdlc:next` again. It resumes at the first gate that
-has not passed.
+| Status | What it means | Who sets it |
+| --- | --- | --- |
+| `todo` | written, and not yet ready to run; started only by name | you |
+| `ready` | may be started | you |
+| `in_progress` | being worked on | `sdlc` |
+| `awaiting_human` | handed to you, and waiting for your answer | `sdlc` |
+| `blocked` | cannot go on, and is never started | you |
+| `done` | finished, and landed on trunk | `sdlc` |
+| `dropped` | abandoned, and never started | you |
+
+Spell a status exactly as it is here. `sdlc` refuses a backlog with a status it
+does not know, because a story it cannot place would never run.
+
+## When the loop turns a story away
+
+The first gate reads each criterion the way a test author would. It turns the
+story away when a criterion names an implementation instead of a behaviour, or
+cannot be turned into a failing test. The loop does not guess what you meant.
+It escalates: it hands the story to you and stops.
+
+Suppose `AC-2` had read "The handler shall use `TokenValidator`". The last
+thing the session prints would be something like this:
+
+```text
+AUTH-3  waiting for a person: spec_unclear
+  AC-2 names a class, not something a caller can see: what should the API do with a token it cannot parse?
+
+The iteration has ended. A person reads the work and answers in Claude Code or in their own terminal:
+  /sdlc:approve AUTH-3, or sdlc approve AUTH-3
+  sdlc approve AUTH-3 --reject "why"
+```
+
+Nothing has gone wrong. This is the cheapest place in the whole loop to find
+out that a story is not clear, and putting it right takes three steps.
+
+First, fix the criterion. Edit `user_stories.json` at the root of your
+repository, the same file you wrote the story in.
+
+Next, tell the loop you have answered. Only a person can do this, so run it in
+a terminal of your own, from the story's worktree:
+
+```console
+$ cd .sdlc/worktrees/AUTH-3
+$ sdlc approve AUTH-3
+```
+
+Then type `/sdlc:next` again. The story carries on from the first gate it has
+not passed.
+
+> [!NOTE]
+> A story with no criterion `text` at all
+> [cannot pass the first gate](../troubleshooting.md#sdlc-e0044), whatever
+> anyone decides. Write at least one.
+
+A story can be handed back to you a little later for the same kind of reason.
+At Gate 2 the researcher may find a question your story does not settle, and at
+Gate 3 the test author may meet a criterion it cannot test. You answer both the
+same way: fix the story, approve, and type `/sdlc:next`.
+[Human approval gates](human-approval-gates.md) covers every place the loop
+stops for you.
+
+## Editing the backlog
+
+The backlog is yours to edit, by hand, between stories. Add a story, reword
+one, or change the order whenever nothing is running.
+
+`sdlc` writes to the file too, and only a little. As a story moves along, it
+changes that story's `status` and sets its `updated` time. It leaves everything
+else exactly as you wrote it: the order of the keys, the indentation, and any
+field of your own.
+
+While a story is running, leave its entry alone. The hook
+[refuses an agent](../enforcement.md#backlog-is-not-edited) that tries to write
+the backlog, so the criteria the tests are held to, and the tier that decides
+(with the paths your project lists) who approves the commit, stay the ones the
+story started with. Nothing stops you editing the entry by hand, so change a running
+story only when the loop has handed it back to you with a question.
+
+Every command reads the backlog, so a mistake in it stops them all until you
+fix it. `sdlc` insists on three things: the file is valid JSON, every story has
+an `id`, a `title` and a `status` it knows, and each id is made of letters,
+digits, dots, dashes and underscores, starting with a letter or a digit. When
+one of those is broken, the refusal names the story:
+
+```text
+sdlc: the story "AUTH-5" has the status "to-do"
+
+  why  a status is one of todo, ready, in_progress, awaiting_human, blocked, done, dropped, and a story with any other is one the loop would never pick
+  fix  fix the JSON in your backlog file — every story needs an "id", a "title" and a "status" from the schema
+
+  SDLC-E0008  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0008
+```
+
+> [!NOTE]
+> To keep the backlog somewhere else, or under another name, set
+> [`backlog.path`](../configuration.md#backlogpath) in `.sdlc/config.json`.
 
 ## Where to go next
 
-- [The loop](../the-loop.md#gate-1--dor-definition-of-ready): what each gate
-  does with the story
-- [`sdlc story list`](../commands.md#sdlc-story-list) and
-  [`sdlc start`](../commands.md#sdlc-start)
+- [The loop](../the-loop.md): what each gate does with your story
+- [Human approval gates](human-approval-gates.md): every place the loop stops
+  and waits for you
 - [Tuning commands for your stack](tuning-commands-for-your-stack.md): making
-  sure the frozen tests are the right files
-- [Troubleshooting](../troubleshooting.md#sdlc-e0010): when nothing can start
+  sure the loop runs, and freezes, the right tests
+- [`sdlc story list`](../commands.md#sdlc-story-list) and
+  [`sdlc start`](../commands.md#sdlc-start): the two commands on this page, in
+  full

@@ -1530,7 +1530,6 @@ func TestAC5TheEnforcementPageStatesTheWaitTheCodeUses(t *testing.T) {
 	for _, want := range []string{
 		fmt.Sprintf("%d minutes", int(subagentWait/time.Minute)),
 		"subagent",
-		"`background_tasks`",
 	} {
 		if !strings.Contains(section, want) {
 			t.Errorf("the \"Stopping mid-story\" section of docs/enforcement.md never says %q", want)

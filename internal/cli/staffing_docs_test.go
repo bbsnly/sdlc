@@ -281,7 +281,7 @@ func TestAC9TheCommandsPageHasASectionForTheFailureCommand(t *testing.T) {
 	if !strings.Contains(page(t, "guides/human-approval-gates.md"), "team failure") {
 		t.Error("AC-9 docs/guides/human-approval-gates.md does not list this hand-over")
 	}
-	if !strings.Contains(stfDocSection(t, "enforcement.md", "## Rules on shell commands"), "team failure") {
+	if !strings.Contains(stfDocSection(t, "enforcement.md", "### `project-manager-only-staffs`"), "team failure") {
 		t.Error("AC-9 docs/enforcement.md does not say who may report a failure")
 	}
 }

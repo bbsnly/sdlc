@@ -1,39 +1,41 @@
 # Commands
 
 - [Introduction](#introduction)
+  - [Who runs which command](#who-runs-which-command)
+  - [What every command shares](#what-every-command-shares)
 
-Commands you type:
+Commands you run:
 
 - [`sdlc init`](#sdlc-init)
 - [`sdlc doctor`](#sdlc-doctor)
   - [The story worktrees check](#the-story-worktrees-check)
 - [`sdlc status`](#sdlc-status)
-  - [Linked worktrees](#linked-worktrees)
 - [`sdlc story list`](#sdlc-story-list)
 - [`sdlc start`](#sdlc-start)
-  - [Worktrees](#worktrees)
-  - [Starting with more than one checkout](#starting-with-more-than-one-checkout)
   - [What start checks first](#what-start-checks-first)
 - [`sdlc stop`](#sdlc-stop)
   - [Landing a story from its worktree](#landing-a-story-from-its-worktree)
-  - [The story's sections of `CODEMAP.md`](#the-storys-sections-of-codemapmd)
-- [`sdlc approve`](#sdlc-approve)
-- [`sdlc unfreeze`](#sdlc-unfreeze)
-- [`sdlc remap STORY`](#sdlc-remap-story)
-- [`sdlc release`](#sdlc-release)
 - [`sdlc log`](#sdlc-log)
-  - [How a story's range is found](#how-a-storys-range-is-found)
-- [`sdlc ack`](#sdlc-ack)
 - [`sdlc cost`](#sdlc-cost)
-  - [`sdlc cost add`](#sdlc-cost-add)
+- [`sdlc cost add`](#sdlc-cost-add)
 - [`sdlc trace`](#sdlc-trace)
   - [`sdlc trace --all`](#sdlc-trace---all)
+  - [Reading the trace file](#reading-the-trace-file)
 - [`sdlc version`](#sdlc-version)
+- [`sdlc completion`](#sdlc-completion)
 
-Commands the loop's agents run:
+Commands only a person runs:
+
+- [`sdlc approve`](#sdlc-approve)
+- [`sdlc unfreeze`](#sdlc-unfreeze)
+- [`sdlc ack`](#sdlc-ack)
+- [`sdlc release`](#sdlc-release)
+- [`sdlc remap STORY`](#sdlc-remap-story)
+- [`sdlc staffing assign AGENT`](#sdlc-staffing-assign-agent)
+
+Commands the loop runs:
 
 - [`sdlc gate GATE STATUS`](#sdlc-gate-gate-status)
-  - [How the commit range is recorded](#how-the-commit-range-is-recorded)
 - [`sdlc artifact list`](#sdlc-artifact-list)
 - [`sdlc artifact write NAME`](#sdlc-artifact-write-name)
 - [`sdlc artifact diff plan`](#sdlc-artifact-diff-plan)
@@ -41,13 +43,11 @@ Commands the loop's agents run:
 - [`sdlc review list`](#sdlc-review-list)
 - [`sdlc review add GATE ROLE VERDICT`](#sdlc-review-add-gate-role-verdict)
 - [`sdlc finding close GATE ROLE F-N`](#sdlc-finding-close-gate-role-f-n)
-- [`sdlc decide <ID>`](#sdlc-decide-id)
+- [`sdlc decide ID`](#sdlc-decide-id)
 - [`sdlc staffing`](#sdlc-staffing)
 - [`sdlc staffing show`](#sdlc-staffing-show)
 - [`sdlc staffing set`](#sdlc-staffing-set)
 - [`sdlc staffing amend AGENT`](#sdlc-staffing-amend-agent)
-- [`sdlc staffing assign AGENT`](#sdlc-staffing-assign-agent), a person's
-  command, refused to every session
 - [`sdlc team`](#sdlc-team)
 - [`sdlc team failure AGENT`](#sdlc-team-failure-agent)
 - [`sdlc freeze`](#sdlc-freeze)
@@ -58,1359 +58,1149 @@ Commands the loop's agents run:
 
 ## Introduction
 
-Most of the time you will not type an `sdlc` command at all. The `/sdlc:next`
-command in Claude Code runs them for you, one gate at a time. This page is for
-the moments when you want to see what a command does, run one yourself, or
-understand a line it printed. Running `sdlc <command> --help` in your terminal
-says the same thing as this page.
+Most of the time you will not type an `sdlc` command at all. `/sdlc:next` in
+Claude Code runs them for you, one gate at a time. This page is for the moments
+in between: you want to see where a story stands, the loop has handed you a
+decision, or a command printed a line you want explained.
 
-The commands you type most are [`sdlc init`](#sdlc-init) once per project,
-[`sdlc doctor`](#sdlc-doctor) when something is not working,
-[`sdlc status`](#sdlc-status) and [`sdlc story list`](#sdlc-story-list) to see
-where things are, and [`sdlc approve`](#sdlc-approve) when the loop hands a story
-to you.
+Every command has one entry, and every entry has the same shape: what the
+command is for, how to run it, its flags, what it prints, and when it refuses.
+`sdlc <command> --help` gives the short form of the same in your terminal.
 
-A few more are yours alone, because the hook refuses them to an agent:
-[`sdlc unfreeze`](#sdlc-unfreeze) when a frozen test is wrong,
-[`sdlc remap`](#sdlc-remap-story) when a landed story's change to `CODEMAP.md`
-did not reach trunk, [`sdlc release`](#sdlc-release),
-[`sdlc ack`](#sdlc-ack) to mark what you have read of what landed (its
-companion [`sdlc log`](#sdlc-log) is open to everyone), and
-[`sdlc staffing assign`](#sdlc-staffing-assign-agent), which the hook refuses
-to every session. Each of these, and `sdlc approve`, also refuses itself where
-it runs with Claude Code's environment variables, in the model's Bash or from a
-`!` line typed in Claude Code run from a terminal
-([SDLC-E0079](troubleshooting.md#sdlc-e0079)). Type its slash command in Claude
-Desktop or Claude Code. Where the slash command answers that it did not run,
-type the command as a `!` line in Claude Desktop, or run it in a terminal
-outside Claude Code, a window you opened yourself.
-In the session working a story, the hook also refuses
-[`sdlc stop`](#sdlc-stop) to the main conversation and to every agent while the
-story still has a gate to pass; once every gate has passed it does not. In any
-other Claude Code session the hook does not refuse `sdlc stop`, and the command
-itself refuses ([SDLC-E0048](troubleshooting.md#sdlc-e0048)).
+The examples come from one project, `billing`. Its backlog holds three
+stories: `AUTH-3`, then `AUTH-4`, which waits for it, and `AUTH-5`, which is
+not ready yet.
 
-The commands you type come first on this page, up to
-[`sdlc version`](#sdlc-version). After them come the ones the agents run, which
-are here for reference whenever you need them. `sdlc staffing assign` is kept
-there beside the other staffing commands, and is a person's all the same.
+### Who runs which command
 
-Each entry below says what the command is for, shows the usual way of running
-it, lists its flags, and then covers the less common cases and the ways it
-refuses. Two rules run through all of them:
+The commands fall into three groups, and the page takes them in that order.
 
-- **`--json` works everywhere.** One line of JSON on standard output, for a
-  script or a skill to read. Failures come back as JSON too, with the same
-  fields as the prose.
-- **A refusal carries four things**: what happened, why, what to do about it,
-  and a code you can look up in [troubleshooting](troubleshooting.md). A
-  required flag left off is the exception: `sdlc cost add` with no `--usd`
-  prints `required flag(s) "usd" not set`, with no code.
+**Commands you run.** They set a project up, show where things stand, begin a
+story or put it down, and look back at what landed. You will type
+[`sdlc init`](#sdlc-init) once per project, [`sdlc doctor`](#sdlc-doctor) when
+something is not working, and [`sdlc status`](#sdlc-status) whenever you want
+to know where a story has got to.
+
+**Commands only a person runs.** Each of these is a decision the loop must not
+make for itself, so an agent is refused all six:
+
+| Command | In Claude Code | You run it when |
+| --- | --- | --- |
+| [`sdlc approve`](#sdlc-approve) | `/sdlc:approve` | the loop has handed you a story and waits for your answer |
+| [`sdlc unfreeze`](#sdlc-unfreeze) | `/sdlc:unfreeze` | a frozen test is wrong |
+| [`sdlc ack`](#sdlc-ack) | `/sdlc:ack` | you have read what landed on trunk |
+| [`sdlc release`](#sdlc-release) | `/sdlc:release` | a story has to move to another checkout |
+| [`sdlc remap`](#sdlc-remap-story) | `/sdlc:remap` | a landed story's change to `CODEMAP.md` did not reach trunk |
+| [`sdlc staffing assign`](#sdlc-staffing-assign-agent) | `/sdlc:assign` | you want to choose the model an agent is asked for |
+
+You type the slash command in Claude Code or in Claude Desktop, with the same
+arguments, or run the command in a terminal you opened yourself. Where a
+slash command answers that it did not run, type the command as a `!` line in
+Claude Desktop, such as `!sdlc approve AUTH-3`, or use your own terminal. Run
+anywhere else, in a process Claude Code started, each one refuses and changes
+nothing ([SDLC-E0079](troubleshooting.md#sdlc-e0079)).
+[Where to type your answer](guides/human-approval-gates.md#where-to-type-your-answer)
+shows each way.
+
+**Commands the loop runs.** The agents run these as a story moves through its
+gates: they record a gate, store a document, add a review. You will read them
+in a session far more often than you type them. They are here so that a line
+in a transcript makes sense, and for the day you
+[do a gate's work by hand](the-agents.md#doing-an-agents-gate-by-hand).
+
+### What every command shares
+
+**`--json` works everywhere.** It prints one line of JSON on standard output
+instead of prose, for a script to read. A refusal comes back as JSON too, with
+`ok` set to `false` and the fields `error`, `why`, `fix`, `code` and `docs`.
+
+**A refusal says what to do next.** It names what happened, why, the fix, and
+a code that has its own entry in [Troubleshooting](troubleshooting.md):
+
+```console
+$ sdlc start AUTH-9
+sdlc: no story with the id "AUTH-9"
+
+  why  the backlog has AUTH-3, AUTH-4, AUTH-5
+  fix  run "sdlc story list" to see the ids you can use
+
+  SDLC-E0009  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0009
+```
+
+A refused command exits non-zero and prints the refusal on standard error. A
+required flag left off is the one exception to the shape: `sdlc cost add` with
+no `--usd` prints `required flag(s) "usd" not set`, with no code.
+
+**A command acts on the story in the checkout you run it in.** By default each
+story is worked in a worktree of its own, `.sdlc/worktrees/<ID>`, so a command
+that changes a story is run there. Where a command takes `--story`, the flag
+names a story instead of using the one being worked on.
 
 ## `sdlc init`
 
-Run `init` once, at the start, to set the repository up for the loop.
+Set a repository up for the loop. You run it once per project, from anywhere
+inside the repository.
 
-In Claude Code: `/sdlc:init`, which the hook runs as this command and shows you what it printed.
+In Claude Code, `/sdlc:init` runs it and shows you what it printed.
 
-```console
-$ sdlc init
-```
-
-`init` reads the repository, detects the stack, and writes `.sdlc/config.json`
-with commands that already match it, a backlog with one example story, the story
-schema, and a `## SDLC Contract` section appended to `CLAUDE.md`. Where the
-project has an `AGENTS.md` and no `CLAUDE.md`, or its `CLAUDE.md` is a link to
-`AGENTS.md`, the section goes in `AGENTS.md` instead, and no `CLAUDE.md` is
-made: Claude Code reads `AGENTS.md` only where there is no `CLAUDE.md`. init
-then prints `created  AGENTS.md (appended to)`. Beside them it writes
-`.sdlc/.gitignore`, which keeps each story's `trace.jsonl` on this machine
-([the trace](the-loop.md#the-trace)); it is not in the list init prints. It never
-overwrites a file you wrote, and it never touches your own `.gitignore`.
-
-`init` also writes `REVIEW.md`, the [review policy](configuration.md#reviewspolicy)
-every reviewer reads, naming the commands it wrote for the stack, and prints
-`created  REVIEW.md`. Where the file is there already it keeps it, and prints
-`kept     REVIEW.md`. With `reviews.policy` set, that is the path it uses.
-
-Then commit what `init` wrote, because each story's worktree is cut from trunk's
-commits. After that, run `sdlc doctor` to check the setup, and open Claude Code
-and type `/sdlc:next` to begin. [Getting started](getting-started.md) walks
-through the first story.
-
-If you later want the default settings back, `--force` restores them over an
-existing setup:
-
-```console
-$ sdlc init --force
+```text
+sdlc init [flags]
 ```
 
 | Flag | What it does |
 | --- | --- |
-| `--force` | restore the default settings over an existing setup, keeping your stories, where they are (`backlog.path`), your trunk branch (`git.trunk_branch`) and a review policy you moved (`reviews.policy`); refused while a story is being worked on ([SDLC-E0012](troubleshooting.md#sdlc-e0012)) |
+| `--force` | restore the default settings over an existing setup, keeping your stories |
 
-`init` recognises Go (`go.mod`), Rust (`Cargo.toml`), Node (`package.json`) and
-Python (`pyproject.toml`, `setup.py` or `requirements.txt`), tried in that order
-at the root of the repository, so a Go service with a `package.json` for its
-front-end tooling is a Go project. Anything else gets no commands and the
-common test directories, for you to fill in.
+```console
+$ sdlc init
+Set up sdlc in /home/<user>/src/billing
+
+  created  .sdlc/config.json
+  created  .sdlc/templates/story.schema.json
+  created  user_stories.json
+  created  CLAUDE.md
+  created  REVIEW.md
+
+Guessed the commands from a Go project.
+
+Next:
+  1. sdlc doctor              check the guesses
+  2. edit user_stories.json   replace the example with a story of your own
+  3. /sdlc:next               type it in Claude Code to work the first story
+```
+
+`init` works out what the project is built with and writes five files: the
+configuration, with commands that match the stack; the story schema; a backlog
+with one example story; the contract, a `## SDLC Contract` section in
+`CLAUDE.md`; and `REVIEW.md`, the
+[review policy](the-loop.md#the-review-policy) every reviewer reads. It also
+writes `.sdlc/.gitignore`, which keeps each story's trace out of git and is not
+in the list it prints.
+
+It never overwrites a file you wrote, and it never touches your own
+`.gitignore`. A `CLAUDE.md` that is already there has the section appended. A
+`REVIEW.md` that is already there is kept, and the line reads
+`kept     REVIEW.md`.
+
+Commit what `init` wrote before you start a story, because each story's
+worktree is cut from trunk's commits.
+[Getting started](getting-started.md#set-up-your-project) walks through the
+first run, and
+[Adding sdlc to an existing project](guides/adding-to-an-existing-project.md)
+covers a repository that already has conventions of its own.
+
+**The stack.** `init` recognises Go (`go.mod`), Rust (`Cargo.toml`),
+Node (`package.json`) and Python (`pyproject.toml`, `setup.py` or
+`requirements.txt`). It tries them in that order at the root of the
+repository, so a Go service with a `package.json` for its front-end tooling is
+a Go project. A `package.json` that does not parse still counts as Node, with
+no commands filled in. Anything else gets no commands and the common test
+directories, for you to fill in.
+
+**The contract.** `init` finds an existing contract only by a
+`## SDLC Contract` heading on a line of its own. A `###` heading, or a sentence
+that mentions the contract, does not count, and `init` then appends a section
+of its own.
+
+**A project with `AGENTS.md`.** Where the project has an `AGENTS.md` and no
+`CLAUDE.md`, or its `CLAUDE.md` is a link to `AGENTS.md`, `sdlc init` puts the
+section in `AGENTS.md` and makes no `CLAUDE.md`. The line then reads
+`created  AGENTS.md (appended to)`.
+[A project that keeps AGENTS.md](guides/adding-to-an-existing-project.md#a-project-that-keeps-agentsmd)
+has the details.
+
+**Starting again.** Run a second time, `init` refuses rather than lose your
+settings ([SDLC-E0003](troubleshooting.md#sdlc-e0003)). `--force` restores the
+defaults:
+
+```console
+$ sdlc init --force
+Set up sdlc in /home/<user>/src/billing
+
+  created  .sdlc/config.json
+  created  .sdlc/templates/story.schema.json
+  kept     user_stories.json
+  kept     CLAUDE.md
+  kept     REVIEW.md
+
+Guessed the commands from a Go project.
+
+Next:
+  1. sdlc doctor              check the guesses
+  2. edit user_stories.json   replace the example with a story of your own
+  3. /sdlc:next               type it in Claude Code to work the first story
+```
+
+The configuration and the schema are rewritten. Your stories are kept, and so
+are three settings: where the backlog is (`backlog.path`), your trunk branch
+(`git.trunk_branch`) and a review policy you moved (`reviews.policy`).
+`.sdlc/.gitignore` is kept as well, and the contract is appended only if it is
+missing. `--force` is refused while a story is being worked on
+([SDLC-E0012](troubleshooting.md#sdlc-e0012)).
 
 ## `sdlc doctor`
 
-Check this project and say how to fix what is wrong. Run it first whenever
-something is not working; it is the fast check.
+Check the project and say how to fix what is wrong. Run it first whenever
+something is not working: it takes a moment, and it runs none of your commands.
 
-In Claude Code: `/sdlc:doctor`, which the hook runs as this command and shows you what it printed.
+In Claude Code, `/sdlc:doctor` runs it and shows you what it printed.
+
+```text
+sdlc doctor [flags]
+```
+
+`doctor` has no flags of its own.
 
 ```console
 $ sdlc doctor
-$ sdlc doctor --json
-```
+sdlc doctor
 
-`doctor` looks at the git repository, the git command itself, the configuration — including a
-setting it does not know, such as a misspelled one — the backlog, the loop's state files the hook
-reads on every tool call and the commit [`sdlc ack`](#sdlc-ack) recorded, the review policy, the
-contract in `CLAUDE.md` or `AGENTS.md`, the programs your configured commands would run, whether the
-hook would refuse any of them, whether a freeze check is configured, and whether `sdlc` is on your
-`PATH`. Every problem comes with what to do about it. Exits non-zero when something is wrong, so it
-works in a script.
-
-A setting the loader refuses, such as a negative limit or a `budget.gate_hours` entry that
-is not a number of hours, is named with the entry and its
-[SDLC-E0045](troubleshooting.md#sdlc-e0045). A file that is not valid JSON, or has a
-setting of the wrong type, is reported in its own words, as before.
-
-The configuration check also lists, on a line of its own, the paths in
-`paths.conflict_markers_intended`, or says `none`. That is this checkout's copy:
-`sdlc stop` reads trunk's, so a path a person has only listed in a commit that
-this checkout does not have yet is not shown.
-
-A quiet `doctor` is not a promise that the hook will allow every command: it
-judges each command as the main conversation would run it from the project root,
-with no story under way, so it does not judge the agent's role, the freeze, the
-other checkouts or whether the story's gates have passed, and it does not judge
-`fmt_file`, which the hook runs itself. It names a refused command by its key
-and the rule, never prints the command, and never runs it.
-
-The programs it looks up are the first word of each command, after an operator
-such as `&&` or `|`, as its scanner reads them, so it can miss a program in a
-compound command. It cannot see the programs a script calls, so a
-`freeze_check` that runs a script is reported as set, and nothing more. The
-`freeze check` line says only whether `commands.freeze_check` is set, never what
-it holds.
-
-The `project contract` check says which file Claude Code will read the section
-from. With the section in `AGENTS.md`, it is a problem where a `CLAUDE.md` is
-read in its place and does not import it with an `@AGENTS.md` line, or where a
-`CLAUDE.local.md` at the root does the same; and where both files carry the
-section, since the two can disagree. A project with the section in `AGENTS.md`
-and only `AGENTS.md` at the root shows:
-
-```console
-  ok       project contract     AGENTS.md carries the "## SDLC Contract" section and there is no CLAUDE.md, so Claude Code 2.1.277 or later reads it
-```
-
-The `review policy` check comes straight after `loop state` and says which file
-reviewers read. It is the one check that can say `warning`. A warning is not
-counted as a problem: it does not change the last line or the exit status.
-
-```console
+  ok       git repository       /home/<user>/src/billing
+  ok       git command          found on PATH
+  ok       configuration        .sdlc/config.json  (Go project)
+                                paths.conflict_markers_intended (this checkout's copy; "sdlc stop" reads trunk's): none
+  ok       backlog              user_stories.json  (3 stories, one runnable)
+  ok       loop state           the iteration, every gate record, the test freeze and the commit acknowledged all read
   ok       review policy        REVIEW.md
+  ok       project contract     CLAUDE.md carries the "## SDLC Contract" section
+  ok       commands             build, coverage, fmt, fmt_check, fmt_file, lint, smoke, test, test_files
+  ok       freeze check         commands.freeze_check is not set, so sdlc freeze runs no check
+  ok       sdlc on PATH         /home/<user>/.local/bin/sdlc
+
+Everything checks out.
+```
+
+Each line is one check. A `problem` is followed by a `fix:` line that says what
+to do, the last line counts the problems, and `doctor` exits non-zero when
+there is one, so it works in a script.
+
+| Check | What it looks at |
+| --- | --- |
+| `git repository` | that you are inside one |
+| `git command` | that git is installed, and recent enough for worktrees (2.17 or later) |
+| `configuration` | that `.sdlc/config.json` reads, with every setting it does not know, such as a misspelled one, and every value it refuses ([SDLC-E0045](troubleshooting.md#sdlc-e0045)) |
+| `backlog` | that the backlog reads, and how many stories could start |
+| `loop state` | that every story's record, the freeze and the acknowledged commit read, and which checkout holds each story |
+| `review policy` | which file the reviewers read |
+| `story worktrees` | worktrees that need your attention; shown only when one does |
+| `project contract` | which file carries the `## SDLC Contract` section |
+| `project instructions` | whether Claude Code will read `AGENTS.md`; shown only where the contract is there |
+| `commands` | that the programs your configured commands start are installed, and that the hook would let each command run |
+| `freeze check` | whether `commands.freeze_check` is set |
+| `sdlc on PATH` | where your shell finds `sdlc` |
+
+The second line of `configuration` lists the paths in
+[`paths.conflict_markers_intended`](configuration.md#pathsconflict_markers_intended),
+or says `none`. It is this checkout's copy, and `sdlc stop` reads trunk's.
+
+**What the `commands` check can miss.** `doctor` looks up the first word of
+each command, and the first word after an operator such as `&&`, `|` or `;`.
+It cannot see the programs a script calls, and it can miss one inside a
+compound command. It judges each command as the main conversation would run it
+from the project root with no story under way, so a quiet `doctor` is not a
+promise that every agent may run every command. It names a refused command by
+its key and the rule, and never prints or runs it. The `freeze check` line says
+only whether a freeze check is set, never what it holds.
+
+**The review policy.** This is the one check that can say `warning`. A warning
+is not a problem: it changes neither the last line nor the exit status.
+
+```text
   warning  review policy        reviews.policy names docs/polcy.md, and there is no file there
                                 fix: create docs/polcy.md by hand, on trunk between stories, or take reviews.policy out of .sdlc/config.json
 ```
 
-It warns about a file [`reviews.policy`](configuration.md#reviewspolicy) names that
-is not there, or that is a directory or a link out of the repository. With
-[`git.worktrees`](configuration.md#git) on it also warns about a policy trunk does
-not hold, because a story's worktree is cut from what trunk commits, and about one
-that reached trunk after this story's worktree was cut. With `reviews.policy` not
-set, a project with no policy is `ok` and says `no review policy`, and where nothing
-is at the default path it says that `sdlc init` writes `REVIEW.md` between stories.
+It warns about a file [`reviews.policy`](configuration.md#reviewspolicy) names
+that is not there, or that is a directory or a link out of the repository. With
+worktrees on it also warns about a policy trunk does not hold, and about one
+that reached trunk after the story's worktree was cut. With `reviews.policy`
+not set and no `REVIEW.md`, the check is `ok` and says `no review policy`.
 
-In that layout a `project instructions` check follows it. It reads the Project
-instructions setting from your Claude Code user settings (`settings.json` in
-`CLAUDE_CONFIG_DIR`, or in `~/.claude`) and never writes it, and it is a
-problem where the setting is `claude-md` or `managed-only`, which keep Claude
-Code from reading `AGENTS.md`. It does not read managed settings, and says so.
+**The contract.** `doctor` finds the contract the way `init` does: only by a
+`## SDLC Contract` heading on a line of its own. With the section in
+`AGENTS.md`, the check says so and a `project instructions` check follows it:
 
-In a repository with linked worktrees it names the checkout holding each story
-under "loop state", in whichever checkout you run it. In a linked worktree it
-reads the backlog and the records from the main checkout, and reports
-[SDLC-E0052](troubleshooting.md#sdlc-e0052) when the repository has none.
+```text
+  ok       project contract     AGENTS.md carries the "## SDLC Contract" section and there is no CLAUDE.md, so Claude Code 2.1.277 or later reads it
+  ok       project instructions Project instructions is not set in your Claude Code user settings, so Claude Code's default, claude-md-or-agents-md, reads AGENTS.md; managed settings were not checked
+```
+
+It is a problem where a `CLAUDE.md`, or a `CLAUDE.local.md` at the root, is
+read in its place and does not import it with an `@AGENTS.md` line, and where
+both files carry the section, since the two can disagree. The
+`project instructions` check reads the Project instructions setting from your
+Claude Code user settings and never writes it. It is a problem where the
+setting is `claude-md` or `managed-only`, which keep Claude Code from reading
+`AGENTS.md`.
+
+In a story's worktree, `doctor` reads the backlog and the records from the main
+checkout, and says so when the repository has none
+([SDLC-E0052](troubleshooting.md#sdlc-e0052)).
+[Check with `sdlc doctor`](guides/why-was-i-refused.md#check-with-sdlc-doctor)
+shows how to use it when a command was refused.
 
 ### The story worktrees check
 
-With [`git.worktrees`](configuration.md#git) on, the git command check is a
-problem below git 2.17, the oldest that can remove a worktree again: install a
-newer git, or set `git.worktrees` to false to begin each story in the checkout
-`sdlc start` runs in. A `story worktrees` check appears only when there is
-something to do:
+A `story worktrees` line appears only when there is something for you to do.
+Here a story was released, and its worktree is still there:
 
-- trunk has no `.sdlc/config.json` committed, so `sdlc start` would refuse to
-  begin a story ([SDLC-E0053](troubleshooting.md#sdlc-e0053)): commit it and
-  the file that holds the contract, `CLAUDE.md` or `AGENTS.md` (both where
-  `CLAUDE.md` imports or links to `AGENTS.md`), to trunk, or set
-  `git.worktrees` to false in this checkout's `.sdlc/config.json`;
-- trunk tracks files under `.sdlc/state`, the loop's own state, which every
-  story worktree writes to, so no story worked in a worktree could land
-  ([SDLC-E0055](troubleshooting.md#sdlc-e0055)): a person stops tracking them on
-  trunk with `git rm -r --cached .sdlc/state` in the main checkout, adds
-  `/.sdlc/state/` to `.gitignore`, and commits both;
-- git lists a worktree under `.sdlc/worktrees/` that no checkout holds, such as
-  a finished story's or one an interrupted start left. It says what is true of
-  each, and what a person does about it, in the order a person takes it, and
-  never counts the loop's own files under `.sdlc/state` as somebody's changes:
-  - its directory is gone: `git worktree prune` in the main checkout makes git
-    forget it;
-  - it has changes nobody committed, which may be somebody's work: keep what is
-    wanted, committed on `story/<ID>` or copied elsewhere, before removing
-    anything;
-  - `story/<ID>` holds commits trunk does not have, which are the story's work,
-    and come after the changes where there are both: bring them to trunk, with
-    trunk checked out, with `git merge --ff-only story/<ID>` in the main
-    checkout, before removing either, and if git cannot fast-forward, first
-    rebase `story/<ID>` on trunk in its worktree and run the tests;
-  - it is on a branch other than `story/<ID>`, which start did not make: the
-    branch is named as a shell reads it back without expanding anything, in
-    single quotes where it needs them, and no command is built from it. A
-    person looks at what it holds, with
-    `git -C .sdlc/worktrees/<ID> log --oneline <trunk>..HEAD` in the main
-    checkout, before merging or removing anything;
-  - it is on no branch, and its HEAD has commits trunk does not have, as a
-    rebase stopped part-way leaves it: "a commit on no branch is lost when its
-    worktree is removed", so no command removes it. A person looks at them
-    with that `git log`, and keeps what is wanted on a branch, with
-    `git -C .sdlc/worktrees/<ID> branch <new name>`, before merging or removing
-    anything;
-  - git could not read what it holds: a person looks with that `git log`
-    before removing anything;
-  - its HEAD, on `story/<ID>` or on no branch, has nothing trunk does not: if
-    no `sdlc start` is running for the story, remove it with
-    `git worktree remove .sdlc/worktrees/<ID>`, and `git branch -d story/<ID>`
-    where it is on that branch, in the main checkout. Where the loop's own
-    files are all it has, it says they are safe to lose if git refuses over
-    them.
+```text
+  problem  story worktrees      AUTH-4's worktree, .sdlc/worktrees/AUTH-4, has changes nobody committed, and no checkout holds AUTH-4
+                                fix: the changes nobody committed may be somebody's work: a person keeps what is wanted, committed on story/AUTH-4 or copied elsewhere, before removing anything
+```
 
-Where there is more than one thing to say, each is a line of its own, followed
-by its own `fix:` line, and in `--json` the detail and the fix hold the lines in
-the same order, one to a line.
+The check says what is true of each worktree and what to do about it, in the
+order you do it:
 
-It never suggests `git branch -D` or `--force`. See
-[more than one checkout](the-loop.md#more-than-one-checkout).
+| What it found | What you do |
+| --- | --- |
+| Trunk has no `.sdlc/config.json` committed, so no story can start ([SDLC-E0053](troubleshooting.md#sdlc-e0053)) | Commit it, and the file that holds the contract, to trunk. |
+| Trunk tracks files under `.sdlc/state`, so no story can land ([SDLC-E0055](troubleshooting.md#sdlc-e0055)) | Run `git rm -r --cached .sdlc/state` in the main checkout, add `/.sdlc/state/` to `.gitignore`, and commit both. |
+| A worktree's directory is gone | Run `git worktree prune` in the main checkout. |
+| A worktree no checkout holds has changes nobody committed | Keep what is wanted, committed on `story/<ID>` or copied elsewhere, before you remove anything. |
+| `story/<ID>` holds commits trunk does not have | With trunk checked out, run `git merge --ff-only story/<ID>` in the main checkout. If git cannot fast-forward, rebase `story/<ID>` on trunk in its worktree and run the tests first. |
+| A worktree is on another branch, or on no branch, with commits trunk does not have | Look at them with `git -C .sdlc/worktrees/<ID> log --oneline <trunk>..HEAD`. Keep what is wanted on a branch before you merge or remove anything. |
+| A worktree has nothing trunk does not | Run `git worktree remove .sdlc/worktrees/<ID>`, then `git branch -d story/<ID>`, in the main checkout. |
 
-`doctor` does not run your test suite. It is meant to be the fast answer to "why
-is this not working".
+`doctor` never suggests `git branch -D` or `--force`, and it never counts the
+loop's own files as somebody's changes.
+[Removing a worktree](the-loop.md#removing-a-worktree) explains what is safe to
+delete.
 
 ## `sdlc status`
 
-When you want to know what the loop is working on and where it has got to, ask
-`status`. It changes nothing, so it is safe to run at any point.
+See what the loop is working on and where it has got to. `status` changes
+nothing, so it is safe to run at any point.
+
+```text
+sdlc status [flags]
+```
+
+`status` has no flags of its own.
+
+With no story under way, it shows the backlog and what would start next:
 
 ```console
 $ sdlc status
-$ sdlc status --json
-```
-
-It reports the active story, every gate's outcome, the state of the test freeze
-and whether it is still intact, the backlog counts, and what `sdlc start` would
-pick up next.
-
-Where [`budget.gate_hours`](configuration.md#budget) gives a gate a number and the
-story's agents' time at that gate has passed it, `status` also prints one line on
-standard error, with `--json` too, and nothing else about it changes. It records
-nothing: the next `sdlc gate` or `sdlc review add` puts the gate's event in the record.
-
-For the active story, `status` lists each open finding of the design and code reviews, with one
-line under them on how to close the first, then each declined one, and every finding closed as
-referred, with its reason. `--json` has every finding under `findings`, with its closings and the
-`subject` its review was given, and the referred ones again under `referred`. A decline's
-reason is in `--json` and in `sdlc log`:
-
-```console
-  finding    design_review architect F-1 open, important: the plan: AC-3 has no step
-  to close   sdlc finding close design_review architect F-1 --fixed once it is fixed, or --declined --reason "<why>"
-  declined   design_review architect F-2 declined, nit, internal/invoice.go:12: the name says nothing
-  referred   design_review architect F-3 referred, nit, docs/elsewhere.md: a stale sentence on another page; reason: another page, and the person should see it
-```
-
-Where the [`team`](configuration.md#team) section disables an agent other than the project
-manager, or sets `can_block` to false on security, the verifier or the code reviewer, `status`
-says so under its `next` line: one line for each disabled agent, then one for each of those three
-that cannot block. `--json` lists every disabled agent, the project manager included, under
-`disabled`:
-
-```console
-  next   implementation
-
-  verifier is disabled in team.agents.verifier.enabled
-  code-reviewer cannot block: team.agents.code-reviewer.can_block is false
-```
-
-Until its commit gate passes, and in the checkout that works it, the active
-story has a `pause` line under its `next` line, saying whether the commit will
-wait for a person's approval and why: the story's tier, and each file its change
-touches with the glob of [`pre_commit_pause_paths`](configuration.md#human_gates)
-it matched, or that none does. Where a person has approved the work as it now
-stands, the line says the commit will not pause again. Where something it needs
-cannot be read, the line says what, and that the commit will pause:
-
-```console
-  next   implementation
-  pause  the commit will pause for a person's approval: the story's risk tier is low, which pre_commit_pause_tiers does not pause; "internal/hook/hook.go" matches "internal/hook/**"
-```
-
-An active story with no gate left reads as `finished` rather than `in progress`,
-because there is nothing left to work on it: what it wants is `sdlc stop`.
-
-An active story that has gone from the backlog reads as `(not in the backlog)`,
-with `"not_in_backlog": true` in `--json`. The commit gate refuses such a story,
-so put it back, or run `sdlc stop` to end the iteration.
-
-In addition, these fields in `--json` are worth knowing by name, because a skill
-reads them to decide what to do:
-
-| Field | What it says |
-| --- | --- |
-| `next_gate` | the gate to work now — the first one that has not passed. Absent when every gate is behind you, or when no story is active |
-| `next` | the story `sdlc start` would pick up. Only present when nothing is active, and absent while a story waits for a person |
-| `waiting` | every story handed to a person with `sdlc escalate` and not yet answered, with the question it asks |
-| `disabled` | every agent the `team` section disables, the project manager included. Absent where none is, or when no story is active |
-| `pre_commit_pause` | whether the active story's commit will wait for a person: `will_pause`; `approved`, `true` where a person has approved the work as it stands, so it will not; the story's `tier` and whether `tier_pauses`; `paths`, each `file` the change touches with the `glob` it matched; and `reasons`, the same clauses the `pause` line prints. Absent once the commit gate has passed, and in a checkout that does not work the story |
-| `landing` | whoever holds the landing lock: the `story`, the `command` (`stop`, or `remap`, which lands nothing), `since` when, and its `pid`; `gone` is `true` where that process is not running, with `takeable_from`, the time a stop can take the lock from. `story`, `command` and `since` are there together or not at all: a lock whose owner cannot be read has only `gone`, and `pid` where one is named. Absent while no lock is there |
-| `waiting_to_land` | every `sdlc stop` or `sdlc remap` waiting for the landing lock, with its `story`, `command`, `since` and `pid`, and `for`, the story of the running stop it waits for. Absent while nothing waits |
-| `consolidate` | `finished`, how many stories have finished since the last `/sdlc:consolidate`, and `last`, the date of the newest consolidation file, which is `null` where there has been none. Absent below `consolidate.nudge_after` stories, and where that is `0` |
-| `decisions_unread` | how many decisions [`sdlc decide`](#sdlc-decide-id) recorded that your `sdlc ack` does not yet cover. Always present, `0` included |
-| `decisions_unknown` | every story whose record could not be read, so that its decisions are not in `decisions_unread`. Absent where every record reads |
-
-A decision is read once your [`sdlc ack`](#sdlc-ack) covers its story's commit, as the
-[log](#sdlc-log) reads a story. So `decisions_unread` counts every decision of a story under
-way, and those of a committed story whose commit the ack does not cover; with no ack yet, every
-committed story's. It counts the stories the backlog holds and has not dropped: a dropped story
-never commits, so no ack could clear it, and its decisions stay in its `DECISIONS.md` and in
-`sdlc trace --all`. Where there is one or more, status says so on a line of its own, naming each
-story under way with its file, up to three of them and then how many more:
-
-```text
-Decisions: 5 not yet acknowledged (2 in stories committed since your last ack, listed by sdlc log; 2 in US-131 (.sdlc/stories/US-131/DECISIONS.md) and 1 in US-140 (.sdlc/stories/US-140/DECISIONS.md), under way)
-```
-
-A record that cannot be read does not fail status. Its story goes in `decisions_unknown`, the
-line says `at least`, and standard error says which and what to do:
-
-```text
-sdlc: the decisions of US-140 are not counted: .sdlc/stories/US-140/gate-record.json could not be read (<the read error>); they are counted again once it reads, and git history holds the last committed copy of it
-```
-
-An `.sdlc/state/acknowledged` that names no commit git has counts every committed story's
-decisions as not acknowledged, and standard error says so with
-[SDLC-E0047](troubleshooting.md#sdlc-e0047)'s fix.
-
-Where `consolidate.nudge_after` stories (3 unless you set it) have finished
-since the last `/sdlc:consolidate`, status ends with one more line, after
-everything else it prints, saying how many and that a person can run the skill.
-Below that, and where the setting is `0`, status prints what it always has and
-`--json` has no `consolidate` field. The date it counts from is the one in the
-name of the newest `.sdlc/consolidation-<YYYY-MM-DD>.md` in the main checkout,
-which is the same from a story's worktree, and a story counts when it finished
-on a later day by your computer's clock; without such a file, every finished
-story counts. See [the reminder](guides/consolidating-what-the-retros-say.md#the-reminder).
-
-```text
 No iteration running.
 
-  backlog  1 ready · 3 done
-  next up  US-004  Example: refuse a refund above the amount paid
+  backlog  1 todo · 2 ready
+  next up  AUTH-3  Reject expired sessions
 
 A person runs `sdlc start`, or types /sdlc:next in Claude Code, to begin.
+```
+
+In the worktree of a story being worked on, it shows the story:
+
+```console
+$ sdlc status
+AUTH-3  in progress  Reject expired sessions
+
+  dor              pass  criteria are testable
+  analysis         pass  a session token crosses a trust boundary
+  tests_frozen     pass  2 criteria, 1 failing test
+  plan             pass  2 steps
+
+  tests  1 test file frozen at 2026-11-24T09:47:22Z
+  cost   $0.00 of $60.00 (0%)
+
+  staffing  recorded: left out perf
+
+  next   design_review
+  pause  the commit will not pause: the story's risk tier is low, which pre_commit_pause_tiers does not pause; pre_commit_pause_paths lists no path
+  finding    design_review architect F-1 open, important: the plan: AC-2 has no step
+  finding    design_review architect F-2 open, nit, internal/session/session.go:4: the name says nothing
+  to close   sdlc finding close design_review architect F-1 --fixed once it is fixed, or --declined --reason "<why>"
+
+  backlog  1 todo · 1 ready · 1 in progress
+  held     AUTH-3  in "/home/<user>/src/billing/.sdlc/worktrees/AUTH-3", this checkout
+
+Decisions: 2 not yet acknowledged (2 in AUTH-3 (.sdlc/stories/AUTH-3/DECISIONS.md), under way)
+
+A person types /sdlc:next in Claude Code to carry on, or runs `sdlc stop` to put it down.
+```
+
+| Line | What it says |
+| --- | --- |
+| the first line | the story, and `in progress` or `finished`. A finished story has every gate behind it and wants `sdlc stop`. |
+| the gates | each gate recorded so far, its outcome and its note. A gate that was reopened reads `pending`, with why. |
+| `tests` | whether the tests are frozen, how many files, and since when |
+| `cost` | what the story has spent of its budget |
+| `staffing` | whether a staffing is recorded, and which agents it leaves out |
+| `next` | the gate to work now |
+| `pause` | whether the commit will wait for your approval, and why |
+| `finding`, `to close` | each open finding of the design and code reviews, and how to close the first |
+| `declined`, `referred` | each finding that was declined, and each one referred to you, with its reason |
+| `backlog` | how many stories are in each status |
+| `waiting` | a story handed to a person, with the question it asks |
+| `held` | which checkout holds each story |
+| `landing`, `to land` | the story landing now, and each stop waiting to land after it |
+| `next up` | the story `sdlc start` would pick |
+| `Decisions:` | how many decisions the loop made that you have not yet acknowledged, and where to read them |
+| the last line | what to do next |
+
+A story handed to you shows on a `waiting` line, and the last line then tells
+you how to answer:
+
+```text
+  waiting  AUTH-3  pre_commit_approval: the migration has no down step
+```
+
+While a story lands, `status` in every checkout names it, and every stop that
+waits to land after it:
+
+```console
+$ sdlc status
+No iteration running.
+
+  backlog  1 ready · 2 in progress
+  held     AUTH-3  in "/home/<user>/src/billing/.sdlc/worktrees/AUTH-3"
+  held     AUTH-4  in "/home/<user>/src/billing/.sdlc/worktrees/AUTH-4"
+  landing  AUTH-3  sdlc stop, pid 13615, since 2026-11-24T09:56:19Z
+  to land  AUTH-4  sdlc stop, pid 13615, since 2026-11-24T09:56:19Z, waits for AUTH-3
+  next up  AUTH-5  Log failed sign-ins
+
+A person runs `sdlc start`, or types /sdlc:next in Claude Code, to begin.
+```
+
+A `landing` line that begins `none:` means no story is landing: either a stop
+ended without finishing, and the next one takes over by itself, or
+[`sdlc remap`](#sdlc-remap-story) is at work.
+
+**The `pause` line.** Until the commit gate has passed, `status` in the
+story's own checkout says whether the commit will wait for your approval. It
+gives the story's risk tier, and each file the change touches with the
+pattern in
+[`pre_commit_pause_paths`](configuration.md#human_gates) it matched, or says
+that none does. Here a low-tier story has touched a path the project pauses
+on:
+
+```text
+  pause  the commit will pause for a person's approval: the story's risk tier is low, which pre_commit_pause_tiers does not pause; "internal/session/rotate.go" matches "internal/session/**"
+```
+
+Once you have approved the work as it stands, the line says the commit will
+not pause again. Where `status` cannot read something it needs to decide, the
+line says what, and that the commit will pause.
+
+**The `Decisions:` line.** The loop records each
+[implementation decision](the-loop.md#two-kinds-of-decision) it makes with
+[`sdlc decide`](#sdlc-decide-id). `status` counts the ones you have not yet
+acknowledged: every decision of a story under way, and those of a committed
+story until your [`sdlc ack`](#sdlc-ack) covers its commit. The line names up
+to three stories under way, each with its file, and points you to `sdlc log`
+for the committed ones:
+
+```text
+Decisions: 2 not yet acknowledged (2 in stories committed since your last ack, listed by sdlc log)
+```
+
+With nothing to acknowledge, there is no such line. A dropped story's
+decisions are not counted, since no `ack` could ever cover them. They stay in
+its `DECISIONS.md`. Where a story's record cannot be read, the line says
+`at least`, and a line on standard error names the story.
+
+**Other lines you may see.** Where the [`team`](configuration.md#team) section
+turns an agent off, or stops security, the verifier or the code reviewer from
+blocking, `status` says so under `next`. An active story that has gone from the
+backlog reads `(not in the backlog)`: put it back, or run `sdlc stop`. Where
+[`budget.gate_hours`](configuration.md#budget) gives a gate a number of hours
+and the agents have spent longer at it, `status` prints one line about it on
+standard error.
+
+**The consolidation reminder.** Once `consolidate.nudge_after` stories (3
+unless you set it) have finished since the last `/sdlc:consolidate`, `status`
+ends with one more line, which says how many and that you can run the skill:
+
+```text
 3 stories have finished since the last consolidation on 2026-10-20: a person can run /sdlc:consolidate to see what they have in common.
 ```
 
-`"consolidate": {"nudge_after": 0}` in [`.sdlc/config.json`](configuration.md#consolidate)
-is what turns the line off. A line that is missing where you expect one can
-mean a story's record that cannot be read: the count is left out, not made
-short, and nothing else changes, neither the output nor the exit code.
-`SDLC_DEBUG=1` shows why on standard error, and `sdlc doctor` says which record.
+Below `nudge_after` stories, and with the setting at `0`, `status` prints no
+such line and `--json` is without the field.
+[The reminder](guides/consolidating-what-the-retros-say.md#the-reminder) says
+what counts as finished since.
 
-With nothing landing, status prints what it always has:
+**With `--json`.** These are the fields a script reads:
 
-```text
-No iteration running.
+| Field | What it holds |
+| --- | --- |
+| `active`, `title` | the story being worked on. Absent when none is. |
+| `gates` | each recorded gate's outcome |
+| `next_gate` | the gate to work now. Absent when every gate has passed, or no story is active. |
+| `next` | the story `sdlc start` would pick. Present only when nothing is active. |
+| `backlog` | the count of stories in each status |
+| `freeze`, `cost`, `staffing` | the freeze and whether it is `intact`, the spend and the budget, and `none` or `recorded` |
+| `findings`, `referred` | every finding of the active story with its closings, and the referred ones again |
+| `waiting` | every story handed to a person and not yet answered, with its question |
+| `held` | every story a checkout holds, with the `checkout`, and `here` for the one you ran it in |
+| `disabled` | every agent the `team` section turns off |
+| `pre_commit_pause` | whether the active story's commit will wait for you: `will_pause`; `approved`, which is `true` once you have approved the work as it stands; the story's `tier`, and whether `tier_pauses`; `paths`, each `file` the change touches with the `glob` it matched; and `reasons`, the clauses the `pause` line prints. Absent once the commit gate has passed, and in a checkout that does not work the story. |
+| `commands` | the result the implementation gate recorded: `current`, which is `true` while it is for the files and the commands as they are now, the `tree_hash` it ran on, and `results`, each command's `name`, `exit` and `duration_ms`. Absent until the gate has recorded one. |
+| `decisions_unread` | how many decisions you have not yet acknowledged. Always present, `0` included. |
+| `decisions_unknown` | every story whose record could not be read, so that its decisions are not counted. Absent where every record reads. |
+| `landing` | the stop that is landing a story: its `story`, `command`, `since` and `pid`, and `gone` where that process is no longer running |
+| `waiting_to_land` | every stop waiting to land, with the story it waits `for` |
+| `consolidate` | `finished`, the count of stories since the last consolidation, and `last`, its date, which is `null` where there has been none |
+| `not_in_backlog` | `true` when the active story is no longer in the backlog |
 
-  backlog  1 ready
-  next up  US-001  Example: reject invoices with a non-positive total
-
-A person runs `sdlc start`, or types /sdlc:next in Claude Code, to begin.
-```
-
-While a story lands, status in every checkout of the repository names it, its
-stop's process and the time it took the landing lock, and every stop that waits
-to land after it:
-
-```text
-No iteration running.
-
-  backlog  1 ready
-  landing  US-002  sdlc stop, pid 4242, since 2026-10-25T09:00:00Z
-  to land  US-003  sdlc stop, pid 4243, since 2026-10-25T09:01:10Z, waits for US-002
-  next up  US-001  Example: reject invoices with a non-positive total
-
-A person runs `sdlc start`, or types /sdlc:next in Claude Code, to begin.
-```
-
-The `to land` lines come in the order their stops began to wait, which is not
-the order they land in: whichever asks first once the lock is let go takes it.
-A lock whose holder is not running reads `landing  none: sdlc stop US-002 left
-the landing lock, and pid 4242 is not running; a stop can take it from about
-<time>`, and a remap holding it reads `none: sdlc remap <ID> holds the landing
-lock, pid <pid>, since <time>`, because neither is a story landing. A stop shows as
-waiting only while its process runs.
-
-Where the project manager is enabled, a [`staffing`](#sdlc-staffing) line says
-whether one is recorded for the active story and names who it leaves out, and
-`staffing` in `--json` is `none` or `recorded`.
-
-### Linked worktrees
-
-In a repository with linked worktrees, status also lists every story a checkout
-holds, on a `held` line naming the checkout, and `held` in `--json` has one
-entry per story, with its `checkout`, `here` for the one you ran it in, `gone`
-for a checkout that is no longer there, and `contenders` when more than one
-checkout names the story and none holds it. `next up` passes over what another
-checkout holds. A story this checkout names as its own that another holds, or
-that nobody holds, says so on its line, because `sdlc start` here will not carry
-it on, and status then ends with what a person does about it instead of sending
-them to carry on ([more than one checkout](the-loop.md#more-than-one-checkout)).
+[Checking on a story](getting-started.md#checking-on-a-story) shows `status` in
+a first run.
 
 ## `sdlc story list`
 
 See the whole backlog at a glance, and what is holding each story back.
 
-```console
-$ sdlc story list
-$ sdlc story list --json
+```text
+sdlc story list [flags]
 ```
 
-The list marks the story `sdlc start` would choose and shows every story's
-status. A story waiting on a `depends_on` story that is not done names it, and
-says when that one is dropped or not in the backlog, because then it never will
-be.
+`story list` has no flags of its own.
 
-In a repository with linked worktrees, a story a checkout holds ends with where
-it is held, and `held_by` in `--json` names that checkout:
+```console
+$ sdlc story list
+> AUTH-3  ready   1  Reject expired sessions
+  AUTH-4  ready   2  Rotate session tokens  (waiting on AUTH-3)
+  AUTH-5  todo    3  Log failed sign-ins
+
+> is what `sdlc start` would pick.
+```
+
+Each line is a story's id, status, priority and title. A story that waits for
+another names it, and says so when that one is dropped or missing, because
+then it never will be done.
+
+A story that a checkout holds ends with where:
 
 | Ends with | What it means |
 | --- | --- |
 | `(held in "<checkout>")` | another checkout holds it |
 | `(held in "<checkout>", this checkout)` | the checkout you ran it in holds it |
-| `(held in "<checkout>", gone: see /sdlc:release <ID> --reason "...", or sdlc release <ID> --reason "...")` | the checkout that holds it no longer exists ([SDLC-E0051](troubleshooting.md#sdlc-e0051)) |
-| `(held by none: more than one checkout names it ("<checkout>", "<checkout>"))` | several checkouts name it and none holds it until a person runs `sdlc stop` in all but one |
+| `(held in "<checkout>", gone: see /sdlc:release ...)` | the checkout that holds it no longer exists ([SDLC-E0051](troubleshooting.md#sdlc-e0051)) |
+| `(held by none: more than one checkout names it ...)` | several checkouts name it, and none holds it until you run `sdlc stop` in all but one |
 
-The mark is what `sdlc start` would pick in the checkout you run it in, which is
-never a story another checkout holds.
+When nothing can start, the mark is gone and the last lines say why, and what
+to do about it:
+
+```console
+$ sdlc story list
+  AUTH-3  in_progress   1  Reject expired sessions  (held in "/home/<user>/src/billing/.sdlc/worktrees/AUTH-3")
+  AUTH-4  ready         2  Rotate session tokens  (waiting on AUTH-3)
+  AUTH-5  todo          3  Log failed sign-ins
+
+Nothing to start: of 3 stories, 0 done and 0 blocked, and 1 waiting on a dependency that is not done; AUTH-3 is held by another checkout of this repository; a bare start takes only a story marked ready, and it passed over 1 todo story: "AUTH-5".
+To go on, mark a todo story ready once its criteria are settled, or name one with "sdlc start <ID>".
+```
+
+With `--json`, each story in `stories` has `next` where it is the one that
+would start, `blocked_by` where it waits for others, and `held_by` where a
+checkout holds it. [Choose what runs next](guides/writing-stories.md#choose-what-runs-next)
+explains statuses, priorities and dependencies.
 
 ## `sdlc start`
 
-Begin an iteration on the next story, or on the one you name. `/sdlc:next` runs
-this for you, so you will rarely type it yourself.
+Begin an iteration on the next story, or on the one you name. `/sdlc:next`
+runs this for you, so you will rarely type it yourself.
+
+```text
+sdlc start [STORY] [flags]
+```
+
+`start` has no flags of its own.
 
 ```console
 $ sdlc start
-$ sdlc start AUTH-3
+Started AUTH-3  Reject expired sessions
+
+Worktree: "/home/<user>/src/billing/.sdlc/worktrees/AUTH-3"
+Branch: story/AUTH-3
+
+  no gates recorded yet
+
+Next: a person opens Claude Code in the worktree above and types /sdlc:next there to work the story; /sdlc:next typed in a new session in this checkout begins the next story instead.
 ```
 
-With no story named, `start` picks up a story already under way, or takes the
-next `ready` one whose `depends_on` stories are done: resume first, then
-priority, then id. It takes only `ready` stories and never a `todo` one. With
-only `todo` stories left it refuses with
-[SDLC-E0010](troubleshooting.md#sdlc-e0010), saying how many it passed over and
-naming up to five; mark one `ready`, or name it with `sdlc start <ID>`. It
-refuses if an
-iteration is already running on another story; on the same story it resumes and
-changes nothing about the story. With `--json` it reports `resume` and
-`next_gate`, the first gate that has not passed, so a session picking a story
-back up carries on from there, and `session`, the Claude Code session it
-recorded, empty when it ran in none.
+**Which story it picks.** With no story named, `start` first picks up a story
+already under way. Otherwise it takes the next `ready` story whose
+`depends_on` stories are done, by priority and then by id. It takes only
+`ready` stories and never a `todo` one: with only `todo` stories left it
+refuses, says how many it passed over, and names up to five. Mark one `ready`,
+or name it.
 
-Run in Claude Code, it records the session it runs in, in
-`.sdlc/state/session`. That session and its agents are the ones the hook holds
-to the story; every other session in the repository is left alone, except that
-the `sdlc` commands that change the story refuse to run there
-([SDLC-E0048](troubleshooting.md#sdlc-e0048)). Starting or resuming the story
-in another session moves it there. Run outside Claude Code, it records no
-session. A new story then has nothing enforced in any session until one picks
-it up with `/sdlc:next`, and `sdlc status` says so meanwhile. A
-story resumed that way keeps the session already recorded, since the command
-cannot tell that the story has moved.
+Naming a story chooses it over the priority order, and nothing else. A story
+that is dropped, blocked or done, or that waits for a story that is not done,
+is refused as it would have been passed over:
 
-Naming a story picks it over the priority order, and nothing else. A story that
-is `dropped`, `blocked` or marked `done`, or that waits on a `depends_on` story
-that is not done, is refused as it would be passed over
-([SDLC-E0010](troubleshooting.md#sdlc-e0010)).
+```console
+$ sdlc start AUTH-4
+sdlc: "AUTH-4" waits on AUTH-3
 
-A start writes `.sdlc/.gitignore`, which keeps the stories' traces out of git,
-where a project initialised before tracing has none, and leaves one that is
-there alone. Commit it once, between stories or with the story's own commit
-([the trace](the-loop.md#the-trace)).
+  why  a story starts once every story in its depends_on is done
+  fix  finish AUTH-3 first, or take it out of AUTH-4's depends_on
 
-A start that begins a story afresh drops any sections of `CODEMAP.md` stored
-for it in an earlier attempt ([`sdlc codemap write`](#sdlc-codemap-write)). It
-prints nothing about that: a `codemap` event in the story's `gate-record.json`
-is where it shows. A start that picks a story up again drops nothing.
+  SDLC-E0010  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0010
+```
 
-`start` also refuses a story whose gates have all passed, rather than putting
-finished work back in progress. The way back into a finished story is to record
-the gate that failed — see [SDLC-E0033](troubleshooting.md#sdlc-e0033).
+**Where the story is worked.** A new story begins in a worktree of its own,
+`.sdlc/worktrees/<ID>`, on a new branch `story/<ID>` cut from trunk. `start`
+prints both, and your own checkout is left as it was. Open Claude Code in the
+worktree and type `/sdlc:next` there.
+[`git.worktrees`](configuration.md#git) turns this off, and the story is then
+worked in the checkout you ran `start` in.
 
-### Worktrees
-
-With [`git.worktrees`](configuration.md#git) on, the default, a new story begins
-in a worktree of its own. `start` makes `.sdlc/worktrees/<ID>` in the main
-checkout, on a new branch `story/<ID>` cut from the local trunk branch, runs
-`commands.smoke` there, and records the story as held by that worktree, whose
-`.sdlc/state` it writes rather than this checkout's. It says where, under the
-story's title:
+**Picking a story up again.** Run on a story that is already under way,
+`start` prints `Resumed` in place of `Started`, lists the gates recorded so
+far, and changes nothing about the story. From the story's worktree its last
+line reads:
 
 ```text
-Worktree: "/home/dev/project/.sdlc/worktrees/US-001"
-Branch: story/US-001
+Next: a person types /sdlc:next in Claude Code, opened in this checkout or in the worktree above, to work the story there.
 ```
 
-and ends `Next: a person opens Claude Code in the worktree above and types
-/sdlc:next there to work the story; /sdlc:next typed in a new session in this
-checkout begins the next story instead.` A new session opened in the checkout
-start ran in holds no story, so `/sdlc:next` there starts again, and passes
-this story over as held. A Claude Code session that ran start itself holds the
-story, and `/sdlc:next` there carries it on, in this checkout or in the
-worktree.
-Run in the story's worktree, start ends `Next: a person types /sdlc:next in
-Claude Code, opened in this checkout or in the worktree above, to work the
-story there.` With `--json` it adds `worktree`, the worktree's absolute path,
-`branch`, and `main`, the main checkout's absolute path, where the backlog and
-the story's record are kept.
-Picking up a story its worktree holds prints the same path and branch, from the
-main checkout or from the worktree, and makes nothing. A story the main
-checkout holds, or a worktree made by hand, prints neither, and the output is
-as it was with `git.worktrees` false.
+**Sessions.** Run in Claude Code, `start` notes the session it ran in. That
+session and its agents are the ones held to the story, and any other session
+is refused the commands that change it
+([SDLC-E0048](troubleshooting.md#sdlc-e0048)). Starting the story again in
+another session moves it there.
 
-### Starting with more than one checkout
+**More than one checkout.** The checkout that starts a story holds it until
+the story is finished or you run [`sdlc release`](#sdlc-release). A bare
+`start` passes over what another checkout holds. Naming a story that another
+checkout holds is refused, except a story in its own worktree under
+`.sdlc/worktrees/`: named from anywhere, it is picked up there.
+[More than one checkout](the-loop.md#more-than-one-checkout) explains who
+holds what.
 
-In a repository with linked worktrees, the checkout that starts a story holds
-it until it is finished or a person runs [`sdlc release`](#sdlc-release). With
-no story named, start passes over what another checkout holds, and says on
-standard error which story it passed over because the checkout holding it is
-gone, as it is for a single checkout moved while its story was stopped: if this
-checkout was moved from there, what it has not committed is that story's own.
-Naming a story another checkout holds is refused with
-[SDLC-E0050](troubleshooting.md#sdlc-e0050), or
-[SDLC-E0051](troubleshooting.md#sdlc-e0051) when the checkout holding it is
-gone, except a story held in its own worktree under `.sdlc/worktrees/`: named
-in any other checkout, the main checkout included, it is picked up there, in
-its worktree. Picked up in
-another Claude Code session, the story is taken over, and the session that was
-working it is refused the story's `sdlc` commands from then on
-([SDLC-E0048](troubleshooting.md#sdlc-e0048)). A Claude Code session already
-working a story in one checkout is refused another in the next
-([SDLC-E0050](troubleshooting.md#sdlc-e0050)). See
-[more than one checkout](the-loop.md#more-than-one-checkout).
+**When it refuses.**
+
+| It refuses when | Code |
+| --- | --- |
+| no story has that id | [SDLC-E0009](troubleshooting.md#sdlc-e0009) |
+| nothing can start, or the story you named cannot | [SDLC-E0010](troubleshooting.md#sdlc-e0010) |
+| an iteration is already running on another story in this checkout | [SDLC-E0012](troubleshooting.md#sdlc-e0012) |
+| every gate on the story has passed, and it waits to land | [SDLC-E0033](troubleshooting.md#sdlc-e0033) |
+| the story waits for a person's answer | [SDLC-E0036](troubleshooting.md#sdlc-e0036) |
+| another checkout holds the story, or the checkout that held it is gone | [SDLC-E0050](troubleshooting.md#sdlc-e0050), [SDLC-E0051](troubleshooting.md#sdlc-e0051) |
+
+With `--json`, `start` prints `story`, `title`, `resume`, `next_gate` (the
+first gate that has not passed) and `session`, and for a story in a worktree
+`worktree`, `branch` and `main`, the main checkout's path.
+[Stopping and resuming a story](guides/stopping-and-resuming-a-story.md) covers
+picking work back up.
 
 ### What start checks first
 
-Before it begins a new story — not one it is picking up again — it checks that
-trunk is somewhere to start from. With `git.worktrees` on: trunk is not behind
-`origin` when `git.remote` is on
-([SDLC-E0040](troubleshooting.md#sdlc-e0040)), and `commands.smoke` passes in
-the new worktree ([SDLC-E0041](troubleshooting.md#sdlc-e0041)); a worktree that
-cannot be made is [SDLC-E0053](troubleshooting.md#sdlc-e0053), and a refused
-start takes its worktree and branch away again, or says what it could not. With
-it off: HEAD is on
-`git.trunk_branch`, nothing is uncommitted outside `.sdlc/` and the backlog,
-trunk is not behind `origin` when `git.remote` is on, and `commands.smoke`
-passes. Each has its own refusal, from
-[SDLC-E0038](troubleshooting.md#sdlc-e0038) to
-[SDLC-E0041](troubleshooting.md#sdlc-e0041).
+Before it begins a new story, and not one it is picking up again, `start`
+checks that trunk is somewhere to start from:
+
+| It checks that | Otherwise |
+| --- | --- |
+| trunk is not behind `origin`, when `git.remote` is on | [SDLC-E0040](troubleshooting.md#sdlc-e0040) |
+| the worktree can be made | [SDLC-E0053](troubleshooting.md#sdlc-e0053) |
+| `commands.smoke` passes in the new worktree | [SDLC-E0041](troubleshooting.md#sdlc-e0041) |
+
+A start that is refused takes its worktree and branch away again, or says what
+it could not remove.
+
+With worktrees turned off, it checks instead that HEAD is on trunk
+([SDLC-E0038](troubleshooting.md#sdlc-e0038)), that nothing is uncommitted
+outside `.sdlc/` and the backlog
+([SDLC-E0039](troubleshooting.md#sdlc-e0039)), that trunk is not behind
+`origin`, and that `commands.smoke` passes.
 
 ## `sdlc stop`
 
-End the current iteration without recording a result. Don't worry about losing
-work: stopping puts a story down for now, and it is also the last step of a
-finished story, which `stop` then tidies away (or lands, from its worktree).
+End the current iteration. For a story that is not finished, this puts it down
+for now and loses nothing. For a finished story it is the last step: run in the
+story's worktree, `stop` lands it on trunk.
+
+```text
+sdlc stop [flags]
+```
+
+`stop` has no flags of its own.
 
 ```console
 $ sdlc stop
+Stopped the iteration on AUTH-3. Nothing was recorded; `sdlc start` picks it up again.
 ```
 
 Stopping does not undo anything. The gates already recorded stay recorded, the
-story stays in progress, and starting again resumes it.
+story stays in progress, its tests stay frozen, and starting again resumes it.
+With no iteration running, `stop` says `No iteration was running.` and exits 0.
 
-A story whose gates have all passed is a different case, and `stop` says so: it
-is done, the test freeze it was holding is lifted, what the hook wrote down about
-its commits is removed from the repository's git directory, and the next
-`sdlc start` moves on to the next story instead of reopening it. An unfinished
-story keeps its freeze and what was written down, so stopping and starting again
-cannot be a way round either.
+**Who may stop.** You may, at any time, in your own terminal. The session
+working a story is refused `sdlc stop` while the story still has a gate to
+pass, so that an agent cannot walk away from one. Any other Claude Code session
+is refused too, and changes nothing
+([SDLC-E0048](troubleshooting.md#sdlc-e0048)).
 
-In a checkout whose `.sdlc/state/active` names a story another checkout holds,
-or that more than one checkout names, stop puts this checkout's copy down and
-writes nothing to the story's record, and its last line says where the story
-carries on rather than that `sdlc start` picks it up here.
+**The consolidation reminder.** Where the stop ended an iteration, and enough
+stories have finished since the last `/sdlc:consolidate`, `stop` ends with the
+same line `sdlc status` does, at the same threshold, counting the story it has
+just finished.
 
-From a Claude Code session other than the one working the story, `stop` refuses
-with [SDLC-E0048](troubleshooting.md#sdlc-e0048) and changes nothing.
+That line is text only: `stop --json` is unchanged, with no field for it, and
+the line is never on standard error.
 
-Where an iteration ended and `consolidate.nudge_after` stories or more have
-finished since the last `/sdlc:consolidate`, `stop` ends with the same line
-`sdlc status` does, counting the story it has just finished. It is text only:
-`--json` prints what it always did, with no field and no line, and the line is
-never on standard error. It is printed after:
-
-- `Ended the iteration on <ID>. Every gate passed, ...`;
-- `Stopped the iteration on <ID>. Nothing was recorded, ...`, and the lines that
-  say the story is held by another checkout, named by more than one, or held by
-  one that is gone;
-- the lines of a story landing, as the last line on standard output, so before
-  the SDLC-E0076 warning on standard error.
-
-It is not printed after `No iteration was running.`, which includes the stop
-that finds `.sdlc/state/active` unusable; after a refusal, of any kind; or by a
-stop that finds the story already landed by another. Below the threshold, and
-with `nudge_after` at `0`, the output is exactly what it was. Nothing in a
-failed count changes a stop: a record that cannot be read leaves the line out.
+With `--json`, `stop` prints `ok`, `story`, `was_active` and `done`, which is
+`true` for a finished story.
+[Put a story down](guides/stopping-and-resuming-a-story.md#put-a-story-down)
+explains when to stop and what a stopped story keeps.
 
 ### Landing a story from its worktree
 
-In a story's own worktree, `.sdlc/worktrees/<ID>`, with every gate passed, stop
-**lands** the story instead: it moves trunk to the story's commits by
-fast-forward, and the story is done
-([the loop](the-loop.md#done-when-it-lands) lists what it checks first). The
-same holds with no iteration running, for a finished story the worktree holds,
-such as one a person answered for after an escalation.
+In a story's own worktree, with every gate passed, `stop` lands the story: it
+moves trunk to the story's commits by fast-forward, and the story is done.
 
 ```console
 $ sdlc stop
-sdlc: running commands.test on 8a0e5d6c1f2b in .sdlc/worktrees/US-001
-main moved from 3f1c2a9d4b7e to 8a0e5d6c1f2b by fast-forward; the files in "/home/dev/project", which has main checked out, moved with it.
-The backlog and US-001's record are changed in the main checkout and not committed.
-Ended the iteration on US-001. Every gate passed, so the story is done and `sdlc start` moves on to the next one.
-Removed .sdlc/worktrees/US-001, with the files git ignored in it, and story/US-001.
+main moved from 27367e1d65c8 to 8edf4f0e2a43 by fast-forward; the files in "/home/<user>/src/billing", which has main checked out, moved with it.
+Landed on the result sdlc recorded at Gate 5 for tree 571ae232889d: commands.build, commands.test, commands.lint, commands.fmt_check, commands.coverage passed on it, so none ran again.
+The backlog and AUTH-3's record are changed in the main checkout and not committed.
+Ended the iteration on AUTH-3. Every gate passed, so the story is done and `sdlc start` moves on to the next one.
+CODEMAP.md on main is up to date at 646584db7109, in a commit of its own after the story's (adds "internal/session", replaces "internal/billing").
+Removed .sdlc/worktrees/AUTH-3, with the files git ignored in it, and story/AUTH-3.
 ```
 
-The `running` lines go to standard error, one for each configured command the
-landing runs, and only where the story was put onto a trunk that moved, was
-rebased, or its change is not the one reviewed
-([configuration](configuration.md#at-landing)). Where another story is landing,
-a line on standard error names the stop that holds the landing lock and says
-how long this one waits for it, and `sdlc status` in any checkout shows both.
-Where that stop's process is not running, the line says so, with the age its
-lock is taken at, two minutes without a refresh, and about when that is; the
-waiting stop takes it then, and nobody removes it by hand. Where trunk had moved on, a line says the
-story's commits are being put onto it, and the stop's last lines say from which
-commit to which:
-
-```text
-sdlc: main is at 5b2e9c7a1d3f; putting story/US-001's commits onto it in .sdlc/worktrees/US-001
-Replayed US-001 from 8a0e5d6c1f2b onto main at 5b2e9c7a1d3f; story/US-001 is now c4d1e8f02a6b.
-```
-
-Where test files were accepted as trunk's, a line says how many and names them
-([the loop](the-loop.md#done-when-it-lands)). Where no checkout has
-trunk checked out, the first line ends `no checkout has main checked out, so
-only the branch moved.` instead. Where trunk already held the story, it says
-`US-001 was already on main at 8a0e5d6c1f2b; recorded it as landed.` Where
-some of the reviewed change was on trunk before, a line follows that names the
-commit it began at and the range the record keeps as what landed. With no
-iteration running, the third line starts `Every gate on US-001 passed` instead
-of `Ended the iteration`. A worktree holding changes nobody committed, or one a
-person locked, is kept, and the last line says so, names the files, and sends
-you to `sdlc doctor`:
-
-```text
-Kept .sdlc/worktrees/US-001 and story/US-001: it holds changes nobody committed, "notes.txt". `sdlc doctor` in the main checkout says what to do with it.
-```
-
-With `--json` these lines go to standard error, and standard output has `ok`,
-`story`, `was_active` and `done`, which is `true`.
-
-A story whose commits add the markers of an unresolved conflict is refused
-before anything moves, under [SDLC-E0080](troubleshooting.md#sdlc-e0080), with the
-files and the lines named. It is asked of the story as it stands, as the stop
-puts it onto a trunk that moved, and again after the commands, and not of a story
-that trunk already holds. The paths where the lines are meant to be come from
-**trunk's** `paths.conflict_markers_intended`
-([configuration](configuration.md#pathsconflict_markers_intended)).
-
-### The story's sections of `CODEMAP.md`
-
-Where the story's bookkeeper stored sections with
-[`sdlc codemap write`](#sdlc-codemap-write), the stop puts them into trunk's
-`CODEMAP.md` once the story's own commits are there, in one commit that changes
-no other path, and a line says so before the worktree is removed:
-
-```text
-CODEMAP.md on main is up to date at 9e4b7d2c6a1f, in a commit of its own after the story's (adds "internal/refund").
-```
-
-The commit is `docs: map <ID>`, the story's record names it as `codemap_commit`,
-and with `--json` standard output has `codemap_commit` too. It is outside the
-range the record keeps as the story's own. Where trunk has no `CODEMAP.md` the
-commit makes one. A story that stored nothing lands as it always did, with no
-commit added and nothing said.
-
-A replaced section is applied where trunk still holds it as the bookkeeper read
-it, whatever text was stored, so a section sent unchanged beside one that
-changes does not stand in the other's way. Where trunk's map already holds
-every stored section exactly, there is nothing to commit: the stop says so
-under SDLC-E0076, and `sdlc remap <ID> --drop` removes the kept copy.
-
-Where the change cannot be made or committed, **the story has still landed**
-and the stop still exits 0. It prints
-[SDLC-E0076](troubleshooting.md#sdlc-e0076) on standard error as a warning,
-naming the section or the path in the way and what a person runs:
-
-```text
-sdlc: US-001 has landed, and its change to CODEMAP.md is not on main
-
-  why  the sections do not apply to the map as it is: the section "internal/billing" in the map is no longer what the bookkeeper read. The landing stands, and the change is kept at "/home/dev/project/.git/sdlc/codemap/US-001.md"
-  fix  a person, in the main checkout, chooses, typing the slash command in Claude Code or the terminal command in their own terminal: "/sdlc:remap US-001 --replace", or "sdlc remap US-001 --replace" puts the kept sections over what main holds under those headings; "/sdlc:remap US-001 --drop", or "sdlc remap US-001 --drop" discards the kept change, for after they have edited CODEMAP.md themselves; and "/sdlc:remap US-001", or "sdlc remap US-001" makes the change once main's sections are again what the bookkeeper read; an assistant says so and runs none of these
-
-  SDLC-E0076  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0076
-```
-
-With `--json`, standard output is still the one document, with `codemap_kept`
-set to `true`. Until a person has run [`sdlc remap`](#sdlc-remap-story), every
-`sdlc` command run in the repository except that one, `sdlc help` and
-`sdlc version` begins with a line on standard error that names the story and
-the command:
-
-```text
-sdlc: US-001 has landed, and its change to CODEMAP.md is not on main: a person runs `/sdlc:remap US-001`, or `sdlc remap US-001` in their own terminal (the change is kept at "/home/dev/project/.git/sdlc/codemap/US-001.md"; `sdlc help remap` says what the command does)
-```
-
-The same line is what tells you of a stop that was killed between landing the
-story and committing its sections.
-
-Every refusal leaves trunk where it was, and ends with `Nothing landed: main is
-unchanged, and the iteration on US-001 is still running`, or, with no iteration
-running, `... and US-001 waits in .sdlc/worktrees/US-001`. The story's commits
-do not apply onto a trunk that moved:
-[SDLC-E0075](troubleshooting.md#sdlc-e0075). Trunk was rewritten, or moved
-while the landing ran: [SDLC-E0054](troubleshooting.md#sdlc-e0054). Another
-story was still landing after eight minutes:
-[SDLC-E0006](troubleshooting.md#sdlc-e0006). The worktree, its
-commits or a command are not fit to land:
-[SDLC-E0055](troubleshooting.md#sdlc-e0055). A checkout with trunk checked out
-has changes nobody committed that the fast-forward would write over:
-[SDLC-E0056](troubleshooting.md#sdlc-e0056). The change is not the one the
-reviewers saw: [SDLC-E0029](troubleshooting.md#sdlc-e0029). Another stop is
-landing it already: [SDLC-E0006](troubleshooting.md#sdlc-e0006). The others each
-have an "At landing" paragraph in [troubleshooting](troubleshooting.md).
-
-Stop in a story's worktree always lands a finished story. To put one down
-without landing it, hand it to a person with
-[`sdlc escalate`](#sdlc-escalate).
-
-## `sdlc approve`
-
-A person's answer to an escalation. When `sdlc status` says a story is waiting
-for you, this is the command that lets it carry on.
-
-In Claude Code: `/sdlc:approve`, with the same arguments. You type it; the model cannot.
-
-```console
-$ sdlc approve US-001
-$ sdlc approve US-001 --reject "the migration has no way back"
-```
-
-| Flag | What it does |
+| Line | What it tells you |
 | --- | --- |
-| `--reject` | send the work back instead, saying why |
+| `main moved from ...` | Trunk now holds the story's commits. Where no checkout has trunk checked out, it ends `so only the branch moved`. |
+| `Landed on the result ...` | Your commands were not run again, because the implementation gate already ran them on exactly these files. Where the landing ran them itself, there is no such line. |
+| `The backlog and ...` | The story's status and record changed in the main checkout. They are yours to commit. |
+| `Ended the iteration ...` | The story is done. |
+| `CODEMAP.md on main ...` | The sections the bookkeeper stored are on trunk, in a commit of their own named `docs: map <ID>`. A story that stored none has no such line. |
+| `Removed ...` | The worktree and the branch are gone. A worktree with changes nobody committed is kept, and the line says so and names the files. |
 
-Name the story. Without an id, `approve` answers for the story being worked on,
-and `sdlc escalate` ends the iteration, so after an escalation there is none
-and it is refused with [SDLC-E0011](troubleshooting.md#sdlc-e0011). The answer
-goes on the record with the tree it was given for, the story goes back to
-`in_progress`, and `sdlc start` picks it up again.
+The same holds with no iteration running, for a finished story the worktree
+holds, such as one you answered for after an escalation.
+[Done when it lands](the-loop.md#done-when-it-lands) lists what `stop` checks
+before it moves trunk.
 
-Once a story has been committed in its own worktree (the commit gate has passed
-on it at least once), the answer also records the commit the story's branch is
-at, as `commit` on the approval and in the `--json` output. Where the story
-waits for a person, by its tier or a path its change touches, an approving
-answer prints it:
+**When the commands run again.** The landing runs your configured commands
+itself where the files that would land are not the ones the implementation
+gate ran them on, or where trunk's commands or thresholds differ from the
+ones it ran ([At landing](configuration.md#at-landing)). It first says why,
+on a line of standard error that begins
+`sdlc: the configured commands run again because`, and then prints a
+`running` line for each command.
 
-```text
-This answer is also for the story's commits as they stand: story/US-001 is at 3f2a9c1d7e5b.
-```
-
-It goes on to say so where they are not the commits the story was held to, with
-the command that shows them and, where there is one, the `git reset --hard`
-that puts the story back on the commit the gate recorded. With the worktree on
-another branch, or on none, the answer names no commit and says that instead.
-[What your approval covers](guides/human-approval-gates.md#what-your-approval-covers)
-has the rest.
+**When trunk has moved on.** `stop` puts the story's commits onto the newer
+trunk and runs your configured commands on the result. A line that begins
+`Replayed` then names the commit the story was moved from and the trunk
+commit it now sits on.
 
 > [!WARNING]
-> Run it in your own terminal. The hook refuses it from a tool call in any
-> session while a story waits for an answer or is under way, because an agent
-> that could answer would be approving its own work.
+> Putting a story onto a newer trunk makes its commits again. That runs the
+> repository's git filters with the privileges of whoever runs the stop, and
+> the new commits are not signed.
 
-If nothing on the story is waiting for a decision, `approve` is refused with
-[SDLC-E0035](troubleshooting.md#sdlc-e0035). A story held by another checkout is
-refused with [SDLC-E0050](troubleshooting.md#sdlc-e0050), and `--reject` with no
-reason is [SDLC-E0034](troubleshooting.md#sdlc-e0034).
+**When another story is landing.** `stop` waits its turn, says on standard
+error which story it waits for, and `sdlc status` in any checkout shows both.
+After eight minutes it gives up
+([SDLC-E0006](troubleshooting.md#sdlc-e0006)). A stop that died part-way is
+taken over after two minutes, and you remove nothing by hand.
 
-After a `work_by_hand` hand-over, approving does not do the gate's work: `approve` says which
-gate is open and that you record it with `sdlc gate <gate> pass --story <ID>`, after doing its
-work by hand. Carrying on before then hands the story over again at the same gate. Neither a
-`work_by_hand` nor an `agent_failed` approval answers the pre-commit question: a story that
-pauses, by its tier or a path its change touches, is still asked before its commit, and `approve`
-says so. Where the change cannot be measured from where `approve` runs, it says the question may
-still be asked, if the change touches a path in `pre_commit_pause_paths`. Where what pauses the
-story could not all be read, it says the question may still be asked, whatever the change touches.
+**When the map does not apply.** Where the story's sections cannot be put into
+trunk's `CODEMAP.md`, the story has still landed and `stop` still exits 0. It
+prints [SDLC-E0076](troubleshooting.md#sdlc-e0076) on standard error as a
+warning, and every `sdlc` command reminds you until you have run
+[`sdlc remap`](#sdlc-remap-story).
 
-## `sdlc unfreeze`
+**When it refuses.** Every refusal leaves trunk where it was, and ends
+`Nothing landed`.
 
-Lift the test freeze, on the record. Only a person does this, and only when a
-frozen test is wrong.
-
-In Claude Code: `/sdlc:unfreeze`, with the same arguments. You type it; the model cannot.
-
-```console
-$ sdlc unfreeze --reason "AC-2's test asserted the old error message"
-```
-
-| Flag | What it does |
+| It refuses when | Code |
 | --- | --- |
-| `--reason` | why the frozen tests have to change. Required |
+| the story's commits do not apply onto a trunk that moved | [SDLC-E0075](troubleshooting.md#sdlc-e0075) |
+| trunk was rewritten, or moved while the landing ran | [SDLC-E0054](troubleshooting.md#sdlc-e0054) |
+| another stop is landing this story, or another story was still landing after eight minutes | [SDLC-E0006](troubleshooting.md#sdlc-e0006) |
+| the worktree, its commits or a configured command is not fit to land | [SDLC-E0055](troubleshooting.md#sdlc-e0055) |
+| the checkout that has trunk checked out holds changes the fast-forward would write over | [SDLC-E0056](troubleshooting.md#sdlc-e0056) |
+| the change is not the one the reviewers saw | [SDLC-E0029](troubleshooting.md#sdlc-e0029) |
+| the story's commits add the markers of an unresolved conflict | [SDLC-E0080](troubleshooting.md#sdlc-e0080) |
 
-> [!WARNING]
-> Run it in your own terminal. The hook refuses it from a tool call while a
-> story is under way or waiting for an answer, because lifting the freeze is the
-> move an agent would make to reach green.
+`stop` in a story's worktree always lands a finished story.
+[Keep a finished story off trunk](guides/stopping-and-resuming-a-story.md#keep-a-finished-story-off-trunk)
+says what to do when you are not ready for that.
 
-Without `--reason` it is refused with
-[SDLC-E0026](troubleshooting.md#sdlc-e0026). With no freeze to lift, or a freeze
-that belongs to another story, it is refused with
-[SDLC-E0023](troubleshooting.md#sdlc-e0023). It lifts the freeze of the story
-being worked on, so with no iteration running it is refused with
-[SDLC-E0011](troubleshooting.md#sdlc-e0011). After an escalation, which ends
-the iteration, answer with `sdlc approve <ID>` and run `sdlc start <ID>` first.
-
-> [!NOTE]
-> The reason is required because that is the whole point. Lifting the freeze is
-> sometimes right, when a test encoded the wrong behaviour, and it is also exactly
-> the move an agent would make to reach green. Recording why is what tells the
-> two apart.
-
-Unfreezing also sends the story back to Gate 3. The tests are about to change, so
-`tests_frozen`, and every gate passed after it, go back to `pending` with the
-reason as their note. They are listed under `reopened`, in `--json` as well.
-
-## `sdlc remap STORY`
-
-Put a landed story's kept change to `CODEMAP.md` on trunk, or drop it. You need
-it only after a stop has said
-[SDLC-E0076](troubleshooting.md#sdlc-e0076), or after a command has begun with
-the line that names this one: the story has landed, and the sections its
-bookkeeper stored are still kept at `.git/sdlc/codemap/<ID>.md`. The kept
-change is that stored set, byte for byte, and both lines print the file's full
-path. Read the file before you run this: the commit is made from it, nobody
-reviewed it, and a session that holds no story can write it.
-
-In Claude Code: `/sdlc:remap`, with the same arguments. You type it; the model cannot.
-
-```console
-$ sdlc remap US-001
-CODEMAP.md on main is up to date at 9e4b7d2c6a1f, in a commit of its own after the story's (adds "internal/refund").
-```
-
-| Flag | What it does |
-| --- | --- |
-| `--replace` | put the kept sections over whatever trunk's map holds under their headings |
-| `--drop` | discard the kept change and commit nothing |
-
-With no flag it makes the change the stop would have made, by the same checks:
-one commit of `CODEMAP.md` alone on trunk's tip, named on the story's record.
-It applies only where every section still applies, and otherwise refuses with
-SDLC-E0076 and names each section that does not: an added one whose heading
-trunk's map now has, or a replaced one whose text on trunk is no longer what
-the bookkeeper read. It refuses under `--replace` as well a section of trunk's
-map whose end cannot be told, because it holds a heading written by
-underlining or a comment left open: edit the map yourself and use `--drop`.
-Nothing is committed and the change stays kept, however often you run it.
-
-Where trunk's map already holds every kept section exactly as it was stored,
-which is what a stop killed just after its commit leaves, neither form has
-anything to commit. Both say so, and `--drop` ends it and loses nothing.
-
-Then the choice is yours. `--replace` puts each kept section in the place of
-the one trunk has by that heading, whoever wrote that one, and applies the rest
-as the plain form does; what trunk held stays in history. `--drop` removes the
-kept change with no commit, for when you have edited `CODEMAP.md` yourself or
-the change is no longer wanted. Each prints the headings it applied or dropped,
-and the record's `codemap` event says which form was used.
-
-Where something else was in the way (changes nobody committed to `CODEMAP.md`
-in the checkout that has trunk checked out, no committer configured, a
-directory or a link where the file goes), put that right and run the plain
-form. `--replace` does not help there, and `--drop` would throw the change
-away.
-
-> [!WARNING]
-> Run it in your own terminal. The hook refuses it from a tool call in every
-> session, whatever follows the word, and refuses `sdlc remap --help` with it;
-> `sdlc help remap` prints the help.
-
-The commit is made by `sdlc` from the kept text. It is not signed, no hook of
-the repository runs for it, and no reviewer has read it, which its message
-says. It moves trunk, as any commit does, so a story held in a checkout of
-trunk has to take it in before it lands
-([SDLC-E0046](troubleshooting.md#sdlc-e0046)).
-
-It waits for a landing in progress, as a stop does, and says whose. A story
-that has not landed, one with nothing kept, and one whose change is already on
-trunk are refused with [SDLC-E0077](troubleshooting.md#sdlc-e0077). A kept
-file that is no longer a set of sections is refused with
-[SDLC-E0078](troubleshooting.md#sdlc-e0078) by the forms that commit, and
-`--drop` still removes it. With `--json`, standard output has `ok`, `story`,
-and `codemap_commit` or `dropped`.
-
-## `sdlc release`
-
-Let a story go from the checkout holding it, so that any checkout can start it.
-You will want this when a worktree was deleted or a story should move somewhere
-else.
-
-In Claude Code: `/sdlc:release`, with the same arguments. You type it; the model cannot.
-
-```console
-$ sdlc release US-001 --reason "the worktree it was started in was deleted"
-Released US-001: the checkout at "/home/dev/project-wt" no longer holds it. "sdlc start US-001" picks it up in any checkout.
-```
-
-| Flag | What it does |
-| --- | --- |
-| `--reason` | why the story is moving to another checkout. Required |
-
-Every checkout of a repository, the main checkout and each linked worktree, works
-the one backlog. A story is held by the checkout that started it until it is
-finished or dropped, and no other checkout can start it, record a gate for it, or
-answer for it ([SDLC-E0050](troubleshooting.md#sdlc-e0050)). Release it when that
-checkout is gone ([SDLC-E0051](troubleshooting.md#sdlc-e0051)), or when you want
-the story worked somewhere else.
-
-> [!WARNING]
-> Run it in your own terminal. The hook refuses it from a tool call in any
-> session, because an agent that could run it could take another checkout's
-> story.
-
-It refuses while an
-iteration is running on the story ([SDLC-E0012](troubleshooting.md#sdlc-e0012)):
-`sdlc stop` in the checkout named ends it first. A story nothing holds is not an
-error: it says `Nothing to release` and changes nothing.
-
-Nothing is moved. Anything the checkout that held the story has not committed
-stays there, and the output says so while that checkout exists. One thing is
-dropped: sections of `CODEMAP.md` stored for the story with
-[`sdlc codemap write`](#sdlc-codemap-write), which belonged to the attempt that
-is over. The output does not say so; a `codemap` event in the story's
-`gate-record.json` does, and no copy is kept. The reason goes
-on the story's record; the checkout's path does not. `sdlc start` and
-`sdlc approve` then say that work the old checkout had not committed stayed
-with it, and that if this checkout is that one, moved here, the work is here. A
-freeze does not move either: in a checkout that picks the story up without it,
-`sdlc unfreeze --reason ...` lifts it and `sdlc freeze` takes it again. Release
-says so only where the checkout it runs in does not hold the story's freeze. A
-checkout that was moved took its freeze with it, and start and approve then say
-nothing about where the work is. In `--json` the output is `ok`, `story` and
-`checkout`, the checkout that held it, absent when none did.
+With `--json` the lines above go to standard error. Standard output also has
+`codemap_commit` where the map was committed, and `codemap_kept` set to `true`
+where it could not be.
 
 ## `sdlc log`
 
 Look back over the stories committed to trunk, and what each one went through.
 Reach for it when you want to review what the loop landed while you were away.
 
+```text
+sdlc log [flags]
+```
+
+| Flag | What it does |
+| --- | --- |
+| `--since` | list the stories committed after this commit (a hash, a tag, or a name like `HEAD~20`) instead of after the last one acknowledged |
+| `--all` | list every committed story, whatever has been acknowledged. Not together with `--since`. |
+
+The log has one entry for each story whose commit gate has passed, oldest
+first. It changes nothing.
+
 ```console
 $ sdlc log
-$ sdlc log --since HEAD~20
-$ sdlc log --all --json
-```
-
-| Flag | What it does |
-| --- | --- |
-| `--since` | list the stories committed after this commit — a hash, a tag, or a name like `HEAD~20` — instead of after the last one acknowledged |
-| `--all` | list every committed story, whatever has been acknowledged. Not together with `--since` |
-
-The log has one entry per story whose commit gate has passed, oldest first: the
-commits it landed in, how many rounds each gate's reviews took, every block, the
-counts each review gave, and what is worth a second look. That means a freeze lifted with `sdlc unfreeze`,
-gates reopened, a question handed to a person and whether it was answered, and
-what the story cost. It changes nothing.
-
-The log starts after the last commit a person acknowledged with
-[`sdlc ack`](#sdlc-ack), the one `.sdlc/state/acknowledged` names: a story whose
-commits end in that commit's history has been read. With nothing acknowledged,
-it lists every story. A file that names no commit git has is refused —
-[SDLC-E0047](troubleshooting.md#sdlc-e0047) — rather than read as nothing
-acknowledged.
-
-A review that gave a count has a row of its own, one per round, `review_counts` in
-`--json`. It prints only the counts the review gave, and an old review has no row:
-
-```console
-  counts     design_review architect (round 1): 2 important, 3 nits
-  counts     code_review code-reviewer (round 1): 3 nits
-```
-
-Each finding the story's reviews listed has a line of its own, `findings` in `--json`, with
-its state and the reason of its latest closing; `--json` has every closing, with its time and
-session:
-
-```console
-  finding    design_review architect F-1 fixed, important: the plan: AC-3 has no step
-  finding    design_review architect F-2 declined, nit, internal/invoice.go:12: the name says nothing; reason: the name is the domain's word
-  finding    design_review architect F-3 referred, nit, docs/elsewhere.md: a stale sentence on another page; reason: another page, and the person should see it
-```
-
-A story whose commit gate last passed with nothing pausing it for a person has a
-`no pause` line, `landed_without_pause` in `--json`, with the reasons the gate
-gave: its tier, and that no file matched `pre_commit_pause_paths`. Where a
-person approved the story's work after that pass, as the landing asks of a
-story rebased or changed, the line says so and when, and is kept:
-
-```console
+27367e1d65c8..8edf4f0e2a43  AUTH-3  Reject expired sessions
+  rounds     tests_frozen 1 · design_review 2 · verifier_review 1 · code_review 2
+  blocks     1: design_review architect (round 1)
+  counts     design_review architect (round 1): 1 important, 1 nits
+  counts     code_review code-reviewer (round 1): 2 nits
+  finding    design_review architect F-1 fixed, important: the plan: AC-2 has no step
+  finding    design_review architect F-2 declined, nit, internal/session/session.go:4: the name says nothing; reason: the name is the domain's word
+  finding    code_review code-reviewer F-1 referred, nit, docs/elsewhere.md: a stale sentence on another page; reason: another page, and the person should see it
+  finding    code_review code-reviewer F-2 fixed, nit, internal/session/session.go:4: the comment restates the code
+  reopened   design_review, implementation, verification reopened: plan was recorded fail
+  reopened   commit, retro reopened: code_review was recorded fail
+  failed analysis researcher: "it returned nothing"
+  failed analysis researcher: "it returned nothing"
   no pause   the commit gate passed with no pause for a person: the story's risk tier is low, which pre_commit_pause_tiers does not pause; pre_commit_pause_paths lists no path
+  decided    analysis by researcher: "Is a token that expires this very second expired?" -- chose "expired", because "the check runs after the instant it names"
+  decided    plan by implementer: "Where does the expiry check live?" -- chose "internal/session", because "the session store is never read there"
+  escalated  pre_commit_approval: the migration has no down step (answered)
+  staffing   project-manager: asked for sonnet at medium -- "the staffing is looked at again after the analysis"; "a short story to read"
+  staffing   researcher: asked for opus at medium -- "every story is analysed"; "its first pass missed the callers"
+  staffing   sdet: asked for sonnet at medium -- "every story has frozen tests"; "two criteria, one handler"
+  staffing   implementer: asked for sonnet at medium -- "every story is implemented"; "a small change in one package"
+  staffing   verifier: asked for opus at high -- "every story is verified"; "the criteria turn on an ordering that is easy to misread"
+  staffing   bookkeeper: asked for haiku at low -- "every story has a retro"; "a short retro"
+  staffing   architect: asked for sonnet at medium -- "the plan touches the session middleware"; "one boundary to check"
+  staffing   security: asked for opus at high, a person chose -- "the story is about authentication"; "this one touches the installer"
+  staffing   red-team: asked for sonnet at medium -- "the story is about authentication"; "a short plan"
+  staffing   perf: left out -- "nothing here is on a hot path"
+  staffing   human-advocate: asked for sonnet at low -- "the 401 response is what a user sees"; "one response to read"
+  staffing   code-reviewer: asked for sonnet at medium -- "every story's diff is reviewed"; "a small diff"
+  staffing   test-reviewer: asked for sonnet at medium -- "the tests are read before they are frozen"; "one test file"
+  staffing   amended 2026-11-24T09:47:21Z  perf: needed -> left out -- "nothing here is on a hot path" (staffing amend)
+  staffing   amended 2026-11-24T09:47:21Z  researcher: sonnet at medium -> opus at medium -- "its first pass missed the callers" (staffing amend)
+  staffing   amended 2026-11-24T09:47:21Z  security: sonnet at high -> opus at high -- "this one touches the installer" (person)
+  staffing   2026-11-24T09:47:21Z  staffing_set: 13 agents needed, 0 left out; staffing changes on the record before this: 0
+  staffing   2026-11-24T09:47:21Z  staffing_amend: perf: needed -> left out
+  staffing   2026-11-24T09:47:21Z  staffing_amend: researcher: sonnet at medium -> opus at medium
+  staffing   2026-11-24T09:47:21Z  staffing_assign: security: sonnet at high -> opus at high
+  spent      $32.84
 ```
 
-Each implementation decision the loop recorded with [`sdlc decide`](#sdlc-decide-id) has a
-line of its own, `decisions` in `--json`, with the gate it was taken before, who took it, the
-question, what was chosen and why. The story's `DECISIONS.md` has the options it weighed:
-
-```console
-  decided    plan by implementer: "Which file holds the parser?" -- chose "internal/parse", because "it keeps the reader out of the CLI"
-```
-
-### How a story's range is found
-
-The range is the one the commit gate recorded; see
-[`sdlc gate`](#sdlc-gate-gate-status). For a story that landed from its
-worktree, it is the commits that reached trunk, as they are after any rebase,
-and it prints the same in every checkout. The record's `landed` event says how
-trunk moved, and, where some of the reviewed change was on trunk before the
-landing, the commit it began at. A story committed by an `sdlc` that did
-not record one is found by its commit messages instead: the newest commit in
-HEAD's history whose message names the story's id as a whole word ends the
-range, the commit before the oldest one starts it, and the entry says the range
-was inferred. A later commit that names the id, such as `Revert US-001`, moves
-that end, and can bring a story already acknowledged back into the log. When no
-message names the story either, its range is `unknown`, and nothing is guessed.
-A story whose commit gate recorded no range on purpose, because no single range
-holds only the commits the loop watched it land, is `unknown` too, and says so:
-`range      unknown: the loop watched this story's commits, but no single range
-holds only them`, with `range_unknown` in `--json`. Its commit messages are
-not read for it. A recorded range whose commit gate saw HEAD past its end
-says so beneath it, in the gate's own words — `range      head is <head>, past
-<end>: nothing that landed after <end> was watched` — with the full HEAD as
-`head_past_commit` in `--json`. A story that cannot be placed — its range is
-unknown, or ends in a commit that is not on this branch (`off_branch`) or not in
-this repository (`missing`) — is always listed.
-
-In `--json`, `range_source` is `record`, `message` or `unknown`, and
-`since_source` says where the log started: `acknowledged`, `flag` for
-`--since`, `all` for `--all`, or `none` when nothing is acknowledged. `since` is
-the full commit it started after, and `spent_usd` is always there, `0` for a
-story with no spend recorded.
-
-An entry for a story with a [staffing](#sdlc-staffing) has a `staffing` line
-for each agent — what it was asked for, or that it was left out, and why — and
-one for each change made to it. After them comes the record's own line for each
-time the staffing was recorded, amended or assigned, with when: those lines stay
-when a staffing is lost or recorded a second time, and a second recording says
-how many changes came before it. In `--json` that is `staffing`, with `agents`
-and `amendments` as [`sdlc staffing show`](#sdlc-staffing-show) gives them, and
-`staffing_events`.
-
-An entry for a story that is not finished, in a repository with linked
-worktrees, names the checkout that holds it on a `held` line, and as `held_by`
-in `--json`.
-
-> [!WARNING]
-> A range is what the loop saw the story's session land, as far as the hook could
-> tell a command was a commit: a person's commit made in the same window is left
-> out of it, and a story whose commits somebody else's sits between has no range at
-> all. It is not proof, and it is not complete: a commit the hook did not watch is
-> missing from it, and a range recorded where the hook watched nothing is the
-> whole window, which can hold anybody's commits.
-> [Reviewing what landed on trunk](guides/reviewing-what-landed-on-trunk.md#ranges-to-read-with-care)
-> says what to read with care. A story reopened after it was committed spans
-> everything that landed in between, unless it was put onto a later trunk commit.
-> It is a list to read, not a list to revert.
-
-To go through the log with the assistant, run `/sdlc:trunk-review`: see
-[Reviewing what landed on trunk](guides/reviewing-what-landed-on-trunk.md).
-
-## `sdlc ack`
-
-Once you have read the log, tell `sdlc` how far you got, and the next
-`sdlc log` starts after that point.
-
-In Claude Code: `/sdlc:ack`, with the same arguments. You type it; the model cannot.
-
-```console
-$ sdlc ack --through HEAD
-$ sdlc ack --through 3f2a9c1e0b7d
-```
-
-`ack` writes the full commit to `.sdlc/state/acknowledged`, and `sdlc log` starts
-after it from then on. Nothing else changes.
-
-| Flag | What it does |
+| Line | What it says |
 | --- | --- |
-| `--through` | the commit you have read the log up to: HEAD, or one in its history. Required |
+| the first line | the commits the story landed in, its id and its title |
+| `rounds`, `blocks` | how many rounds each gate's reviews took, and every block |
+| `counts` | the important findings and nits each review counted, one line a round |
+| `finding` | each finding the reviews listed, how it was closed, and the reason where it was declined or referred |
+| `reopened` | gates that went back to pending, and why |
+| `failed` | each run of an agent that failed |
+| `no pause` | that the story was committed without waiting for your approval, and why: its tier, and that no file matched `pre_commit_pause_paths`. Where you approved the work after that, as a landing can ask, the line says so and when. |
+| `decided` | each decision the loop made with [`sdlc decide`](#sdlc-decide-id): the gate it was made at, who made it, the question, what was chosen and why. The story's `DECISIONS.md` has the options that were weighed. |
+| `escalated` | each question handed to a person, and whether it was answered |
+| `staffing` | what each agent was asked for or why it was left out, then each change to the staffing, with when |
+| `spent` | what the story cost |
+
+A freeze you lifted with `sdlc unfreeze` has a line of its own as well. In a
+repository with more than one checkout, a story that is not finished names the
+checkout that holds it on a `held` line.
+
+**Where the log starts.** It starts after the last commit you acknowledged
+with [`sdlc ack`](#sdlc-ack). With nothing acknowledged, it lists every story.
+Once you are up to date, it says so:
+
+```console
+$ sdlc log
+No story has been committed since 646584db7109, the last commit acknowledged. `sdlc log --all` lists every one.
+```
+
+**The range.** The first line's range is what the loop saw the story land.
+For a story that landed from its worktree, it is the commits that reached
+trunk. A range found from commit messages says it was inferred, and one that
+cannot be found reads `unknown`: nothing is guessed.
 
 > [!WARNING]
-> Run it in your own terminal. The hook refuses it from a tool call, because an
-> agent that could run it would be deciding which stories nobody needs to look at.
+> A range is a list to read, not a list to revert. It is what the loop saw,
+> not proof of which commits are the story's.
+> [Ranges to read with care](guides/reviewing-what-landed-on-trunk.md#ranges-to-read-with-care)
+> says when to look closer.
 
-There is no default. A commit git cannot read, or one that is not on this branch,
-is refused with [SDLC-E0034](troubleshooting.md#sdlc-e0034). The output names the
-commit acknowledged before, and says when the new one comes before it, because
-the log then lists the stories in between again; in `--json`, `back` is `true`.
-`through` is a full commit. `previous` is too, or the file's text when git does
-not have that commit, and it is absent when nothing was acknowledged. Running
-`sdlc ack` is how a file that names no commit
-([SDLC-E0047](troubleshooting.md#sdlc-e0047)) is put right.
+**When it refuses.** `--all` together with `--since`, or a `--since` that git
+cannot read, is refused ([SDLC-E0034](troubleshooting.md#sdlc-e0034)). So is an
+acknowledgement that names no commit git has
+([SDLC-E0047](troubleshooting.md#sdlc-e0047)), which running `sdlc ack` again
+puts right.
 
-The file says how far the person using this clone has read, so whether it is
-committed is your call.
+With `--json`, `since_source` says where the log started (`acknowledged`,
+`flag`, `all` or `none`), and each entry in `entries` has `story`, `title`,
+`committed_at`, `commit_base`, `commit`, `range_source` (`record`, `message` or
+`unknown`), `rounds`, `blocks`, `review_counts`, `findings`, `reopened`,
+`escalations`, `failures`, `landed_without_pause`, `decisions`, `staffing`,
+`staffing_events` and `spent_usd`.
+
+[Reviewing what landed on trunk](guides/reviewing-what-landed-on-trunk.md)
+walks through reading the log, and `/sdlc:trunk-review` goes through it with
+the assistant.
 
 ## `sdlc cost`
 
-See what the story has cost so far, against what it was expected to.
+See what a story has cost so far, against what it was expected to.
 
-```console
-$ sdlc cost
-US-001  $12.40 spent of $60.00 (20.7%)
-
-$ sdlc cost add --usd 1.42 --note "gate 4, five reviewers"
-US-001  $13.82 spent of $60.00 (23%)
+```text
+sdlc cost [flags]
 ```
-
-### `sdlc cost add`
-
-Records one amount against the story being worked on, or the one `--story` names.
 
 | Flag | What it does |
 | --- | --- |
-| `--usd` | the amount, in US dollars. Required |
-| `--note` | what it was spent on |
-| `--story` | the story it was spent on, when no iteration is running on it. `sdlc cost` takes it too |
-
-With no story being worked on and none named, `cost add` is refused with
-[SDLC-E0011](troubleshooting.md#sdlc-e0011). An empty, negative or non-numeric
-`--usd` is [SDLC-E0034](troubleshooting.md#sdlc-e0034), and a story another
-checkout holds is [SDLC-E0050](troubleshooting.md#sdlc-e0050).
-
-`budget.per_story_usd` in `.sdlc/config.json` says what one story is expected to cost, and
-`alert_fractions` says where along the way to say so. An alert goes to standard error, once,
-on the entry that crosses it, with `--json` as well as without — so a runner reading standard
-output for the number still sees it, and the same warning does not repeat on every entry
-afterwards.
-
-> [!NOTE]
-> **Nothing here blocks.** A budget that stops a story halfway leaves the work
-> stranded between gates, which costs more than the overspend it prevents. The
-> entry that uses up the budget says so, whatever `alert_fractions` holds, and
-> names `sdlc stop` if that is the call.
-
-Where the number comes from is the runner's business. A headless session reports its cost only
-once it is over, and by then the iteration it ran may have ended, so the runner notes the story
-first and names it:
+| `--story` | the story to report on, when it is not the one being worked on |
 
 ```console
-$ story=$(sdlc status --json | jq -r '.active // .next.story')
-$ cost=$(claude -p "/sdlc:next" --output-format json | jq .total_cost_usd)
-$ sdlc cost add --story "$story" --usd "$cost"
+$ sdlc cost
+AUTH-3  $32.84 spent of $60.00 (54.7%)
 ```
 
-An interactive session has `/cost`. An empty or unparseable amount is refused rather than
-recorded as zero, because a story that silently cost nothing is the one wrong answer nobody
-questions. [Tracking what a story costs](guides/tracking-what-a-story-costs.md) walks
-through recording, reading back and budgeting.
+The budget is [`budget.per_story_usd`](configuration.md#budget) in your
+configuration. With `--json`, `cost` prints `story`, `spent_usd`, `budget_usd`
+and `fraction`. With no story being worked on and none named, it is refused
+([SDLC-E0011](troubleshooting.md#sdlc-e0011)).
+
+[Tracking what a story costs](guides/tracking-what-a-story-costs.md) covers
+recording, reading back and budgeting.
+
+## `sdlc cost add`
+
+Record one amount against a story. `sdlc` does not measure money itself:
+whoever runs the session reports what it cost.
+
+```text
+sdlc cost add [flags]
+```
+
+| Flag | What it does |
+| --- | --- |
+| `--usd` | the amount spent, in US dollars. Required. |
+| `--note` | what it was spent on |
+| `--story` | the story it was spent on, when no iteration is running on it |
+
+```console
+$ sdlc cost add --usd 1.42 --note "gate 4, five reviewers"
+AUTH-3  $1.42 spent of $60.00 (2.4%)
+```
+
+Run it in the checkout that holds the story. For a story in its own worktree
+that is the worktree: from the main checkout it is refused
+([SDLC-E0050](troubleshooting.md#sdlc-e0050)).
+
+**Alerts.** As the spend crosses each fraction in `budget.alert_fractions`,
+`cost add` says so once, on standard error, on the entry that crosses it:
+
+```console
+$ sdlc cost add --usd 30 --note "gate 5, the implementer"
+sdlc: 50% of the $60.00 budget for this story is spent ($32.84)
+AUTH-3  $32.84 spent of $60.00 (54.7%)
+```
+
+Nothing here blocks. The entry that uses up the budget says so and names
+`sdlc stop`, and the story carries on unless you stop it.
+[Nothing blocks](guides/tracking-what-a-story-costs.md#nothing-blocks) says
+why.
+
+With `--json`, it prints `story`, `added_usd`, `spent_usd`, `budget_usd` and
+`fraction`, and an `alerts` array holding each alert this entry set off. The
+alerts still go to standard error as well.
+
+**When it refuses.** An empty, negative or non-numeric `--usd` is refused
+rather than recorded as zero ([SDLC-E0034](troubleshooting.md#sdlc-e0034)).
+With no story being worked on and none named, there is nothing to add to
+([SDLC-E0011](troubleshooting.md#sdlc-e0011)).
+[Record the cost from a script](guides/tracking-what-a-story-costs.md#record-the-cost-from-a-script)
+shows how a headless run reports its cost.
 
 ## `sdlc trace`
 
-See where a story's time and tokens went: how long each gate took, how much of
-that its subagents, a person and the time between iterations account for, what
-each kind of agent cost, and the shell commands, test runs, refusals, the change
-at the commit gate and the review rounds. It reads the story's gate record and
-its [trace](the-loop.md#the-trace), and writes nothing.
+See where a story's time and tokens went: how long each gate took, what each
+kind of agent used, and which commands ran. It reads what was measured while
+the story ran, and writes nothing.
 
-```console
-$ sdlc trace <ID>
-$ sdlc trace <ID> --json
-$ sdlc trace --all
-$ sdlc trace --all --json
+```text
+sdlc trace [<ID>] [--all] [flags]
 ```
-
-`sdlc trace` takes a story's id or `--all`, and not both. Each wrong form says
-which mistake it was, and exits with
-[SDLC-E0034](troubleshooting.md#sdlc-e0034). With neither, or more than one id,
-it prints `sdlc trace was given no story's id and no --all, or more than one id:
-name one story, as in sdlc trace US-001, or add --all for every story`. With
-both, it prints `sdlc trace takes a story's id or --all, not both`.
 
 | Flag | What it does |
 | --- | --- |
 | `--all` | every story with a record, side by side, with the median of each column |
 
-For one story it prints:
+You run it as `sdlc trace <ID>` for one story or `sdlc trace --all` for every
+story, and never both.
 
-```text
-T-1  Story T-1
-2 lines of the trace were skipped: they could not be read, or were written by a newer sdlc
+The report for one story has three parts. The first is the story's time, by
+the gate it was working towards:
+
+```console
+$ sdlc trace AUTH-3
+AUTH-3  Reject expired sessions
 
 time, by the gate the story was working towards:
   gate             wall         agents       waiting on a person  between iterations  no agent and no person accounts for
-  dor              10m          0s           0s                   0s                  10m
-  analysis         35m          28m          0s                   0s                  7m
-  tests_frozen     3h15m        30m          2h00m                10m                 35m
-  in all           4h00m        58m          2h00m                10m                 52m
-  unfinished: sdlc:verifier a4, started 2026-10-01T13:40:00.000Z and never ended, so it is left out
+  dor              4m           0s           0s                   0s                  4m
+  analysis         24m          20m          0s                   0s                  4m
+  tests_frozen     33m          28m          0s                   0s                  5m
+  plan             20m          15m          0s                   0s                  5m
+  design_review    32m          23m          0s                   0s                  9m
+  implementation   48m          44m          0s                   0s                  4m
+  verification     25m          22m          0s                   0s                  3m
+  verifier_review  1m           0s           0s                   0s                  1m
+  code_review      18m          14m          0s                   0s                  4m
+  commit           49m          0s           42m                  4m                  3m
+  retro            10m          6m           0s                   0s                  4m
+  in all           4h25m        2h52m        42m                  4m                  47m
+```
 
-by kind of agent:
-  Explore: 1 run, 20m, 1 response, the largest context 10 tokens, read from the cache 0%
-    tokens: m-haiku 10 in, 0 read from the cache, 0 written to it, 5 out
-    tools: Grep 1
-    asked for: nothing named; ran on m-haiku at no effort recorded
-    handed back: 0 done, 0 blocked
-  sdlc:researcher: 1 run, 18m, 4 responses, the largest context 400 tokens, read from the cache 60%
-    tokens: m-opus 100 in, 300 read from the cache, 100 written to it, 50 out
-    tools: Read 3
-    asked for: opus at high; ran on m-opus at high
-    handed back: 1 done, 0 blocked
-  sdlc:sdet: 1 run, 30m, 6 responses, the largest context 900 tokens, read from the cache 60%
-    tokens: m-sonnet 200 in, 600 read from the cache, 200 written to it, 100 out
-    tools: Bash 4; Write 2
-    asked for: sonnet at high; ran on m-sonnet at medium
-    handed back: 0 done, 1 blocked
+| Column | What it counts |
+| --- | --- |
+| `wall` | the time the story spent working towards that gate. A gate that was reopened takes the time back. |
+| `agents` | the time agents were running. Two agents at once count once. |
+| `waiting on a person` | the time a question to you stood open |
+| `between iterations` | the time between one iteration ending and the next beginning |
+| the last column | what is left of the wall time once the other three are taken off |
 
+The second part has a block for each kind of agent that ran. This is the
+implementer's, the fifth of ten in this report:
+
+```text
+  sdlc:implementer: 3 runs, 1h06m, 68 responses, the largest context 88600 tokens, read from the cache 87%
+    tokens: m-sonnet 16800 in, 549000 read from the cache, 64000 written to it, 22600 out
+    tools: Bash 25; Edit 12; Grep 4; Read 30; Write 1
+    asked for: sonnet at medium; ran on m-sonnet at medium
+    handed back: 3 done, 0 blocked
+```
+
+`asked for` is what the story's staffing asked for, and what follows it is the
+model and effort your host reported. A model's name is printed as the host
+gives it, and `m-sonnet` stands for one here.
+
+The third part is everything else, and ends the report:
+
+```text
 the main conversation, by gate:
-  analysis: m-main 1000 in, 0 read from the cache, 0 written to it, 10 out
-  tests_frozen: m-main 500 in, 0 read from the cache, 0 written to it, 5 out
+  dor: m-opus 1800 in, 21000 read from the cache, 9000 written to it, 700 out
+  analysis: m-opus 2400 in, 64000 read from the cache, 11000 written to it, 1500 out
+  tests_frozen: m-opus 2100 in, 71000 read from the cache, 8000 written to it, 1200 out
+  plan: m-opus 1900 in, 76000 read from the cache, 6000 written to it, 900 out
+  design_review: m-opus 3200 in, 142000 read from the cache, 13000 written to it, 2300 out
+  implementation: m-opus 1700 in, 88000 read from the cache, 5000 written to it, 800 out
+  verifier_review: m-opus 1600 in, 93000 read from the cache, 4000 written to it, 900 out
+  commit: m-opus 2000 in, 101000 read from the cache, 6000 written to it, 1100 out
+  retro: m-opus 1500 in, 58000 read from the cache, 7000 written to it, 700 out
+  after the last gate: m-opus 1200 in, 61000 read from the cache, 3000 written to it, 500 out
 shell commands, by class:
-  git: 2, 0.04s in all, the longest 0.03s
-  test: 2, 4s in all, the longest 3s
-test runs: 2, 4s in all, 1 passed, 1 failed
+  build: 1, 2.6s in all, the longest 2.6s
+  git: 2, 0.3s in all, the longest 0.24s
+  lint: 2, 19.4s in all, the longest 9.8s
+  sdlc: 1, 0.31s in all, the longest 0.31s
+  test: 6, 42.7s in all, the longest 21.8s
+test runs: 6, 42.7s in all, 3 passed, 3 failed
 refusals, by rule, agent and code:
-  gate-record-is-written-by-the-tool, sdlc:sdet: 2
-  loop-state-through-the-tool, the main conversation, SDLC-E0081: 1
-the change at the commit gate: 5 files, 100 lines added and 20 removed; of them the frozen tests 2 files, 60 added and 0 removed
+  frozen-tests-are-read-only, sdlc:implementer: 1
+the change at the commit gate: 4 files, 96 lines added and 7 removed; of them the frozen tests 1 files, 58 added and 0 removed
 
 reviews, by gate:
-  tests_frozen: 2 rounds, 1 block
+  design_review: 2 rounds, 1 block
+  verifier_review: 1 round, 0 blocks
+  code_review: 1 round, 0 blocks
 ```
 
-A gate's time is charged to the gate the story was working towards then: the
-first gate in the loop's order that had not passed, so a gate reopened takes the
-time back. A story's time ends at its landing, or where it has none at its
-commit gate's pass, or at its last event while it is under way. The agents' time
-is the union of their runs, so two agents at once count once; the last column is
-the wall time less the union of the other three, never below zero. A run with no
-end, such as an agent the session lost, is listed as unfinished and left out.
-
-Each heading is one key of `--json`, which prints one JSON document and nothing
-else, every time in seconds, and `null` for a figure that was not recorded:
-
-| Heading | Key |
-| --- | --- |
-| the story's id | `story`, with `traced`, `skipped_lines`, `truncated` and `truncated_at` |
-| time, by the gate | `gates`, each `gate`, `wall`, `agents`, `person`, `between` and `unaccounted`, and `past_gate_hours` where the record holds the gate's `budget` event (absent otherwise), and `total` for "in all" |
-| unfinished | `unfinished`, each `agent_type`, `agent_id` and `start` |
-| by kind of agent | `agent_types`, each `agent_type`, `runs`, `time`, `models`, `responses`, `peak_context`, `cache_read_ratio`, `tools`, `asked`, `observed_models`, `observed_efforts`, `done` and `blocked` |
-| the main conversation | `main`, each `gate` and `models` |
-| shell commands | `shell`, each `class`, `count`, `total` and `longest` |
-| test runs | `tests`: `count`, `time`, `passes` and `failures` |
-| refusals | `refusals`, each `rule`, `agent_type`, `code` and `count` |
-| the change at the commit gate | `diff`: `files`, `added`, `removed`, `test_files`, `test_added` and `test_removed` |
-| reviews | `reviews`, each `gate`, `rounds` and `blocks` |
-
-A gate whose agents' time passed its [`budget.gate_hours`](configuration.md#budget) is
-marked once the record holds its `budget` event: in the text its row ends
-`<- past budget.gate_hours`, and in `--json` it has `"past_gate_hours": true`. The mark
-reports the event on the record, not the setting now, so a gate over its number that no
-`sdlc gate` or `sdlc review add` has yet saved is not marked, and a mark stays after
-`gate_hours` is taken out of the configuration. `--all` has no row for a gate, so it marks
-nothing.
-
-A story worked before tracing has no trace. For it, `sdlc trace` gives what the
-gate record holds, the wall time, the wait on a person and the time between
-iterations, says once that the story predates tracing, and says "not recorded"
-for everything else, never 0:
+**What else it tells you.** The commands `sdlc` ran itself when the
+implementation gate was recorded are no agent's shell commands, so they have
+a line of their own after `test runs`, which gives how many ran and how long
+they took:
 
 ```text
-T-1  Story T-1
-no trace.jsonl for this story: it predates tracing, or nothing was recorded (see "sdlc trace shows nothing was recorded" in the troubleshooting guide)
-
-time, by the gate the story was working towards:
-  gate             wall         agents       waiting on a person  between iterations  no agent and no person accounts for
-  dor              10m          not recorded 0s                   0s                  10m
-  analysis         1h50m        not recorded 1h00m                10m                 40m
-  in all           2h00m        not recorded 1h00m                10m                 not recorded
-  with no agent's time recorded, a gate's last column holds its agents' time as well
+Gate 5 commands, run by sdlc at the implementation gate: 5, 0.59s in all
 ```
 
-A gate's last column there is its wall time less the wait and the time between
-iterations, since no agent's time was recorded to take off, and the last line
-says so; the story's whole is not recorded.
+A story whose tests were reviewed before the freeze has a `tests_frozen` row
+under `reviews, by gate` as well. A gate whose agents ran past its
+[`budget.gate_hours`](configuration.md#budget) ends its row
+`<- past budget.gate_hours`. An agent that started and never ended is listed as
+`unfinished` and left out of the times. The report also says when lines of the
+trace could not be read, and when the trace reached its limit and the later
+records are missing.
 
-It also says when lines of the trace were skipped, when the trace reached its
-4 MiB limit and the records after it are missing, when agent runs or turns were
-recorded without their tokens, and when agent events have no agent id, written
-by an older sdlc.
+**A story with no trace.** A story worked before `sdlc` measured anything has
+only its gates to go on. `sdlc trace` then says once that the story predates
+tracing, and prints `not recorded` for what it cannot know, never 0. Its
+second line reads:
 
-A story the backlog does not hold, or one that has not been started and so has
-no record, is refused with [SDLC-E0009](troubleshooting.md#sdlc-e0009), and a
-trace that cannot be read with [SDLC-E0005](troubleshooting.md#sdlc-e0005).
+```text
+no trace.jsonl for this story: it predates tracing, or nothing was recorded (see "sdlc trace shows nothing was recorded" in the troubleshooting guide)
+```
+
+[`sdlc trace` shows nothing was recorded](troubleshooting.md#sdlc-trace-shows-nothing-was-recorded)
+says what to check when a new story has none.
+
+**When it refuses.** With neither an id nor `--all`, with more than one id, or
+with both, it is refused and says which mistake it was
+([SDLC-E0034](troubleshooting.md#sdlc-e0034)). A story the backlog does not
+hold, or one that was never started, is
+[SDLC-E0009](troubleshooting.md#sdlc-e0009), and a trace that cannot be read is
+[SDLC-E0005](troubleshooting.md#sdlc-e0005).
+
+**With `--json`.** It prints one JSON document and nothing else, with every
+time in seconds, and `null` for a figure that was not recorded:
+
+| Part of the report | Key |
+| --- | --- |
+| the story | `story`, with `traced`, `skipped_lines`, `truncated` and `truncated_at` |
+| time, by gate | `gates`, each with `gate`, `wall`, `agents`, `person`, `between` and `unaccounted`, and `past_gate_hours` where it ran past its hours; `total` for the last row |
+| unfinished agents | `unfinished`, each with `agent_type`, `agent_id` and `start` |
+| by kind of agent | `agent_types`, each with `agent_type`, `runs`, `time`, `models`, `responses`, `peak_context`, `cache_read_ratio`, `tools`, `asked`, `observed_models`, `observed_efforts`, `done` and `blocked` |
+| the main conversation | `main`, each with `gate` and `models` |
+| shell commands | `shell`, each with `class`, `count`, `total` and `longest` |
+| test runs | `tests`: `count`, `time`, `passes` and `failures` |
+| Gate 5 commands | `implementation_commands`: `count` and `time`. Absent where the gate recorded none. |
+| refusals | `refusals`, each with `rule`, `agent_type`, `code` and `count` |
+| the change at the commit gate | `diff`: `files`, `added`, `removed`, `test_files`, `test_added` and `test_removed` |
+| reviews | `reviews`, each with `gate`, `rounds` and `blocks` |
+
+[See where the time and tokens went](guides/tracking-what-a-story-costs.md#see-where-the-time-and-tokens-went)
+shows when the report is worth reading.
 
 ### `sdlc trace --all`
 
-Every story in the backlog that has a record, one row each, with the median of
-each time and count column under them. Under each row, a second line gives what
-the gate record counts: the escalations by kind, the decisions recorded with
-`sdlc decide`, the unfreezes, the review rounds by gate, and whether a gate
-failed after the commit gate passed. Here
-US-8 and US-9 predate tracing, and US-10 is under way:
+Every story that has a record, one row each, with the median of each column
+under them. A second line under each row gives what the gates recorded: the
+escalations, the decisions recorded with [`sdlc decide`](#sdlc-decide-id),
+the freezes lifted, the review rounds, and whether a gate failed after the
+commit gate had passed.
 
-```text
+```console
+$ sdlc trace --all
 story      start                     end                       wall         agents       waiting on a person  design review to end  tokens         largest context  test time    refusals     diff files   diff lines   first pass
-US-7       2026-10-01T10:00:00.000Z  2026-10-01T20:00:00.000Z  10h00m       2h18m        30m                  5h30m                 1100           900              5s           3            4            42           yes
-           escalations: spec_unclear 1; decisions: 2; unfreezes: 0; review rounds: design_review 2, verifier_review 1, code_review 1; a gate failed after the commit gate: no
-US-8       2026-10-01T10:00:00.000Z  2026-10-01T14:00:00.000Z  4h00m        not recorded 0s                   3h00m                 not recorded   not recorded     not recorded not recorded not recorded not recorded no
-           escalations: none; decisions: 0; unfreezes: 1; review rounds: code_review 2; a gate failed after the commit gate: yes
-US-9       2026-10-01T10:00:00.000Z  2026-10-01T13:00:00.000Z  3h00m        not recorded 15m                  1h45m                 not recorded   not recorded     not recorded not recorded not recorded not recorded yes
-           escalations: hard_stop 1, human_check 1; decisions: 0; unfreezes: 0; review rounds: none; a gate failed after the commit gate: no
-US-10      2026-10-01T10:00:00.000Z  in progress               20h00m       not recorded 0s                   not yet               not recorded   not recorded     not recorded not recorded not recorded not recorded not yet
+AUTH-1     2026-11-17T09:00:00.000Z  2026-11-17T14:30:00.000Z  5h30m        not recorded 0s                   3h50m                 not recorded   not recorded     not recorded not recorded not recorded not recorded no
+           escalations: none; decisions: 0; unfreezes: 0; review rounds: code_review 1; a gate failed after the commit gate: no
+AUTH-2     2026-11-19T13:10:00.000Z  2026-11-19T16:50:00.000Z  3h40m        40m          0s                   2h00m                 360000         70200            12s          0            3            65           yes
            escalations: none; decisions: 0; unfreezes: 0; review rounds: none; a gate failed after the commit gate: no
-median                                                         4h00m        2h18m        15m                  3h00m                 1100           900              5s           3            4            42
+AUTH-3     2026-11-23T09:20:00.000Z  2026-11-23T13:45:00.000Z  4h25m        2h52m        42m                  2h32m                 2771640        88600            42.7s        1            4            103          yes
+           escalations: pre_commit_approval 1; decisions: 0; unfreezes: 0; review rounds: design_review 2, verifier_review 1, code_review 1; a gate failed after the commit gate: no
+AUTH-4     2026-11-24T10:05:00.000Z  in progress               40m          0s           0s                   not yet               30100          29500            0s           0            not recorded not recorded not yet
+           escalations: none; decisions: 0; unfreezes: 0; review rounds: none; a gate failed after the commit gate: no
+median                                                         4h25m        1h46m        0s                   2h32m                 1565820        79400            27.35s       0            4            84
 first-pass success, of the stories that ended: 67%
 a story still in progress is left out of the medians; not recorded is a figure its story did not record
 ```
 
-A story in progress has no end and is left out of the medians and of the
-first-pass share; its time from the last design review pass to the end reads
-"not yet". First pass means no block at the verifier's review or the code
-review, and no failure at Gates 6 and 7, the verification included; a story
-under way with none of those yet reads "not yet", and one that already has one
-reads "no". `--json` gives every
-row with `escalations` by kind, `decisions`, `unfreezes`, `review_rounds` by gate,
-`first_pass`, `design_to_end` (from the last design review pass to the end),
-`failed_after_commit`, `tokens`, `peak_context`, `test_time`, `refusals`,
-`diff_files` and `diff_lines`, then
-`medians` and `first_pass_share`. `first_pass` is `null` for a story under way
-with none of those yet, and `false` once one is on its record, ended or not. A
-story whose trace cannot be read is noted on standard error, as `sdlc: the trace
-of US-10 could not be read, so its row shows only what its gate record holds;
-"sdlc trace US-10" says why`, and keeps its row without the trace's columns.
+Here `AUTH-1` predates tracing and `AUTH-4` is under way. `first pass` means no
+block at the verifier's review or the code review, and no failure at Gates 6
+and 7. A story in progress is left out of the medians, and reads `not yet`
+until it ends or has one of those on its record.
+
+With `--json`, each row in `stories` has `story`, `start`, `end`, `wall`,
+`agents`, `person`, `escalations`, `decisions`, `unfreezes`, `review_rounds`,
+`first_pass`,
+`design_to_end`, `failed_after_commit`, `tokens`, `peak_context`, `test_time`,
+`refusals`, `diff_files` and `diff_lines`. After them come `medians` and
+`first_pass_share`.
 
 Where no story has a record yet, it says so and exits 0:
 
@@ -1419,365 +1209,663 @@ $ sdlc trace --all
 no story has a record yet: a story gets one when it is started ("sdlc start <ID>")
 ```
 
+### Reading the trace file
+
+You rarely need to: `sdlc trace` reads it for you. The trace is `trace.jsonl`
+in the story's directory under `.sdlc/stories/`, one JSON object to a line.
+It holds times, counts, exit codes and short names, and no prompt, response,
+command argument, file path or error message.
+[The trace](the-loop.md#the-trace) says why it is kept out of git.
+
+Every line has `at`, the time, and `kind`, which is one of these:
+
+| Kind | Written when | What it holds |
+| --- | --- | --- |
+| `agent_run` | an agent stops | the agent's type, its start and end, the models and tokens it used, its tool calls, the effort the host reported, and `asked_model` and `asked_effort` |
+| `turn` | the main conversation's turn ends | the models and tokens, the responses and the tool calls of that turn |
+| `handback` | an agent hands its work back | the agent, and `done` or `blocked` |
+| `refusal` | the hook refuses a tool call | the rule, the agent, the tool, and the `SDLC-E` code where there is one |
+| `shell` | a shell command ends | how long it took, its class (`test`, `build`, `lint`, `git`, `sdlc` or `other`), the program, and a test run's outcome |
+| `diff` | the commit gate passes | files and lines changed, and the same for the frozen tests alone |
+| `notification` | the host asks you for permission, or says it is idle | which of the two |
+| `api_error` | a turn ends on an error from the model provider | the kind of error, such as `rate_limit` |
+| `compaction` | the host compacts a conversation | whether it was `auto` or `manual` |
+| `truncated` | the trace reaches its 4 MiB limit | the size. Nothing is written after it. |
+
+Two more records, `agent_start` and `agent_end`, sit in the story's gate
+record and not in the trace. They mark when each agent started and stopped,
+which is how a story's time is split between its agents.
+
+`asked_model` and `asked_effort` are what the story's staffing asked for that
+agent, after any [`sdlc staffing assign`](#sdlc-staffing-assign-agent) of
+yours. They are not what ran: that is in the record's `models` and `effort`.
+Both are left out for an agent outside the loop, such as `Explore`.
+
 ## `sdlc version`
 
-Print the version of `sdlc` you are running, which is the first thing to include
+Print the version of `sdlc` you are running. It is the first thing to include
 when you report a problem.
 
-```console
-$ sdlc version
-$ sdlc version --short
-$ sdlc version --json
+```text
+sdlc version [flags]
 ```
 
 | Flag | What it does |
 | --- | --- |
-| `--short` | print the version alone, with nothing around it |
+| `--short` | print only the semantic version |
+
+```console
+$ sdlc version
+$ sdlc version --short
+```
 
 With `--json` it prints `version`, `commit`, `date` and `dirty`, and with
-`--short` as well, `version` alone.
+`--short` as well, `version` alone. [Updating](installation.md#updating) says
+how to move to a newer one.
+
+## `sdlc completion`
+
+Print a completion script for your shell, so that Tab completes commands and
+flags.
+
+```text
+sdlc completion [command]
+```
+
+The command is your shell: `bash`, `zsh`, `fish` or `powershell`.
+
+| Flag | What it does |
+| --- | --- |
+| `--no-descriptions` | leave the descriptions out of the completions |
+
+```console
+$ sdlc completion zsh --help
+```
+
+Each shell loads its script differently, and the help for each one says how.
+
+## `sdlc approve`
+
+Answer when the loop has handed you a story. When `sdlc status` says a story
+is waiting for you, this is the command that lets it carry on.
+
+Only a person runs it. In Claude Code or Claude Desktop, type `/sdlc:approve`
+with the same arguments.
+
+```text
+sdlc approve [story] [flags]
+```
+
+| Flag | What it does |
+| --- | --- |
+| `--reject` | send the work back instead, saying why |
+
+```console
+$ sdlc approve AUTH-3
+AUTH-3  approved (pre_commit_approval)
+
+A person runs `sdlc start AUTH-3`, or types /sdlc:next in Claude Code, to carry on.
+```
+
+Name the story. Without an id, `approve` answers for the story being worked
+on, and an escalation ends the iteration, so afterwards there is none
+([SDLC-E0011](troubleshooting.md#sdlc-e0011)). Your answer goes on the record,
+the story goes back to in progress, and `sdlc start` picks it up again.
+
+To send the work back, give the reason. Whoever does the work next reads it:
+
+```console
+$ sdlc approve AUTH-3 --reject "the migration has no way back"
+```
+
+**What your answer covers.** Once a story has been committed in its worktree,
+your answer also records the commit the story's branch is at. Where the story
+pauses before the commit, for its tier or for a path its change touches, an
+approving answer prints that commit, and says so when it is not the one the
+story was held to before.
+[What your approval covers](guides/human-approval-gates.md#what-your-approval-covers)
+has the rest.
+
+**After a `work_by_hand` hand-over.** Where the gate's work belongs to an
+agent your project turned off, approving does not do that work. `approve` says
+which gate is open, and you record it with
+`sdlc gate <gate> pass --story <ID>` after doing the work by hand. Neither
+that answer nor one given after an agent failed stands in for the pause before
+the commit. A story that pauses, for its tier or for a path its change
+touches, is still asked then, and `approve` says so. Where it cannot tell
+from where it runs whether the story will pause, it says the question may
+still be asked.
+
+**When it refuses.**
+
+| It refuses when | Code |
+| --- | --- |
+| nothing on the story is waiting for a decision | [SDLC-E0035](troubleshooting.md#sdlc-e0035) |
+| another checkout holds the story; run it in that one | [SDLC-E0050](troubleshooting.md#sdlc-e0050) |
+| `--reject` has no reason | [SDLC-E0034](troubleshooting.md#sdlc-e0034) |
+| it was run in a process Claude Code started | [SDLC-E0079](troubleshooting.md#sdlc-e0079) |
+
+[Human approval gates](guides/human-approval-gates.md) walks through reading
+the work and answering.
+
+## `sdlc unfreeze`
+
+Lift the freeze on a story's tests, on the record. You do this only when a
+frozen test is wrong.
+
+Only a person runs it. In Claude Code, type `/sdlc:unfreeze` with the same
+arguments.
+
+```text
+sdlc unfreeze [flags]
+```
+
+| Flag | What it does |
+| --- | --- |
+| `--reason` | why the frozen tests have to change. Required. |
+
+Run it in the checkout that holds the story:
+
+```console
+$ sdlc unfreeze --reason "AC-1's test asserted the old error message"
+AUTH-4  freeze lifted on 2 test files
+  AC-1's test asserted the old error message
+  reopened: tests_frozen, plan
+```
+
+Lifting the freeze sends the story back to Gate 3. The tests are about to
+change, so `tests_frozen` and every gate passed after it go back to pending,
+with your reason as their note. They are listed under `reopened`, and in
+`--json` as well.
+
+> [!NOTE]
+> The reason is the point. Lifting the freeze is sometimes right, and it is
+> also the move an agent would make to reach green. Writing down why is what
+> tells the two apart.
+
+`unfreeze` works on the story being worked on. After an escalation, which ends
+the iteration, answer with `sdlc approve <ID>` and run `sdlc start <ID>`
+first.
+
+**When it refuses.**
+
+| It refuses when | Code |
+| --- | --- |
+| there is no `--reason` | [SDLC-E0026](troubleshooting.md#sdlc-e0026) |
+| there is no freeze to lift, or it belongs to another story | [SDLC-E0023](troubleshooting.md#sdlc-e0023) |
+| no iteration is running | [SDLC-E0011](troubleshooting.md#sdlc-e0011) |
+| it was run in a process Claude Code started | [SDLC-E0079](troubleshooting.md#sdlc-e0079) |
+
+[When a frozen test is wrong](guides/when-a-frozen-test-is-wrong.md) covers
+deciding, lifting the freeze and having the test corrected.
+
+## `sdlc ack`
+
+Mark how far you have read the log. The next `sdlc log` starts after that
+commit, and the decisions of the stories up to it are no longer counted by
+`sdlc status` as waiting to be read.
+
+Only a person runs it. In Claude Code or Claude Desktop, type `/sdlc:ack` with
+the same arguments.
+
+```text
+sdlc ack [flags]
+```
+
+| Flag | What it does |
+| --- | --- |
+| `--through` | the commit you have read the log up to: `HEAD`, or one in its history. Required. |
+
+```console
+$ sdlc ack --through HEAD
+Acknowledged through 646584db7109. `sdlc log` starts after it.
+```
+
+There is no default: you say which commit. The output names the commit
+acknowledged before, and says when the new one comes before it, because the
+log then lists the stories in between again:
+
+```console
+$ sdlc ack --through HEAD~1
+Acknowledged through 8edf4f0e2a43. `sdlc log` starts after it.
+That is before 646584db7109, the commit acknowledged until now, so the log lists the stories committed in between again.
+```
+
+The acknowledgement is a note of how far you have read in this clone, and it
+stays there, uncommitted.
+
+> [!WARNING]
+> Leave the acknowledgement out of git. With worktrees on, committing it makes
+> `sdlc doctor` report a [`story worktrees`](#the-story-worktrees-check)
+> problem, and no story can land until it is taken out again.
+
+With `--json`, it prints `through` and `previous` as full commits, and `back`,
+which is `true` when you moved the mark backwards.
+
+**When it refuses.** A missing `--through`, a commit git cannot read, or one
+that is not on this branch is refused
+([SDLC-E0034](troubleshooting.md#sdlc-e0034)), and so is a run in a process
+Claude Code started ([SDLC-E0079](troubleshooting.md#sdlc-e0079)).
+[Mark it read](guides/reviewing-what-landed-on-trunk.md#mark-it-read) shows
+where `ack` fits in a review.
+
+## `sdlc release`
+
+Let a story go from the checkout that holds it, so that any checkout can start
+it. You want this when a worktree was deleted, or when a story should be
+worked somewhere else.
+
+Only a person runs it. In Claude Code, type `/sdlc:release` with the same
+arguments.
+
+```text
+sdlc release STORY [flags]
+```
+
+| Flag | What it does |
+| --- | --- |
+| `--reason` | why the story is moving to another checkout. Required. |
+
+```console
+$ sdlc release AUTH-4 --reason "it will be worked in another clone"
+Released AUTH-4: the checkout at "/home/<user>/src/billing/.sdlc/worktrees/AUTH-4" no longer holds it. "sdlc start AUTH-4" picks it up in any checkout.
+Anything the checkout at "/home/<user>/src/billing/.sdlc/worktrees/AUTH-4" has not committed stays there, and is not moved.
+```
+
+Nothing is moved. Whatever the old checkout had not committed stays in it,
+and so does a freeze: in a checkout that picks the story up without one,
+`sdlc unfreeze --reason ...` lifts it and `sdlc freeze` takes it again. One
+thing is dropped: the sections of `CODEMAP.md` stored for the story, which
+belonged to the attempt that is over. Your reason goes on the story's record.
+
+A story that nothing holds is not an error. `release` says
+`Nothing to release` and changes nothing.
+
+With `--json`, it prints `story`, and `checkout`, the checkout that held it,
+where one did.
+
+**When it refuses.**
+
+| It refuses when | Code |
+| --- | --- |
+| there is no `--reason` | [SDLC-E0026](troubleshooting.md#sdlc-e0026) |
+| an iteration is running on the story; run `sdlc stop` in that checkout first | [SDLC-E0012](troubleshooting.md#sdlc-e0012) |
+| it was run in a process Claude Code started | [SDLC-E0079](troubleshooting.md#sdlc-e0079) |
+
+[Move a story to another checkout](guides/stopping-and-resuming-a-story.md#move-a-story-to-another-checkout)
+walks through it.
+
+## `sdlc remap STORY`
+
+Put a landed story's change to `CODEMAP.md` on trunk, or drop it. You need it
+only after a stop has warned you with
+[SDLC-E0076](troubleshooting.md#sdlc-e0076): the story landed, and the
+sections its bookkeeper stored did not go into the map.
+
+Only a person runs it. In Claude Code, type `/sdlc:remap` with the same
+arguments.
+
+```text
+sdlc remap STORY [flags]
+```
+
+| Flag | What it does |
+| --- | --- |
+| `--replace` | put the kept sections over whatever trunk's map holds under their headings |
+| `--drop` | discard the kept change and commit nothing |
+
+Read the kept change before you run it. The warning prints the file's full
+path, the commit is made from it, and nobody reviewed it.
+
+```console
+$ sdlc remap AUTH-3
+CODEMAP.md on main is up to date at 646584db7109, in a commit of its own after the story's (adds "internal/session", replaces "internal/billing").
+```
+
+You have three choices:
+
+| Run | When |
+| --- | --- |
+| `sdlc remap <ID>` | Whatever was in the way is gone. It makes the change `stop` would have made: one commit of `CODEMAP.md` alone on trunk, and only where every section still applies. |
+| `sdlc remap <ID> --replace` | Trunk's map has changed under those headings and you want the story's version. What trunk held stays in history. |
+| `sdlc remap <ID> --drop` | You edited `CODEMAP.md` yourself, or the change is no longer wanted. Nothing is committed. |
+
+The plain form refuses with SDLC-E0076 again and names each section that does
+not apply: an added one whose heading trunk's map now has, or a replaced one
+whose text on trunk has changed since the bookkeeper read it. Nothing is
+committed, and the change stays kept however often you run it.
+
+Where something else was in the way, such as uncommitted changes to
+`CODEMAP.md` in the checkout that has trunk checked out, put that right and
+run the plain form. `--replace` does not help there, and `--drop` would throw
+the change away.
+
+The commit is made by `sdlc`. It is not signed, no hook of the repository runs
+for it, and its message says no reviewer read it. It moves trunk, as any
+commit does.
+
+> [!NOTE]
+> `/sdlc:remap` first waits for another story's landing to finish, and Claude
+> Code gives a slash command 60 seconds. If the landing takes longer, nothing
+> shows for a minute and the model says the command did not run, which is
+> true. Type it again once the landing has finished.
+
+With `--json`, it prints `story`, and `codemap_commit` or `dropped`.
+`sdlc remap --help` is refused in a session along with the command;
+`sdlc help remap` prints the help.
+
+**When it refuses.**
+
+| It refuses when | Code |
+| --- | --- |
+| a section does not apply to trunk's map | [SDLC-E0076](troubleshooting.md#sdlc-e0076) |
+| the story has not landed, has nothing kept, or its change is already on trunk | [SDLC-E0077](troubleshooting.md#sdlc-e0077) |
+| the kept file is no longer a set of sections; `--drop` still removes it | [SDLC-E0078](troubleshooting.md#sdlc-e0078) |
+| it was run in a process Claude Code started | [SDLC-E0079](troubleshooting.md#sdlc-e0079) |
+
+[Parallel stories and `CODEMAP.md`](the-loop.md#parallel-stories-and-codemapmd)
+explains why the map is handled apart from the story's commits.
+
+## `sdlc staffing assign AGENT`
+
+Choose the model or the effort an agent is asked for on one story. Reach for
+it when you know better than the project manager what a story deserves.
+
+Only a person runs it. In Claude Code, type `/sdlc:assign` with the same
+arguments, or run it in your own terminal.
+
+```text
+sdlc staffing assign AGENT [flags]
+```
+
+| Flag | What it does |
+| --- | --- |
+| `--model` | the model to ask for, one of `team.models` |
+| `--effort` | the effort to ask for, one of `team.efforts` |
+| `--reason` | why. Required. |
+| `--story` | a story that has been started, instead of the one being worked on |
+
+```console
+$ sdlc staffing assign security --model opus --effort high --reason "this one touches the installer"
+AUTH-3  assigned by a person: security: sonnet at high -> opus at high
+```
+
+The agent is then needed at every gate it has a part in, and nothing the
+project manager records later changes what you assigned. Running it again
+changes it. Before a staffing is recorded, or for an agent the staffing leaves
+out, give both `--model` and `--effort`. It is held to the project's limits as
+any staffing is, and it cannot take an agent off a story.
+
+**When it refuses.** From inside a Claude Code session it is refused
+([SDLC-E0074](troubleshooting.md#sdlc-e0074)), and anywhere else Claude Code
+started the process as well ([SDLC-E0079](troubleshooting.md#sdlc-e0079)). A
+model or effort outside the project's lists is
+[SDLC-E0071](troubleshooting.md#sdlc-e0071), and with the project manager
+turned off there is no staffing to assign to
+([SDLC-E0067](troubleshooting.md#sdlc-e0067)).
+[Choose the model for one agent](the-agents.md#choose-the-model-for-one-agent)
+says when it is worth doing.
 
 ## `sdlc gate GATE STATUS`
 
-Record the outcome of one gate. The agents running a story call this as each
-gate comes to an end; you would reach for it yourself only to reopen a gate or
-to record one by hand.
+Record the outcome of one gate. The loop runs this as each gate comes to an
+end. You would reach for it yourself only to reopen a gate, or to record one
+whose work you did by hand.
 
-```console
-$ sdlc gate dor pass --note "criteria are testable"
-$ sdlc gate analysis pass --security-sensitive --note "token crosses a boundary"
-$ sdlc gate code_review fail --note "AC-2 is untested"
+```text
+sdlc gate GATE STATUS [flags]
 ```
 
 | Flag | What it does |
 | --- | --- |
 | `--note` | why the gate came out this way, in one line |
-| `--story` | record against this story instead of the one being worked on. The id has to be in the backlog; a mistyped one is refused rather than starting a record nothing reads |
-| `--security-sensitive` | the story touches a trust boundary, so the security review blocks. Set it at the analysis gate; unset is assumed to mean yes |
+| `--story` | record against this story instead of the one being worked on. The id has to be in the backlog. |
+| `--security-sensitive` | the story touches a trust boundary, so the security review blocks. Set at the analysis gate, and assumed true until it is set. |
 
-The gate record keys are `dor`, `analysis`, `tests_frozen`, `plan`, `design_review`,
-`implementation`, `verification`, `verifier_review`, `code_review`, `commit` and
-`retro`. The outcomes are `pass`, `fail` and `pending`.
+```console
+$ sdlc gate analysis pass --security-sensitive --note "a session token crosses a trust boundary"
+AUTH-3  analysis  pass
+  a session token crosses a trust boundary
+```
+
+STATUS is `pass`, `fail` or `pending`. GATE is one of eleven names, because
+Gates 4 and 6 each record the work and its review:
+
+| Gate | Name |
+| --- | --- |
+| 1 | `dor` |
+| 2 | `analysis` |
+| 3 | `tests_frozen` |
+| 4 | `plan`, then `design_review` |
+| 5 | `implementation` |
+| 6 | `verification`, then `verifier_review` |
+| 7 | `code_review` |
+| 8 | `commit` |
+| 9 | `retro` |
 
 `gate` records a decision; it does not make one. It does refuse to record a
-**pass** that is not true: see [the loop](the-loop.md) for what each gate
-requires. A `fail` is always recordable, because a gate can fail precisely
-because its work could not be done, and the loop has to have somewhere to put
-that.
+pass that is not true, and [The gates, one by one](the-loop.md#the-gates-one-by-one)
+says what each pass requires. A `fail` can always be recorded, because the
+loop needs somewhere to put a gate whose work could not be done.
 
-`sdlc gate implementation pass` runs the configured commands the landing runs, before it records
-the pass: `build`, `test`, `lint`, `fmt_check`, `coverage` and `mutation`, those that are set, in
-that order, at the root of the story's worktree, as the worktree's own `.sdlc/config.json` gives
-them. Each is held to the landing's rule ([what counts as
-passing](configuration.md#what-counts-as-passing)), `coverage` and `mutation` to `thresholds`. A
-gate with none of them set runs nothing, and `fail` and `pending` run nothing. Before each command
-one line goes to standard error naming it and the file its output is put in when the run ends:
-
-- **Where it runs.** One run of the commands is handed one new, empty directory in the operating
-  system's temporary directory, `SDLC_RUN_DIR`, removed when the run ends, so that `coverage` can
-  read what `test` left there ([the run directory](configuration.md#the-run-directory)). A gate
-  run inside one of the commands, where `SDLC_RUN_DIR` is already set, is refused.
-- **What it records.** The tree hash is taken once before the run, the one reviews and approvals
-  are stamped with, and a pass records each command's name, exit status, duration and a digest of
-  its command and threshold against it, never the command's text. The report names each command
-  with its time and the tree's first 12 characters, and `--json` gives them as `commands` and
-  `tree_hash`. `sdlc status --json` says, in its `commands` block, whether that result is for the
-  tree and the commands as they are now (`current`), and the landing lands on it without running
-  the commands again where it is. Recording the gate again, whatever its outcome, clears the
-  result.
-- **A command that fails.** One that exits other than 0, misses its threshold or prints no figure
-  refuses the gate with [SDLC-E0095](troubleshooting.md#sdlc-e0095), with nothing on standard
-  output. The refusal names the first command that did not pass and its status, the file that
-  holds all the commands printed, `.sdlc/stories/<ID>/implementation-run.log` in the main
-  checkout, and shows the last 20 lines. It is recorded as a fail of the gate, so it counts
-  towards [`loop.max_rework_rounds`](configuration.md#loop), and at the limit the story is handed
-  to a person as a recorded fail hands it over. The file is replaced by each run.
-- **What records nothing.** A command that could not be started (no shell, a start that failed, a
-  signal, or the shell's own 126 or 127), a command that wrote a file of the tree it ran on, and a
-  story that changed while the commands ran (another gate recorded, the freeze taken again or
-  lifted, HEAD moved) each refuse with the same code and record nothing: no rework round is spent.
-  After the run every file the gate listed is checked in Go, a link by its own text and never
-  followed, so a command that rewrites a file and the implementer puts back cannot leave a result
-  for a tree nobody ran the commands on. Two things it does not see: an edit made and put back
-  while the run is in progress, and a file a command adds that is later deleted.
-- **The locks.** The project's lock is let go while the commands run, so other stories and
-  `sdlc status` go on. The story's run lock is held for the whole run, and a second
-  `sdlc gate implementation pass` or `sdlc freeze` of the same story is refused at once
-  ([SDLC-E0006](troubleshooting.md#sdlc-e0006)), naming the one that holds it.
-- **The environment.** The commands start with the environment of the line that ran the gate.
-  The hook refuses a line that changes it before the call
-  ([`commands-run-as-configured`](enforcement.md#commands-run-as-configured)), so a result run by
-  sdlc was run as configured from a line the rule could read, and is not proof the environment was
-  not chosen: [Not held](enforcement.md#not-held) lists what can still change it. On PowerShell the
-  accepted form is the call alone, after at most `Set-Location '<absolute path>';` and a space,
-  with a note that is a plain word or a single-quoted string.
-
-```text
-$ sdlc gate implementation pass --note "the work is done"
-sdlc: running commands.build for US-001's implementation gate in /home/dev/project/.sdlc/worktrees/US-001; its output is put in /home/dev/project/.sdlc/stories/US-001/implementation-run.log when the run ends
-sdlc: running commands.test for US-001's implementation gate in /home/dev/project/.sdlc/worktrees/US-001; its output is put in /home/dev/project/.sdlc/stories/US-001/implementation-run.log when the run ends
-sdlc: commands.test ended with status 1 and did not pass, so the implementation gate is recorded as failed
-
-  why  it exited with status 1; everything the commands printed is in /home/dev/project/.sdlc/stories/US-001/implementation-run.log
-
-  commands.test printed (last 20 lines):
-    --- FAIL: TestRefund (0.00s)
-        refund_test.go:12: want 10, got 0
-    FAIL
-  fix  read the file under .sdlc/stories/<ID>/ that the message names: it holds everything the commands printed. [...]
-
-  SDLC-E0095  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0095
-```
-
-The fix is shortened here; the refusal gives it whole.
-
-In a story's own worktree a gate writes one thing to the record whether it then
-passes or is refused: which commits on the branch are the story's own (`forks`),
-so that trunk's branch pointed at one of them later does not make its test files
-trunk's ([the loop](the-loop.md#done-when-it-lands)).
-
-Where [`budget.gate_hours`](configuration.md#budget) gives a gate a number and the
-story's agents' time at that gate has passed it, `gate` prints one line on standard
-error for each such gate once it has read the story's record, whether or not it then
-records or refuses, and decides, prints on standard output and exits exactly as it would
-without the setting. A refusal before the record is read prints nothing: an unknown gate
-or outcome, no story being worked on, a story another checkout or session holds, a story
-not in the backlog, or a record that cannot be read. The first time it
-saves after finding a gate past its number, it also writes a `budget` event for that gate
-into the record, before the save, so a hand-over carries it; a gate that is refused
-records none.
-
-Recording the last gate is also what finishes the story: when no gate is left
-unpassed, the story's status in the backlog becomes `done`, except for a story in
-its own worktree, which is done when
-[`sdlc stop`](#landing-a-story-from-its-worktree) lands it. That is
-read from the record rather than from the gate's name, so a gate recorded as
-failed afterwards — a code review reopened on work already committed — puts the
-story back to `in_progress`, where the rework belongs.
-
-A gate recorded as failed `loop.max_rework_rounds` times since a person last
-answered for the story hands the story to that person, as
-[`sdlc escalate`](#sdlc-escalate) `gate_failing` would, and says so —
-`handed_over` in `--json`.
-
-That failure and the hand-over are recorded together or not at all. Where the
-story cannot be handed over — git cannot measure the tree, or the backlog, the
-claim or `.sdlc/state` cannot be written — the command is refused with the code
-of whatever stopped it, exits non-zero, and leaves the record, the backlog and
-the iteration as they were, but for the commits noted as the story's own. The
-refusal says so, after its own reason and fix.
-With git missing:
-
-```text
-sdlc: git add did not finish
-
-  why  git add gave no error message; git may not be installed or on PATH, this may not be a repository git can read, or git may have stopped without saying why. The gate failure was not recorded, because recording it would reach the limit at which the story is handed to a person, and the story could not be handed over
-  fix  check that git is installed and that this directory is a repository git can read; then run the same command again, which is safe: the gate failure is counted once
-
-  SDLC-E0021  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0021
-```
-
-Put the cause right and run the same command again: the failure is counted
-once, and the story is handed over. A failure below the limit asks for none of
-this and is recorded as it always was. The promise is for a command that is
-refused; one that is killed part-way can leave the failure and the question on
-the record with the backlog not yet showing it, which
-[`sdlc approve`](#sdlc-approve) answers.
-
-When recording a gate reopens the gates after it, the command names them in gate
-order on a `reopened:` line beneath the note, and `--json` lists them under
-`reopened`. Each of those gates is back to `pending` and has to be passed again
-before the story can move on. Neither the line nor the key appears when nothing
-was reopened, and [`sdlc log`](#sdlc-log) shows the same gates.
+**Reopening.** Recording a gate as failed sends the gates after it back to
+pending, and the command names them:
 
 ```console
 $ sdlc gate plan fail --note "the plan misses the migration"
-US-001  plan  fail
+AUTH-3  plan  fail
   the plan misses the migration
   reopened: design_review, implementation, verification
 ```
 
-### How the commit range is recorded
+Each has to pass again before the story moves on. `--json` lists them under
+`reopened`, and [`sdlc log`](#sdlc-log) shows the same gates.
+[Rework](the-loop.md#rework) explains what goes back and why.
 
-The rest of this section explains the range that the `code_review` and `commit`
-passes record. You do not need it to use the command, but it is what to read
-when a `landed in` line surprises you.
+A gate that fails `loop.max_rework_rounds` times since you last answered for
+the story hands the story to you, as [`sdlc escalate`](#sdlc-escalate) would,
+and says so: `handed_over` in `--json`.
 
-The first `code_review` pass records HEAD at that moment, where the story's
-commits can start. Each `commit` pass records the range the story landed in and
-says so: `landed in <start>..<end>`, with each hash cut to 12 characters, or
-`commit_base` and `commit` in full with `--json`. In a story's own worktree it
-says `committed on story/<ID> in <start>..<end>` instead, because trunk has none
-of it until the story lands, and the pass that leaves no gate unpassed ends
-`` Every gate on <ID> has passed. `sdlc stop` in .sdlc/worktrees/<ID> lands it on <trunk>. ``
-When the story lands, the record's range is replaced by the commits that reached
-trunk.
-
-The range is worked out from what the hook watched. Each time it lets the
-session's command through and can tell the command commits, it writes down the
-HEAD the command starts from, in the repository's git directory at
-`<git-dir>/sdlc/commits/<story>/` — never in the working tree, never committed,
-and never pushed. The story's commits are the ones since the code review whose
-first parent is a HEAD the hook wrote down, and the range is the one pair of
-commits that holds exactly those: a person's commit made after the story's is
-left out of it. The gate puts the pair back to git before it records it; where
-no single range holds only the watched commits — somebody else's commit sits
-between two of the story's, or a merge brought in a side branch — it records no
-range, sets `range_unknown` in `--json`, and says so in place of `landed in`:
-
-```text
-  no range recorded: the loop watched this story's commits, but no single range holds only them
-```
-
-The line names no cause, and there are four: somebody else's commit among the story's, a merge
-that brought in a side branch, history rewritten under the loop, or git unable to read the start
-or the notes. The work itself is fine; the record only says there is no range. `committed on
-story/<ID>` means the commits are on the story's own branch, in its worktree, and trunk has none
-of them until `sdlc stop` lands the story. `git rev-parse --absolute-git-dir`, run in the
-checkout, names the `<git-dir>` that holds what the hook watched.
-
-When the range it records ends before HEAD, it says which commit HEAD is:
-
-```text
-  landed in 3f1c2a9d4b7e..8a0e5d6c1f2b
-  head is c4d9e2f7a130, past 8a0e5d6c1f2b: nothing that landed after 8a0e5d6c1f2b was watched
-```
-
-It keeps that HEAD on the story's record, so the fact outlasts the output:
-`head_past_commit` in `--json` holds it in full, and [`sdlc log`](#sdlc-log)
-repeats the line. Each pass replaces what the last one kept, and a range whose
-end is HEAD keeps nothing.
-
-That is usually a person's commit made after the session's, and is then as it
-should be. It is also the only sign of the two cases where the range stops short
-of the story's work: a command that committed twice, of which the hook watched
-only the start, and history rewritten under the loop. When the range's end *is*
-HEAD there is no signal at all that anything unwatched landed: a commit the hook
-did not see, made straight on a HEAD it did, joins the range and nothing says
-so. What the hook wrote down is removed when the finished story is stopped, so
-look at it before `sdlc stop` if the line gives you a reason to.
-
-Where the hook watched nothing — the plugin is not installed, enforcement is
-switched off for the session, or the story was already under way when this
-version arrived — the range is what it always was: from HEAD when code review
-first passed to HEAD when the commit gate passes, which can hold commits
-somebody else made in that window. The start is left out, and the output says
-`landed in <end>`, when it is not known: the repository had no commits yet when
-code review first passed, or an older `sdlc` passed it.
-
-A hash in the note has to be inside the range this pass records, or the pass is
-refused with [SDLC-E0049](troubleshooting.md#sdlc-e0049): seven to forty
-hexadecimal characters that git resolves to a commit count as naming it, and
-anything else is prose. Where the start is not known, the one commit the record
-names is the range the note is held to. The note needs no hash. The check is
-skipped when no range is recorded, so it is a consistency check between the
-note and the record, not evidence of which commits are the story's.
-
-A pass of the commit gate is also refused, with nothing recorded, under
-[SDLC-E0080](troubleshooting.md#sdlc-e0080) when the story's commits add the markers
-of an unresolved conflict, naming each file and the lines of each conflict. It
-looks at the net change from where the story started to HEAD, so a conflict one
-commit adds and a later one takes out is not there. The paths where the lines are
-meant to be are the ones this checkout's `paths.conflict_markers_intended` lists;
-`sdlc stop` reads trunk's. With `git.worktrees` off the story starts where the
-record says code review began. Where the record names no such commit, or git
-cannot read it, the pass looks from the commit the record holds as where the
-iteration started instead, and only where neither can be read does it look at
-nothing, with the debug log saying why.
-
-A story in its own worktree that has been put onto a later trunk commit than the
-one it was cut from, by a rebase or by the stop's own replay, has its range start
-at the trunk commit it sits on, on every pass of the commit gate, so that what
-other stories landed in between is not counted as its commits. The same holds for
-a finished story started again in a new worktree and put onto a later trunk
-commit than its new cut: its commits from the earlier landing are trunk's by
-then. The commits the rebase or the replay made again were never watched,
-because the hook writes down the HEAD a commit is made on and these were made on
-commits that did not exist before: the commits from that trunk commit up to the
-first one the hook watched being made are taken as the story's without it. Where
-the trunk commit cannot be worked out, because trunk or the main checkout's
-configuration cannot be read, the range starts where it did before.
-
-The end is forgotten when the commit gate stops standing, and every pass records
-its answer over the last one's. A pass that records a watched range moves the
-start to that range's start as well, so `commit_base` is then no longer where
-code review began. When the hook watched nothing the start stays, even when a
-finished story is reopened later, so that story's range can also span
-everything that landed on trunk in between, unless it was put onto a later trunk
-commit, as above.
-
-`verification pass` reads the design review's findings, and `commit pass` the design and code
-reviews', in every round. Each is refused:
-
-- with [SDLC-E0093](troubleshooting.md#sdlc-e0093) where the record holds fewer findings for a
-  reviewer than its reviews listed, because an older `sdlc` saved it; that reviewer runs
-  `sdlc review add` again with its `--finding` flags;
-- with [SDLC-E0092](troubleshooting.md#sdlc-e0092) while a finding is open, naming each as
-  `<gate> <role> F-n`; close it with
-  [`sdlc finding close`](#sdlc-finding-close-gate-role-f-n);
-- with [SDLC-E0091](troubleshooting.md#sdlc-e0091) where a finding's latest closing is a
-  referral and the story has changed its file since, or the story's commits cannot be read,
-  saying which for each.
+**The implementation gate.** `sdlc gate implementation pass` does more than
+record. Before it records the pass, it runs your configured commands itself:
+`build`, `test`, `lint`, `fmt_check`, `coverage` and `mutation`, those that
+are set, in that order, at the root of the story's worktree. Each has to exit
+0, and `coverage` and `mutation` have to reach their
+[thresholds](configuration.md#thresholds). Then it reports what it ran:
 
 ```console
-sdlc: verification cannot pass while a finding of design_review is open
-
-  why  a finding nobody has closed is a decision nobody has made; to close one that is fixed: sdlc finding close design_review architect F-1 --fixed; open: design_review architect F-1, design_review architect F-2; sdlc status shows each with its text
+$ sdlc gate implementation pass --note "frozen tests pass"
+AUTH-3  implementation  pass
+  frozen tests pass
+  ran commands.build (0.032s), commands.test (0.447s), commands.lint (0.842s), commands.fmt_check (0.009s), commands.coverage (0.035s) on tree 571ae232889d
 ```
+
+Before each command, one line on standard error names it and the file its
+output is kept in:
+
+```text
+sdlc: running commands.build for AUTH-3's implementation gate in /home/<user>/src/billing/.sdlc/worktrees/AUTH-3; its output is put in /home/<user>/src/billing/.sdlc/stories/AUTH-3/implementation-run.log when the run ends
+```
+
+A gate with none of those commands set runs nothing, and neither does `fail`
+or `pending`. This is what the run gives you:
+
+- **A result nobody has to repeat.** The pass records each command's name,
+  exit status and time against the tree hash, which is the same measure of
+  the story's files that a review is stamped with. While
+  `sdlc status --json` reports that result as `current`, the verifier works
+  from it and [the landing](#landing-a-story-from-its-worktree) lands on it,
+  and neither runs the commands again. Recording the gate again clears it.
+  With `--json`, the pass gives the run as `commands` and `tree_hash`.
+- **One directory for the whole run.** The commands share a new, empty
+  directory named in `SDLC_RUN_DIR`, so that `coverage` can read what `test`
+  left there. [The run directory](configuration.md#the-run-directory) shows
+  how.
+- **A failing command fails the gate.** A command that exits other than 0,
+  misses its threshold or prints no figure is refused with
+  [SDLC-E0095](troubleshooting.md#sdlc-e0095), and the gate is recorded as
+  failed, so it counts towards
+  [`loop.max_rework_rounds`](configuration.md#loop). The refusal names the
+  first command that did not pass, shows the last 20 lines it printed, and
+  names the file that holds everything,
+  `.sdlc/stories/<ID>/implementation-run.log` in the main checkout. It begins:
+
+  ```text
+  sdlc: commands.test ended with status 1 and did not pass, so the implementation gate is recorded as failed
+  ```
+
+- **A run that proves nothing records nothing.** Three things are refused
+  with the same code and spend no rework round: a command that could not be
+  started, a command that wrote to a file of the tree it ran on, and a story
+  that changed while the commands ran.
+- **One run at a time.** Other stories, and `sdlc status`, carry on while the
+  commands run. A second `sdlc gate implementation pass` or `sdlc freeze` on
+  the same story is refused at once
+  ([SDLC-E0006](troubleshooting.md#sdlc-e0006)), and so is one run from
+  inside one of the commands.
+
+> [!WARNING]
+> A result run by `sdlc` was run as you configured it,
+> from a line the rule could read: the hook refuses a command line that sets
+> the environment before the call
+> ([`commands-run-as-configured`](enforcement.md#commands-run-as-configured)).
+> It is not proof that the environment was not chosen some other way, and
+> [Not held](enforcement.md#not-held) lists what can still change it.
+
+**The commit gate.** A pass of `commit` records the commits the story is made
+of and prints them:
+
+```console
+$ sdlc gate commit pass --note "committed"
+AUTH-3  commit  pass
+  committed
+  committed on story/AUTH-3 in 27367e1d65c8..8edf4f0e2a43
+```
+
+With worktrees turned off the line reads `landed in <start>..<end>`, because
+the commits are on trunk already. Where somebody else's commit sits among the
+story's, no single range holds only the story's commits, and the line says
+`no range recorded`. The work is fine; the record only has no range. A commit
+hash you put in the note has to be one of those commits
+([SDLC-E0049](troubleshooting.md#sdlc-e0049)).
+
+**The last gate.** Recording the last gate finishes the story:
+
+```console
+$ sdlc gate retro pass --note "retro written"
+AUTH-3  retro  pass
+  retro written
+
+Every gate on AUTH-3 has passed. `sdlc stop` in .sdlc/worktrees/AUTH-3 lands it on main.
+```
+
+A story in its own worktree is done when
+[`sdlc stop`](#landing-a-story-from-its-worktree) lands it. A gate recorded as
+failed after that puts the story back in progress, where the rework belongs.
+
+**Findings hold two gates.** `verification pass` reads the design review's
+findings, and `commit pass` the design and code reviews'. Each is refused while
+a finding is open ([SDLC-E0092](troubleshooting.md#sdlc-e0092)), naming every
+one, until it is closed with
+[`sdlc finding close`](#sdlc-finding-close-gate-role-f-n). A finding referred
+to a person holds the gate too, where the story has since changed the
+finding's file ([SDLC-E0091](troubleshooting.md#sdlc-e0091)).
+
+**When it refuses.**
+
+| It refuses when | Code |
+| --- | --- |
+| the gate or the status is not one it knows | [SDLC-E0013](troubleshooting.md#sdlc-e0013), [SDLC-E0014](troubleshooting.md#sdlc-e0014) |
+| an earlier gate has not passed | [SDLC-E0031](troubleshooting.md#sdlc-e0031) |
+| a reviewer blocks the gate. Where the gate has gone to the reviewer's arbiter, the refusal names the arbiter | [SDLC-E0030](troubleshooting.md#sdlc-e0030) |
+| a command the implementation gate ran did not pass, or its run proved nothing | [SDLC-E0095](troubleshooting.md#sdlc-e0095) |
+| the story's commands are already running | [SDLC-E0006](troubleshooting.md#sdlc-e0006) |
+| `analysis` would pass with no staffing recorded | [SDLC-E0068](troubleshooting.md#sdlc-e0068) |
+| a finding is open, or stands referred in a file the story changes | [SDLC-E0092](troubleshooting.md#sdlc-e0092), [SDLC-E0091](troubleshooting.md#sdlc-e0091) |
+| the story's commits add the markers of an unresolved conflict | [SDLC-E0080](troubleshooting.md#sdlc-e0080) |
+| another checkout or another session holds the story | [SDLC-E0050](troubleshooting.md#sdlc-e0050), [SDLC-E0048](troubleshooting.md#sdlc-e0048) |
+
+Where [`budget.gate_hours`](configuration.md#budget) gives a gate a number of
+hours and the agents have spent longer at it, `gate` prints one line about it
+on standard error and decides exactly as it would have.
 
 ## `sdlc artifact list`
 
-See which documents this version of `sdlc` can store. The names it prints are
-the ones `sdlc artifact write` accepts.
+See which documents `sdlc` stores for a story. The names it prints are the
+ones [`sdlc artifact write`](#sdlc-artifact-write-name) accepts.
+
+```text
+sdlc artifact list [flags]
+```
+
+`artifact list` has no flags of its own.
 
 ```console
 $ sdlc artifact list
+  analysis   ANALYSIS.md    gate analysis   written by the researcher agent
+  threats    THREATS.md     gate analysis   written by the researcher agent
+  test_plan  TEST-PLAN.md   gate tests_frozen written by the sdet agent
+  plan       PLAN.md        gate plan       written by the implementer agent
+  verification VERIFICATION.md gate verification written by the verifier agent
+  retro      RETRO.md       gate retro      written by the bookkeeper agent
 ```
+
+Each line is a document's name, its file in the story's directory, the gate
+that needs it, and the agent that writes it. With `--json`, each entry in
+`artifacts` has `name`, `file`, `gate` and `role`.
 
 ## `sdlc artifact write NAME`
 
-Store one of a gate's documents, such as the analysis or the plan, for the story
-being worked on. The agent whose gate it is runs this; the document arrives on
-standard input, or from a file.
+Store one of a gate's documents for the story being worked on. The agent whose
+gate it is runs this, with the document on standard input or in a file.
 
-```console
-$ sdlc artifact write analysis < analysis.md
-$ sdlc artifact write threats --file /tmp/threats.md
-$ sdlc artifact write plan <<'SDLC_DOCUMENT'
-# Plan
-...
-SDLC_DOCUMENT
+```text
+sdlc artifact write NAME [flags]
 ```
 
 | Flag | What it does |
 | --- | --- |
 | `--file` | read the document from this path instead of standard input |
-| `--story` | store against this story instead of the one being worked on. The id has to be in the backlog |
+| `--story` | store against this story instead of the one being worked on. The id has to be in the backlog. |
 
-The names are `analysis`, `threats`, `test_plan`, `plan`, `verification` and
-`retro`.
+```console
+$ sdlc artifact write analysis < analysis.md
+AUTH-3  analysis  .sdlc/stories/AUTH-3/ANALYSIS.md (57 bytes)
+```
 
-Writing a document again replaces it, so a gate that ran twice has one record,
-not two. An empty document is refused, and so is one larger than a megabyte,
-because storing a truncated document would leave every later gate reviewing
-something that stops mid-sentence.
+NAME is `analysis`, `threats`, `test_plan`, `plan`, `verification` or `retro`.
+Writing a document again replaces it, so a gate that ran twice has one
+document, not two.
 
-Storing the plan also keeps that revision of it, as `plans/<sha256>.md` in the
-story's directory, for
-[`sdlc artifact diff plan`](#sdlc-artifact-diff-plan). If the revision cannot be
-written, the command refuses with `SDLC-E0006` and `PLAN.md` stays as it was.
+This is the only way these files are written. An agent that edits one in place
+is refused, including the agent whose gate it is, so that what a gate read is
+what was stored.
 
-> [!NOTE]
-> This is the only way these files are written. The hook refuses anyone who
-> edits them in place, including the agent whose gate it is. See
-> [enforcement](enforcement.md). A kept revision is the exception, as the next
-> section says.
+Storing the plan also keeps that revision of it, so that a reviewer asked to
+look again can see what changed with
+[`sdlc artifact diff plan`](#sdlc-artifact-diff-plan).
+
+**When it refuses.** A name it does not know is
+[SDLC-E0016](troubleshooting.md#sdlc-e0016), and an empty document is
+[SDLC-E0017](troubleshooting.md#sdlc-e0017). One larger than a megabyte is
+[SDLC-E0019](troubleshooting.md#sdlc-e0019): a document cut short would leave
+every later gate reviewing something that stops mid-sentence. With no story
+being worked on and none named, it is
+[SDLC-E0011](troubleshooting.md#sdlc-e0011).
 
 ## `sdlc artifact diff plan`
 
-Print what changed in the plan since a reviewer's latest design review, for a
-reviewer [asked to look again](the-loop.md#why-approvals-go-stale). It records
-nothing, so that reviewer still records a verdict on the plan as it now stands.
+Print what changed in the plan since a reviewer's latest design review. A
+reviewer asked to look again after a rework reads this, and not the whole plan
+a second time.
+
+```text
+sdlc artifact diff plan [flags]
+```
+
+| Flag | What it does |
+| --- | --- |
+| `--since` | the design reviewer whose latest review the diff starts from. Required. |
 
 ```console
 $ sdlc artifact diff plan --since architect
@@ -1785,140 +1873,96 @@ $ sdlc artifact diff plan --since architect
 +++ PLAN.md ad70ac83778a442067fc5e0f4420419aafe37666cc890dc70787299d138f4dba
 @@ -1,3 +1,3 @@
  # Plan
-
+ 
 -One.
 +One, and a correction to it.
 ```
 
-| Flag | What it does |
-| --- | --- |
-| `--since` | required: the design reviewer whose latest review the diff starts from |
+It prints a unified diff with three lines of context, from the plan that
+review read to the plan as it stands now. Each side is named by the hash of
+its content, which is also the name its revision is kept under. The command
+records nothing, so the reviewer still records a verdict on the plan as it now
+stands.
 
-It prints a unified diff with 3 lines of context, from the plan that review was
-stamped with to the current `PLAN.md`, naming each by its hash and no path. Where
-two plans differ by more lines than the search is bounded to, thousands of them,
-it prints one hunk replacing everything between what they share at each end. That
-is larger and just as correct.
+It prints nothing and exits 0 when the plan has not changed since that
+review: the review is current, and the gate accepts it as it is.
 
-It prints nothing and exits 0 when nothing changed, including where the review's
-revision was never kept: the review is then current, and the gate accepts it as
-it stands. With `--json` it prints `ok`, `story`, `role`, `reviewed_subject`,
-`subject` and `diff`.
+Every revision is kept, one for each distinct plan, and `sdlc` never removes
+one. Correcting a plan therefore does not remove the earlier text, and a
+project that commits `.sdlc/stories` commits it too.
 
-Where the review's revision cannot be given, it refuses with
-[`SDLC-E0084`](troubleshooting.md#sdlc-e0084) and that reviewer reads the whole
-plan this round, because a diff from anything else could hide a change. A review
-with no kept revision goes this way, as does a role with no design review yet.
-`PLAN.md` itself missing, or unreadable, is
-[`SDLC-E0005`](troubleshooting.md#sdlc-e0005): there is no whole plan to read, so
-have the implementer store it again. Any other name than `plan` is
-[`SDLC-E0016`](troubleshooting.md#sdlc-e0016), and a `--since` that is no design
-reviewer is [`SDLC-E0027`](troubleshooting.md#sdlc-e0027).
+With `--json`, it prints `story`, `role`, `reviewed_subject` (the hash of the
+plan the review read), `subject` (the hash of the plan now) and `diff`.
 
-A kept revision is named by the SHA-256 of its bytes, the hash its review was
-stamped with, and every read checks the bytes against that name. Nothing stops an
-agent writing that directory: no hook rule guards it. The check is the defence,
-because the revision has to hash to its name whoever wrote it. So changing or
-deleting one costs only that reviewer's diff. Anything but a real directory at
-`plans/`, a link to anywhere included, or a directory at the name the next plan
-will take, stops `sdlc artifact write plan` with `SDLC-E0006` until it is removed.
-Other bytes at that name are replaced.
-
-There is one file for each distinct plan, never pruned, because a later review may
-need any of them. Correcting a plan therefore does not remove the earlier text: in
-a project that commits `.sdlc/stories` it is committed too. Deleting the file
-removes it, at the cost of that reviewer's diff.
-
-Whoever relays the diff to a reviewer has to give all of it, and the reviewer can
-run the command itself and compare. A diff too long for the host to pass whole
-means that reviewer cannot be resumed, and it starts fresh with the path to
-`PLAN.md`.
-
-Control characters in a plan are spelled out, as in everything `sdlc` prints: an
-escape reads as `\u001b`. So a real escape and the same six characters typed out
-print alike, though a change between them still shows as a changed line.
-Bidirectional format characters are not control characters, and pass as they are.
+**When it refuses.** Where the plan that review read cannot be given, because
+its revision was not kept or the reviewer has no design review yet, it refuses
+and that reviewer reads the whole plan this round
+([SDLC-E0084](troubleshooting.md#sdlc-e0084)). A diff from anything else could
+hide a change. A missing `PLAN.md` is
+[SDLC-E0005](troubleshooting.md#sdlc-e0005), any name other than `plan` is
+[SDLC-E0016](troubleshooting.md#sdlc-e0016), and a `--since` that names no
+design reviewer is [SDLC-E0027](troubleshooting.md#sdlc-e0027).
+[Why approvals go stale](the-loop.md#why-approvals-go-stale) explains when a
+reviewer is asked to look again.
 
 ## `sdlc codemap write`
 
-Store the sections a story adds to the root `CODEMAP.md`, or replaces in it. The
-bookkeeper runs this at the retro, in the story's own worktree, instead of
-editing the file; [`sdlc stop`](#the-storys-sections-of-codemapmd) puts the
-sections on trunk once the story has landed. `sdlc codemap` alone prints help.
+Store the sections a story adds to `CODEMAP.md`, or replaces in it. The
+bookkeeper runs this at the retro, in the story's worktree, and never edits
+the file there. [`sdlc stop`](#landing-a-story-from-its-worktree) puts the
+sections on trunk once the story has landed.
+
+```text
+sdlc codemap write [flags]
+```
+
+`codemap write` has no flags of its own. The sections arrive on standard
+input:
 
 ```console
 $ sdlc codemap write <<'MD'
 <!-- sdlc:add -->
-## internal/refund
+## internal/session
 
-Package `refund`. Works out what a customer is owed.
+Package `session`. Says whether a token may be used.
 
 <!-- sdlc:replace -->
 ## internal/billing
 
 Package `billing`. Keeps the accounts and, now, invoices.
 MD
-Stored 2 sections for US-001: adds "internal/refund", replaces "internal/billing". `sdlc stop` puts them into CODEMAP.md on main once the story has landed.
+Stored 2 sections for AUTH-3: adds "internal/session", replaces "internal/billing". `sdlc stop` puts them into CODEMAP.md on main once the story has landed.
 ```
 
-A set is one or more sections. Each begins with a line that is exactly
-`<!-- sdlc:add -->` or `<!-- sdlc:replace -->`; the next line is the heading,
-`##`, one space and the text; everything up to the next such line is the
-section. A section is whole: a replaced one takes the place of the section by
-that heading, deeper headings and all, and an added one goes at the end of the
-map. Headings are matched without regard to case.
+Each section begins with a line that is exactly `<!-- sdlc:add -->` or
+`<!-- sdlc:replace -->`, then its heading as `##`, a space and the text, then
+at least one line under it. A replaced section takes the place of the section
+with that heading, deeper headings and all, and an added one goes at the end of
+the map. Headings are matched without regard to case.
 
-The set is text a model wrote that reaches trunk with no reviewer, so it is
-held to a narrow form and refused, never repaired
-([SDLC-E0078](troubleshooting.md#sdlc-e0078)): nothing before the first
-directive; no heading at the section's level or above in a body, written with
-hash marks or as an underline; no fenced block left open, and no comment
-opened with `<!--` and not closed; no conflict marker; no section with nothing
-under its heading; no heading twice, and none over 200 bytes; plain UTF-8 with
-line feeds, so not a PowerShell here-string, which sends carriage returns; no
-character that does not show, such as a zero-width space or a mark that turns
-the text round; and no more than 64 sections or 256 KiB. A refused set stores
-nothing and leaves what was stored.
+Writing again replaces what was stored. A stored set lasts as long as the
+attempt it was stored in: [`sdlc release`](#sdlc-release) drops it, and so
+does a start that begins the story afresh.
 
-That form is held as `sdlc` reads the map, which is not in every case as
-Markdown reads it. A fenced block inside a list item or an HTML block is read
-by a renderer otherwise: the page can then show a heading the body held inside
-a fence, or show what follows as code. `sdlc`'s own reading still finds each
-section once, and no byte of another section changes.
+**When it refuses.** The set reaches trunk with no reviewer, so it is held to
+a narrow form and refused, never repaired
+([SDLC-E0078](troubleshooting.md#sdlc-e0078)). A set that does not begin with
+a directive, a body with a heading at the section's level or above, a fenced
+block left open, a conflict marker, an empty section, a heading given twice,
+or text that is not plain UTF-8 with line feeds are all refused. So is a story
+that has no worktree of its own: no stop lands such a story, and the
+bookkeeper edits `CODEMAP.md` in place there. With no story being worked on it
+is [SDLC-E0011](troubleshooting.md#sdlc-e0011).
 
-Writing again replaces what was stored, and that is the only way a session
-changes it: a bookkeeper that finds a set already stored writes the set it
-means. There is no way to store nothing. So where a stop was refused and the
-story reworked, the set stored before is still the one the next stop applies,
-until the bookkeeper writes again at the retro; the `codemap` events on the
-story's record say what is stored. Where the reworked story's map needs
-nothing, the bookkeeper stores, in place of the old set, one section the
-worktree's map already has, sent as a replacement with the text it has. Nothing
-new reaches trunk: the stop finds the section there, says so under SDLC-E0076,
-and a person's `sdlc remap <ID> --drop` ends it.
-
-A stored set does not outlive the attempt it was stored in: `sdlc release`
-drops it, and so does an `sdlc start` that begins the story afresh, each with
-a `codemap` event on the record. A start that picks a story up again leaves
-it.
-
-The set is kept at `.git/sdlc/codemap/<ID>.md`, in the git directory every
-checkout shares, so nothing in the working tree changes. With `--json`, standard output
-has `ok`, `story` and `sections`, a count.
-
-With no story being worked on it is refused with
-[SDLC-E0011](troubleshooting.md#sdlc-e0011). For a story that has no worktree
-of its own it is refused with SDLC-E0078: no stop lands such a story, so the
-bookkeeper edits `CODEMAP.md` in place there, as before.
+With `--json`, it prints `story`, and `sections`, a count.
 
 ## `sdlc review list`
 
-Check which reviews each gate expects and where they have got to. It is the
-quickest way to see why a gate is still waiting.
+See which reviews each gate expects and where they have got to. It is the
+quickest way to find out why a gate is still waiting.
 
-```console
-$ sdlc review list
-$ sdlc review list --gate design_review --json
+```text
+sdlc review list [flags]
 ```
 
 | Flag | What it does |
@@ -1926,68 +1970,72 @@ $ sdlc review list --gate design_review --json
 | `--gate` | only this gate's reviews |
 | `--story` | for this story instead of the one being worked on |
 
-The first line names the review policy every reviewer reads, as written in
-[`reviews.policy`](configuration.md#reviewspolicy) or the default: `Review policy: REVIEW.md`.
-It is `policy` in `--json`, which is always there and empty for none. Where there is no file
-there, or it is a directory or a link out of the repository, the line says the project has
-`no review policy`, and names the path where `reviews.policy` set one. It never reads the
-file's content.
-
-For every expected review, the list says whether it can block the gate, what the
-latest verdict was, and whether it is **stale**, which means the reviewer looked
-at something that has changed since. A `blocking` reviewer has to approve; an
-`advisory` one only has to report; perf is `on budget`: it never has to approve,
-and its block stops the gate, because it blocks only on a performance budget the
-contract states.
-
-Where the story has a [staffing](#sdlc-staffing), a reviewer it leaves out
-reads `left out` with the staffing's reason, and the gate does not wait for it:
-`left_out` and `reason` in `--json`. A reviewer the staffing leaves out that a
-changed path brings back to the code review is listed as any other, with the
-path: `brought_back_by` in `--json`.
-
-A stale design review also names the revision of the plan it was stamped with,
-and the command that shows what changed since, so that reviewer can be
-[asked to look again](the-loop.md#why-approvals-go-stale):
-
 ```console
 $ sdlc review list --gate design_review
 Review policy: REVIEW.md
-  design_review   architect       blocking  approve (round 1, stale -- what was reviewed has changed since; reviewed revision 40c9f6da7ea56d0ae851a7114f073945adaf8903e44383452f4111abcdb86a5d; see sdlc artifact diff plan --since architect)
+  design_review   architect       blocking  block (round 1)
+  design_review   red-team        advisory  note (round 1)
+  design_review   security        blocking  approve (round 1)
+  design_review   perf            on budget left out by the staffing -- "nothing here is on a hot path"; delegate to sdlc:project-manager to amend the staffing if the story needs it
+  design_review   human-advocate  advisory  approve (round 1)
 ```
 
-The hash is `reviewed_subject` in `--json`. It is there for a stale design review
-whose stamp can name a revision, and for no other review.
+The first line names the review policy every reviewer reads. Where there is no
+file at that path, it says the project has `no review policy`.
 
-Where a gate has [gone to the reviewer's arbiter](the-loop.md#the-arbiter), the reviewer's
-row gives the arbiter's review, which stands for it, and names the arbiter — `reviewed_by` in
-`--json`:
+Each line after it is one expected review: the gate, the reviewer, whether it
+can stop the gate, and its latest verdict.
 
-```console
-  code_review     security        blocking  approve (by security-arbiter, round 1)
+| It reads | What it means |
+| --- | --- |
+| `blocking` | the reviewer has to approve before the gate passes |
+| `advisory` | the reviewer only has to report |
+| `on budget` | perf: it blocks only when a performance budget in the contract is breached |
+| `not reviewed` | the gate is still waiting for this review |
+| `left out by the staffing` | the story's staffing leaves this reviewer out, with its reason, and the gate does not wait for it |
+| `stale` | the reviewer looked at something that has changed since, and has to look again |
+
+A stale design review also names the revision of the plan it read, and the
+command that shows what changed since:
+
+```text
+  design_review   architect       blocking  block (round 1, stale -- what was reviewed has changed since; reviewed revision 40c9f6da7ea56d0ae851a7114f073945adaf8903e44383452f4111abcdb86a5d; see sdlc artifact diff plan --since architect)
 ```
 
-From the reviewer's limit-th block until its arbiter first reviews, the row still gives the
-reviewer's own block, stale or not, and says where the gate has gone — `gone_to` in `--json`.
-The reviewer is refused there, and `sdlc gate <gate> pass` and `sdlc freeze` name the arbiter
-in their [SDLC-E0030](troubleshooting.md#sdlc-e0030) refusal:
+**A gate that has gone to an arbiter.** Once a reviewer has blocked as often
+as it may, the gate goes to the reviewer's
+[arbiter](the-loop.md#the-arbiter). Until the arbiter has reviewed, the
+reviewer's row still gives its own block, and says where the gate has gone:
 
-```console
+```text
   design_review   architect       blocking  block (round 2; the gate has gone to architect-arbiter, which reviews it next)
 ```
+
+From then on the row gives the arbiter's review, which stands in the
+reviewer's place, and names the arbiter:
+
+```text
+  design_review   architect       blocking  approve (by architect-arbiter, round 1)
+```
+
+With `--json`, `policy` is the path of the review policy, empty where there is
+none, and each entry in `reviews` has `gate`, `role`, `blocking`, `verdict` and
+`round`. It has `left_out` and `reason` for a reviewer the staffing leaves out,
+`brought_back_by` for one a changed path brought back to the code review,
+`reviewed_subject`, the plan's hash, for a stale design review, `gone_to` for
+a gate that waits for an arbiter, and `reviewed_by` where the review is the
+arbiter's.
+
+[When a reviewer blocks](guides/when-a-reviewer-blocks.md) shows how to read a
+block and what happens next.
 
 ## `sdlc review add GATE ROLE VERDICT`
 
 Record one reviewer's conclusion. Each reviewing agent runs this when it has
-finished, with the review itself on standard input. ROLE is the reviewer's name:
-its role, or an instance's name, such as `security-2`, where the `team` section
-gives it more than one, or its arbiter's, `<role>-arbiter` or `<role>-<n>-arbiter`,
-once the gate has [gone to it](the-loop.md#the-arbiter).
+finished, with the review itself on standard input or in a file.
 
-```console
-$ sdlc review add design_review architect block --important 1 --finding "important the plan: AC-3 has no step" < review.md
-$ sdlc review add code_review code-reviewer approve --nits 1 --finding "nit internal/cli/review.go:42: the name says nothing" --file review.md
-$ sdlc review add code_review perf note --file /tmp/perf.md
+```text
+sdlc review add GATE ROLE VERDICT [flags]
 ```
 
 | Flag | What it does |
@@ -1996,137 +2044,123 @@ $ sdlc review add code_review perf note --file /tmp/perf.md
 | `--note` | the headline finding, in one line |
 | `--important` | how many important findings this review names |
 | `--nits` | how many nits this review found |
-| `--finding` | one finding, as `"<important\|nit> [path]: <text>"`; once for each finding the review counts, and left out at 0 |
-| `--story` | record against this story instead of the one being worked on. The id has to be in the backlog |
-
-The verdicts are `approve`, `block` and `note`.
-
-A block has to name at least one important finding under the
-[review policy](configuration.md#reviewspolicy): `block` with no `--important`, or with 0, is
-refused with [SDLC-E0086](troubleshooting.md#sdlc-e0086) and records nothing, because a review
-with only nits is an approve with the nits listed. Either count may go with any verdict, and
-`--nits` with a block is fine. A count that is negative, or above 1,000,000, is refused with
-[SDLC-E0034](troubleshooting.md#sdlc-e0034) on any verdict, and so is a word.
-
-The counts are the reviewer's own, and `sdlc` does not judge them; at `design_review` and
-`code_review` it checks only that `--finding` lists what they count. A number typed to get past
-the refusal passes it, and an approve with an important count is recorded as given and lets the
-gate through. A block still stops the gate, so the most a false count costs is a round.
-`gate-record.json` and `sdlc log` show what each review gave.
-
-The command stamps the review with what was in front of the reviewer — the
-story's entry in the backlog at `dor`, the plan's content at `design_review`,
-the working tree at `verifier_review` and `code_review`. That is what makes an
-approval go stale when the thing it approved changes. The story and the tree
-both leave out the `status` and `updated` fields `sdlc` writes into the backlog
-itself, and the tree leaves out `.sdlc/`; see
-[Why approvals go stale](the-loop.md#why-approvals-go-stale).
-
-A block that stops the gate, recorded `loop.max_review_rounds` times by the same
-reviewer since a person last answered for the story (or the agent's own
-[`max_rounds`](configuration.md#team) where it has one), sends the gate to that
-reviewer's [arbiter](the-loop.md#the-arbiter), and says so in four lines of its own —
-`arbiter` in `--json`:
+| `--finding` | one finding; once for each finding the review counts, and left out at 0 |
+| `--story` | record against this story instead of the one being worked on. The id has to be in the backlog. |
 
 ```console
-  security has blocked code_review 3 times, and loop.max_review_rounds is 3: the gate goes to security-arbiter, a fresh sdlc:security that rules on the open findings.
-  Its review then stands for security at code_review, and security is refused there.
-  Until security-arbiter first reviews, any answer a person gives the story starts security's count again and gives it its turn.
-  From then on, only a person's answer to a review_not_converging hand-over raised by security or security-arbiter at code_review gives security its turn again.
+$ sdlc review add design_review architect block --important 1 --nits 1 \
+    --finding "important the plan: AC-2 has no step" \
+    --finding "nit internal/session/session.go:4: the name says nothing" < review.md
+AUTH-3  design_review  architect  block (round 1)
+  .sdlc/stories/AUTH-3/reviews/design_review-architect-1.md
 ```
 
-From that block on, `review add` refuses the reviewer at that gate with
-[SDLC-E0027](troubleshooting.md#sdlc-e0027), and takes the arbiter; it refuses the
-arbiter before it. The arbiter's own block, recorded that many times, hands the story to a
-person as `review_not_converging`, and says so — `handed_over` in `--json`. So does the
-reviewer's limit-th block where the role is disabled, since a disabled role has no arbiter.
+VERDICT is `approve`, `block` or `note`. ROLE is the reviewer's name: its
+role, or an instance's name such as `security-2` where the `team` section
+gives a reviewer more than one. Once a gate has
+[gone to an arbiter](the-loop.md#the-arbiter), ROLE is the arbiter's name,
+which is the reviewer's with `-arbiter` after it: `architect-arbiter`, or
+`security-2-arbiter` for an instance. Every round is kept, so what the
+architect said last time stays answerable.
 
-What gives the reviewer its turn again depends on whether the arbiter has reviewed yet:
+**A block names something important.** `block` with no `--important`, or with
+0, is refused and records nothing
+([SDLC-E0086](troubleshooting.md#sdlc-e0086)), because a review with only nits
+is an approve with the nits listed. The counts are the reviewer's own, and
+`sdlc` does not judge them. A count that is negative, above 1,000,000, or not
+a number is refused ([SDLC-E0034](troubleshooting.md#sdlc-e0034)).
 
-- **Before the arbiter's first review**, the reviewer's blocks are counted since a person last
-  answered for the story, so any answer starts the count again, whatever it was about: a
-  stalled loop, a failing gate, another role's hand-over at the same gate. The reviewer is then
-  taken, and the arbiter is refused until the reviewer's limit comes round again.
-- **From the arbiter's first review**, its review stands, and only a person's answer to a
-  `review_not_converging` hand-over that the reviewer or its arbiter raised at that gate gives
-  the reviewer its turn again. An answer to another role's or another gate's does not.
+**Findings.** Each `--finding` is one finding: `<important|nit>`, then a path
+from the repository's root where it is about one file, then a colon, a space
+and the text. A line number after the path is fine. Put a value that holds
+backticks, `$` or `"` in single quotes, because the shell expands them in
+double quotes before `sdlc` reads it.
 
-That block and the hand-over are recorded together or not at all, as a
-[gate failure at its limit](#sdlc-gate-gate-status) is. Where the story cannot
-be handed over the command is refused, nothing is recorded and no review
-document is left, and the refusal says that the block was not recorded and that
-running the same command again is safe. The round that was refused is not a
-round: run again, the block is the round it would have been.
-
-Where [`budget.gate_hours`](configuration.md#budget) gives a gate a number and the
-story's agents' time at that gate has passed it, `review add` prints one line on standard
-error for each such gate once it has read the story's record, whether or not it then
-records or refuses the review, and decides, prints on standard output and exits exactly as
-it would without the setting. A refusal before the record is read prints nothing: an
-unknown gate, reviewer or verdict, no story being worked on, a story another checkout or
-session holds, a story not in the backlog, or a record that cannot be read. The first time
-it saves after finding a gate past its number, it also writes a `budget` event
-for that gate into the record with the review, so a hand-over carries it; a review that is
-refused records none.
-
-Each `--finding` is one finding: `<important|nit>`, then a path relative to the repository's
-root where it is about one file or directory, then a colon, a space and the text. A path with a
-space in it is read as text, and so is anything before the first colon and space that is more
-than one word.
-
-The record keeps the path as written, and reads it as the file it names, both to refuse a path
-that is absolute or leaves the repository and to match it against the story's changes
-([SDLC-E0091](troubleshooting.md#sdlc-e0091)). It reads past a line number after the path
-(`:12`, `:12-14`, `:12:3`, `:12:3-9`, `:12-`, `:L12`, `#L12`, `#L12C3` or `#L12-L14`), backticks
-or quotes around the whole path or only around the name (`` `internal/a.go`:12 ``), and a `,`,
-`.`, `;` or `)` that ends it. A colon not followed by a number stays in the name, so
-`docs/a:b.md` is one file. A path whose last segments are a changed file's, or that ends with a
-changed file's whole path, matches it: `a.go`, `cli/a.go` and `other/internal/cli/a.go` all
-match a changed `internal/cli/a.go`, while `internal/c` does not match `internal/cli`.
-Backticks are read past, but in a double-quoted shell value the shell runs them as a command
-first, so put a value that holds them in single quotes:
-``--finding 'nit `internal/a.go`:12: the name says nothing'``.
-
-A finding is kept on the review and numbered F-1, F-2 and so on, per gate and reviewer name across
-every round, so a second round goes on from where the first stopped, and `security F-1` and
-`security-2 F-1` are two findings. The important ones have to
-number `--important`, and the nits listed no more than `--nits`, which counts those past the
-policy's cap too; at `design_review` and `code_review` a count above 0 has to list what it
-counts. Otherwise the command records nothing and is refused with
-[SDLC-E0089](troubleshooting.md#sdlc-e0089):
+Findings are numbered F-1, F-2 and so on for each gate and reviewer, across
+every round. At `design_review` and `code_review` the findings listed have to
+match the counts, or nothing is recorded:
 
 ```console
+$ sdlc review add design_review architect block --important 2 --nits 1 \
+    --finding "important the plan: AC-2 has no step" < review.md
 sdlc: the findings listed with --finding do not agree with --important and --nits
 
-  why  --finding lists 1 important and 0 nits, and the review counts 2 important and no nits
+  why  --finding lists 1 important and 0 nits, and the review counts 2 important and 1 nit
+  fix  list each finding the review counts with --finding "<important|nit> [path]: <text>", one flag for each: as many important ones as --important says, and no more nits than --nits; or give --important and --nits the numbers the review lists. Nothing was recorded, so run the command again
+
+  SDLC-E0089  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0089
 ```
 
-A finding longer than 1,000 bytes, or holding a line break, a control character, a line or
-paragraph separator, or any of Unicode's default-ignorable code points, which a terminal
-draws as nothing (a format character such as a bidirectional control, a zero-width one, a byte
-order mark or a tag character; a variation selector; the combining grapheme joiner; a Hangul
-filler), is refused with [SDLC-E0034](troubleshooting.md#sdlc-e0034); so are more than 100
-findings. Accented letters, combining accents, dashes and curly quotes are taken. In double
-quotes the shell expands `$`, backticks and `"` before `sdlc` reads the finding, so keep them
-out of a double-quoted value, or put the value in single quotes.
+**Why an approval goes stale.** The review is tied to what was in front of the
+reviewer: the story at `dor`, the plan at `design_review`, and the working
+tree at `verifier_review` and `code_review`. When that changes, the review
+reads `stale` and the reviewer looks again.
 
-Each review that lists findings also writes a `findings` event, `<gate> <role> listed F-a to
-F-b`, into the record's history. An older `sdlc` keeps that event when it saves the record and
-drops the findings, and the gates read the two together
+**Too many rounds.** A block that stops the gate, recorded
+`loop.max_review_rounds` times by the same reviewer since you last answered
+for the story, sends the gate to that reviewer's
+[arbiter](the-loop.md#the-arbiter). An agent's own
+[`max_rounds`](configuration.md#an-agents-entry) takes the place of
+`loop.max_review_rounds` where it has one. The command says so in four lines
+of its own, and `--json` has `arbiter`:
+
+```console
+$ sdlc review add design_review architect block --important 1 \
+    --finding "important the plan: AC-2 still has no step" < review.md
+AUTH-3  design_review  architect  block (round 2)
+  .sdlc/stories/AUTH-3/reviews/design_review-architect-2.md
+  architect has blocked design_review 2 times, and loop.max_review_rounds is 2: the gate goes to architect-arbiter, a fresh sdlc:architect that rules on the open findings.
+  Its review then stands for architect at design_review, and architect is refused there.
+  Until architect-arbiter first reviews, any answer a person gives the story starts architect's count again and gives it its turn.
+  From then on, only a person's answer to a review_not_converging hand-over raised by architect or architect-arbiter at design_review gives architect its turn again.
+```
+
+From that block on, `review add` takes the arbiter at that gate and refuses
+the reviewer ([SDLC-E0027](troubleshooting.md#sdlc-e0027)). Before it, the
+arbiter is the one refused. The arbiter's review is recorded like any other:
+
+```console
+$ sdlc review add design_review architect-arbiter approve < review.md
+AUTH-3  design_review  architect-arbiter  approve (round 1)
+  .sdlc/stories/AUTH-3/reviews/design_review-architect-arbiter-1.md
+```
+
+The arbiter has the same limit. Its own block, recorded that many times,
+hands the story to you as `review_not_converging`, and says so: `handed_over`
+in `--json`. So does the reviewer's block at its limit where the agent is
+disabled, since a disabled agent has no arbiter.
+
+What gives the reviewer its turn again depends on whether the arbiter has
+reviewed yet:
+
+- **Before the arbiter's first review**, any answer you give the story starts
+  the reviewer's count again, whatever the answer was about. The reviewer is
+  then taken, and the arbiter is refused until the limit comes round again.
+- **From the arbiter's first review**, only your answer to a
+  `review_not_converging` hand-over that the reviewer or its arbiter raised
+  at that gate gives the reviewer its turn again. An answer to another
+  reviewer's hand-over, or to another gate's, does not. Neither does an
+  `sdlc unfreeze`, so after one the arbiter of the test reviewer reviews the
+  corrected tests.
+
+**When it refuses.** Beyond the two above: a finding longer than 1,000 bytes,
+one with a line break or a character that does not show, or more than 100
+findings ([SDLC-E0034](troubleshooting.md#sdlc-e0034)); a reviewer whose
+earlier findings an older `sdlc` dropped from the record, which runs the
+command again with its `--finding` flags
 ([SDLC-E0093](troubleshooting.md#sdlc-e0093)).
 
-> [!NOTE]
-> Rounds are kept rather than overwritten, so "what did the architect say last
-> time" stays answerable.
+[What each verdict does](guides/when-a-reviewer-blocks.md#what-each-verdict-does)
+says how the three verdicts affect a gate.
 
 ## `sdlc finding close GATE ROLE F-N`
 
-Close one finding a review listed, on the story being worked on. ROLE is the name
-the review was recorded under, an instance's such as `security-2` included.
+Close one finding a review listed, on the story being worked on. The loop
+closes each finding once it is dealt with, because an open one holds the
+verification and commit gates.
 
-```console
-$ sdlc finding close code_review code-reviewer F-1 --fixed
-$ sdlc finding close design_review architect F-2 --declined --reason "step 4 covers it"
+```text
+sdlc finding close GATE ROLE F-N [flags]
 ```
 
 | Flag | What it does |
@@ -2136,130 +2170,156 @@ $ sdlc finding close design_review architect F-2 --declined --reason "step 4 cov
 | `--referred` | the finding is outside the story's files, cannot wait, and goes to a person, with `--reason` |
 | `--reason` | why it was declined or referred, in one line |
 
-It takes exactly one of the three, for a finding of the story being worked on, in the checkout
-that holds it, at any gate. `sdlc finding` on its own prints this help.
-
-- `--declined` or `--referred` with no reason, or a blank one, is refused with
-  [SDLC-E0090](troubleshooting.md#sdlc-e0090). A reason is one line of at most 1,000 bytes, and
-  is refused with [SDLC-E0034](troubleshooting.md#sdlc-e0034) as a finding is. Keep `$`,
-  backticks and `"` out of it: in double quotes the shell expands them before `sdlc` reads it.
-- `--referred` of a finding about a path the story changes, or a directory that holds one, is
-  refused with [SDLC-E0091](troubleshooting.md#sdlc-e0091). The path is matched as the file it
-  names, past a line number, quotes and closing punctuation, and by its last segments, as
-  `review add` says. A finding with no path can always be referred.
-  `sdlc gate verification pass` and `sdlc gate commit pass` ask the same again later.
-- Where code review has passed and the record does not say where the story's commits begin, a
-  referral of a finding with a path is refused with SDLC-E0091 too: whether the story changes it
-  cannot be told.
-
-The closing is kept on the finding in the story's record, `gate-record.json`, with the time and
-the id of the session the command ran in, where it ran in one. The record is a tracked file, so
-the session id goes into the project's history with it. A later closing replaces an earlier one
-as the finding's state, and both stay on the record.
-
-The line it prints says how many findings of `design_review` and `code_review`, the two whose
-findings hold a gate, are still open, and names the first; for a referral, it says that a person
-reads it when the story ends:
-
 ```console
 $ sdlc finding close design_review architect F-1 --fixed
-US-001  design_review architect F-1  fixed; 1 finding of design_review or code_review is still open: design_review architect F-2
-$ sdlc finding close code_review code-reviewer F-1 --referred --reason "another page, and the person should see it"
-US-001  code_review code-reviewer F-1  referred for a person to read when the story ends; 1 finding of design_review or code_review is still open: code_review code-reviewer F-2
-$ sdlc finding close design_review architect F-2 --declined --reason "the name is the domain's word" --json
-{"ok":true,"story":"US-001","gate":"design_review","role":"architect","id":"F-2","closing":{"at":"2026-11-03T19:52:33Z","as":"declined","reason":"the name is the domain's word","session":"3f2c9a6e-5d1b-4c8e-9a7f-2b6d4e8c1a90"}}
+AUTH-3  design_review architect F-1  fixed; 1 finding of design_review or code_review is still open: design_review architect F-2
 ```
 
-## `sdlc decide <ID>`
+It takes exactly one of `--fixed`, `--declined` and `--referred`. ROLE is the
+name the review was recorded under. The line it prints says how many findings
+are still open and names the first.
 
-Record an [implementation decision](the-loop.md#two-kinds-of-decision) the loop made, and why. A
-product decision is a person's, and goes to them with [`sdlc escalate`](#sdlc-escalate)
-`product_decision`.
+A referral is for you to read when the story ends, and `sdlc status` and
+`sdlc log` list it:
 
 ```console
-$ sdlc decide US-001 --question "Which total does AC-2 mean when a refund is pending?" \
-    --option "the gross total" --option "the net total" --chosen "the net total" \
-    --reason "AC-2 says what the customer is charged" --by researcher
-US-001  analysis  D-1 by researcher recorded in .sdlc/stories/US-001/DECISIONS.md
+$ sdlc finding close code_review code-reviewer F-1 --referred --reason "another page, and the person should see it"
+AUTH-3  code_review code-reviewer F-1  referred for a person to read when the story ends; 1 finding of design_review or code_review is still open: code_review code-reviewer F-2
+```
+
+A later closing replaces an earlier one as the finding's state, and both stay
+on the record. With `--json`, `closing` holds `at`, `as`, `reason`, and
+`session`, the Claude Code session the command ran in. The record is a tracked
+file, so that id goes into your project's history with it.
+
+**When it refuses.**
+
+| It refuses when | Code |
+| --- | --- |
+| `--declined` or `--referred` has no reason | [SDLC-E0090](troubleshooting.md#sdlc-e0090) |
+| `--referred` is used on a finding in a file the story changes: fix it, or decline it with a reason | [SDLC-E0091](troubleshooting.md#sdlc-e0091) |
+| the reason is longer than 1,000 bytes or more than one line | [SDLC-E0034](troubleshooting.md#sdlc-e0034) |
+
+[The scout rule](the-loop.md#the-scout-rule) says why a finding is fixed or
+declined in the story, and not put off.
+
+## `sdlc decide ID`
+
+Record a decision the loop made for itself, and why. The loop runs this for
+every [implementation decision](the-loop.md#two-kinds-of-decision), so that
+you can read each one afterwards. A decision about the product is yours, and
+goes to you with [`sdlc escalate`](#sdlc-escalate) instead.
+
+```text
+sdlc decide <ID> [flags]
 ```
 
 | Flag | What it does |
 | --- | --- |
 | `--question` | what was decided, as a question |
-| `--option` | one option weighed; once for each, at least two and at most ten, no two the same |
+| `--option` | one option that was weighed. Give it once for each: at least two, at most ten, and no two the same. |
 | `--chosen` | the option chosen, word for word as one of the `--option` values |
 | `--reason` | why it was chosen |
 | `--by` | the agent whose recommendation or ruling was applied |
 
-Each value is one line of at most 1,000 bytes. `--by` is an agent of the plugin such as
-`researcher`, an instance within `team.agents.<agent>.instances` such as `security-2`, or a
-reviewer's arbiter such as `architect-arbiter`; a person is never one. It names whose
-recommendation or ruling was applied, as the runbook reports it, not the session that ran the
-command: any session may give any name the loop knows, no gate reads it, and the trace shows
-which session ran it.
+```console
+$ sdlc decide AUTH-3 --question "Is a token that expires this very second expired?" \
+    --option "expired" --option "still valid" --chosen "expired" \
+    --reason "the check runs after the instant it names" --by researcher
+AUTH-3  analysis  D-1 by researcher recorded in .sdlc/stories/AUTH-3/DECISIONS.md
+```
 
-It appends a `decision` event to the story's gate record, holding the question, the options, the
-one chosen, the reason, who decided, the gate the story is at (`done` once every gate has
-passed) and the time, and writes the story's `DECISIONS.md` again from the record's decisions,
-in the order made. It prints one line on stdout: the story, the gate, the decision's number,
-`D-<n>`, which is its heading in `DECISIONS.md`, who decided, and the file. Nothing a model wrote
-is on it. `--json` prints `{"ok":true,"story":...,"gate":...,"by":...,"number":...,"path":...}`
-instead.
+The line it prints names the story, the gate the story is at, the decision's
+number, who decided, and the file. Every flag is required, and each value is
+one line of at most 1,000 bytes.
 
-A decision changes no gate, review, freeze, staffing or approval, and answers nothing a person
-was asked. `sdlc log` lists it with its story, and `sdlc status` counts it in `decisions_unread`
-until a person's `sdlc ack` covers its story's commit, as `sdlc ack` marks the rest of the log
-read.
+**Where a decision goes.** It is added to the story's record as a `decision`
+event, and the story's `DECISIONS.md` is written again from the record, with
+every decision under its number, in the order they were made. From there:
 
-- It exits 0 once the decision is recorded, and 1 when it is refused. A missing or blank part, a
-  part over 1,000 bytes or holding a line break, a control character or an invisible one, fewer
-  than two options or more than ten, an option given twice, a `--chosen` that is not one of the
-  options, and a `--by` the loop does not know are each refused with
-  [SDLC-E0094](troubleshooting.md#sdlc-e0094), whose fix names the part. Nothing is recorded:
-  neither the record nor `DECISIONS.md` changes.
-- A story the backlog does not hold, or one never started, is refused with
-  [SDLC-E0009](troubleshooting.md#sdlc-e0009) or [SDLC-E0011](troubleshooting.md#sdlc-e0011), and
-  one held by another checkout as `sdlc finding close` is.
-- A story whose commit your `sdlc ack` already covers is refused with SDLC-E0094 too: a decision
-  recorded on it would be neither counted by `sdlc status` nor listed by `sdlc log`. Record it on
-  the story under way, and name the story in `--question`.
-- It is taken while a story waits for a person. A decision answers nothing, so `sdlc start` is
-  still refused until the person answers, and the runbook records an arbiter's ruling in the
-  same turn as the arbiter's last review, which may be the one that hands the story over.
-- A retried `sdlc decide` records the decision again, as the next `D-<n>`: the record is
-  history, and the time on each tells the two apart.
-- Written in front of the subcommand, each of these flags' values is read by the hook as a word
-  of the command line as well, so that a person's command cannot hide behind one:
-  `sdlc --option x approve US-001` is refused as `sdlc approve US-001` is. After `decide`, an
-  option or a choice is only that, whatever it says; word it as a phrase all the same, since the
-  log and `DECISIONS.md` are read by a person.
+- [`sdlc log`](#sdlc-log) lists it on a `decided` line, with its story.
+- [`sdlc status`](#sdlc-status) counts it, on its `Decisions:` line and as
+  `decisions_unread`, until your [`sdlc ack`](#sdlc-ack) covers the story's
+  commit.
+- [`sdlc trace --all`](#sdlc-trace---all) counts it for its story.
+
+A decision changes no gate, review, freeze, staffing or approval, and it
+answers nothing you were asked. It can be recorded while a story waits for
+you, and the story still waits.
+
+**Who decided.** `--by` is an agent's name, such as `researcher`, an
+instance's, such as `security-2`, or an arbiter's, such as
+`architect-arbiter`. A person is never one. It names whose recommendation was
+applied, and not the session that ran the command.
+
+> [!NOTE]
+> `sdlc` takes `--by` on trust. Any session may give any name the loop knows,
+> and no gate reads it. [`sdlc trace`](#sdlc-trace) shows which session ran
+> the command.
+
+**Exit status.** It exits 0 once the decision is recorded, and 1 when it is
+refused. A refusal records nothing: neither the record nor `DECISIONS.md`
+changes. Running the same command twice records the decision twice, as the
+next number, because the record is a history.
+
+**When it refuses.**
+
+| It refuses when | Code |
+| --- | --- |
+| a flag is missing or blank, a value is over 1,000 bytes or holds a line break or a character that does not show, there are fewer than two options or more than ten, or an option is given twice | [SDLC-E0094](troubleshooting.md#sdlc-e0094) |
+| `--chosen` is not one of the options, word for word | [SDLC-E0094](troubleshooting.md#sdlc-e0094) |
+| `--by` is no agent the loop knows | [SDLC-E0094](troubleshooting.md#sdlc-e0094) |
+| your `sdlc ack` already covers the story's commit, so the decision would never be shown to you. Record it on the story under way, and name the other story in `--question` | [SDLC-E0094](troubleshooting.md#sdlc-e0094) |
+| the backlog has no such story, or the story was never started | [SDLC-E0009](troubleshooting.md#sdlc-e0009), [SDLC-E0011](troubleshooting.md#sdlc-e0011) |
+| another checkout holds the story | [SDLC-E0050](troubleshooting.md#sdlc-e0050) |
+
+The refusal says which part to put right:
+
+```console
+$ sdlc decide AUTH-3 --question "Is a token that expires this very second expired?" \
+    --option "expired" --option "still valid" --chosen "refused" \
+    --reason "AC-1 says the expiry is in the past" --by researcher
+sdlc: --chosen "refused" is not one of the options
+
+  why  nothing was recorded
+  fix  give --chosen as one of the --option values, word for word, then run the command again
+
+  SDLC-E0094  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0094
+```
+
+With `--json`, it prints `story`, `gate`, `by`, `number` and `path`.
+[Two kinds of decision](the-loop.md#two-kinds-of-decision) says which
+decisions the loop makes, and which it brings to you.
 
 ## `sdlc staffing`
 
-The staffing is, for one story, which of the plugin's agents the story needs and
-the model and effort each is asked for. It is on by default, and recorded by
-`sdlc:project-manager`. Where the project disables the project manager, with
-`team.agents.project-manager.enabled` set to false in the
-[`team`](configuration.md#team) section, `set`, `amend` and `assign` are refused
-with [SDLC-E0067](troubleshooting.md#sdlc-e0067), `show` says there is no
-staffing, and every enabled agent takes part in every story.
-[Agents](the-agents.md#the-staffing) says how it is chosen.
+The staffing is, for one story, which agents the story needs and the model and
+effort each is asked for. The project manager records it once the story is
+found ready, and changes it as the work shows what it needs.
+[The staffing](the-agents.md#the-staffing) explains how it is chosen.
 
-`sdlc staffing` on its own prints what the four commands are.
+`sdlc staffing` on its own prints its four commands:
+[`show`](#sdlc-staffing-show), [`set`](#sdlc-staffing-set),
+[`amend`](#sdlc-staffing-amend-agent) and
+[`assign`](#sdlc-staffing-assign-agent), which is yours alone.
+
+Where your project turns the project manager off in the
+[`team`](configuration.md#team) section, there is no staffing: `set`, `amend`
+and `assign` are refused ([SDLC-E0067](troubleshooting.md#sdlc-e0067)), and
+every enabled agent takes part in every story.
 
 > [!NOTE]
-> What is recorded and shown is what was asked for. The environment can override
-> both a model and an effort, and `sdlc` does not observe what a delegation is
-> given, so no output says more than that.
+> What is recorded and shown is what was asked for. Your environment can
+> override both a model and an effort, and `sdlc` does not see what an agent
+> was given.
 
 ## `sdlc staffing show`
 
-Read the story's staffing, and see who to delegate to at a gate. This is the
-command to run when you want to know why an agent is, or is not, taking part.
+Read a story's staffing. This is the command to run when you want to know why
+an agent is, or is not, taking part.
 
-```console
-$ sdlc staffing show
-$ sdlc staffing show --gate code_review --json
+```text
+sdlc staffing show [flags]
 ```
 
 | Flag | What it does |
@@ -2267,36 +2327,64 @@ $ sdlc staffing show --gate code_review --json
 | `--gate` | who to delegate to at this gate, instead of the one the story is at |
 | `--story` | for this story instead of the one being worked on |
 
-Prints the models and efforts the project allows, lowest first, the paths that
-bring a reviewer back to the code review, then one line for each agent: what it
-is asked for, or that it is left out, with the reason, and whether a person
-chose it. Every change made since follows, with when and why. A reason is
-printed quoted, because a model or a person wrote it.
+```console
+$ sdlc staffing show
+AUTH-3  staffing, at analysis
 
-In `--json`, `agents` has a row for each agent: `needed`, `reason`,
-`asked_model`, `asked_effort` and `asked_reason`. `set_by` is `person` on a row
-[`sdlc staffing assign`](#sdlc-staffing-assign-agent) recorded, and absent
-otherwise; it says which command wrote the row, and nothing about who typed it.
-`brought_back_by` is the changed path that has the code review wait for a
-reviewer the staffing leaves out. `at_gate` is who to delegate to at the gate:
-the agent that does the gate's work and each reviewer the gate waits for, with
-what each is asked for. `amendments` is every change, each with `at`, `agent`,
-`change`, `reason` and `by`.
+  may be asked for, lowest first:  models haiku, sonnet, opus;  efforts low, medium, high, xhigh, max
 
-Where the project manager is enabled and no staffing is recorded it fails with
-[SDLC-E0068](troubleshooting.md#sdlc-e0068). With the project manager disabled it
-exits 0 and says so: `no staffing: the project manager is disabled in
-team.agents.project-manager.enabled`. Where an agent is disabled, its line says
-so, and an agent whose gate is a person's is listed under `by_hand`.
+  project-manager asked for sonnet at medium -- "the staffing is looked at again after the analysis"; "a short story to read"
+  researcher      asked for opus at medium -- "every story is analysed"; "its first pass missed the callers"
+  sdet            asked for sonnet at medium -- "every story has frozen tests"; "two criteria, one handler"
+  implementer     asked for sonnet at medium -- "every story is implemented"; "a small change in one package"
+  verifier        asked for opus at high -- "every story is verified"; "the criteria turn on an ordering that is easy to misread"
+  bookkeeper      asked for haiku at low -- "every story has a retro"; "a short retro"
+  architect       asked for sonnet at medium -- "the plan touches the session middleware"; "one boundary to check"
+  security        asked for opus at high, a person chose -- "the story is about authentication"; "this one touches the installer"
+  red-team        asked for sonnet at medium -- "the story is about authentication"; "a short plan"
+  perf            left out -- "nothing here is on a hot path"
+  human-advocate  asked for sonnet at low -- "the 401 response is what a user sees"; "one response to read"
+  code-reviewer   asked for sonnet at medium -- "every story's diff is reviewed"; "a small diff"
+  test-reviewer   asked for sonnet at medium -- "the tests are read before they are frozen"; "one test file"
+
+  amended
+    2026-11-24T09:47:21Z  perf: needed -> left out -- "nothing here is on a hot path" (staffing amend)
+    2026-11-24T09:47:21Z  researcher: sonnet at medium -> opus at medium -- "its first pass missed the callers" (staffing amend)
+    2026-11-24T09:47:21Z  security: sonnet at high -> opus at high -- "this one touches the installer" (person)
+```
+
+It prints the models and efforts your project allows, lowest first, then one
+line for each agent: what it is asked for, or that it is left out, and whether
+a person chose it. The two quoted reasons are why the story needs the agent,
+and why that model and effort. Every change made since follows, with when and
+why.
+
+With `--json`, `agents` has a row for each agent: `needed`, `reason`,
+`asked_model`, `asked_effort` and `asked_reason`, and `set_by` where
+[`sdlc staffing assign`](#sdlc-staffing-assign-agent) wrote the row. `at_gate`
+is who to delegate to at the gate, with what each is asked for, and
+`amendments` is every change, each with `at`, `agent`, `change`, `reason` and
+`by`.
+
+**An arbiter.** Where a gate has
+[gone to a reviewer's arbiter](the-loop.md#the-arbiter),
+`sdlc staffing show --gate` lists the arbiter in the reviewer's place. It is
+asked for one step above the reviewer: the next effort in `team.efforts`, or
+the next model in `team.models` where the effort is already the highest.
+
+**When it refuses.** Before a staffing is recorded there is nothing to show
+([SDLC-E0068](troubleshooting.md#sdlc-e0068)). With the project manager turned
+off it exits 0 and says there is no staffing.
+[See who is working a story](the-agents.md#see-who-is-working-a-story) reads
+the output with you.
 
 ## `sdlc staffing set`
 
-Record the story's staffing. The `sdlc:project-manager` agent runs it, once,
+Record a story's staffing. The `sdlc:project-manager` agent runs it, once,
 when the story has been found ready.
 
-```console
-$ sdlc staffing set < staffing.json
-$ sdlc staffing set --file /tmp/staffing.json
+```text
+sdlc staffing set [flags]
 ```
 
 | Flag | What it does |
@@ -2304,7 +2392,14 @@ $ sdlc staffing set --file /tmp/staffing.json
 | `--file` | read the staffing from this path instead of standard input |
 | `--story` | the story being worked on, which is the only one a staffing is recorded for |
 
-The staffing is a JSON document with one row for each agent the plugin ships:
+```console
+$ sdlc staffing set < staffing.json
+AUTH-3  staffing recorded: 13 agents needed, 0 left out
+```
+
+The staffing is a JSON document with one row for every enabled agent, the
+project manager included, and for each instance of a reviewer the `team`
+section gives more than one:
 
 ```json
 {"agents": [
@@ -2315,34 +2410,34 @@ The staffing is a JSON document with one row for each agent the plugin ships:
 ]}
 ```
 
-An agent the story needs comes with the model and effort asked for and the
-reason for them. Nothing else in the document is read. A document that leaves an
-agent out, names one twice or gives no reason is refused with
-[SDLC-E0069](troubleshooting.md#sdlc-e0069), and so is a second `set`: a
-recorded staffing is changed with `sdlc staffing amend`.
+These are two of its rows. An agent the story needs comes with the model and
+effort asked for, and the reason for them. An agent your project turned off
+needs no row.
 
-Some agents are never left out — the ones that do a gate's work, the verifier,
-the code reviewer, and security on a story that is security-sensitive or not yet
-said not to be ([SDLC-E0070](troubleshooting.md#sdlc-e0070)). A model or effort
-outside the project's lists, or below the agent's lowest, is refused with
-[SDLC-E0071](troubleshooting.md#sdlc-e0071), which names what is allowed. What a
-person assigned stands: a staffing that disagrees with it is refused with
-[SDLC-E0072](troubleshooting.md#sdlc-e0072).
+While the project manager is enabled, `sdlc gate analysis pass` waits for a
+staffing to be recorded.
 
-While the project manager is enabled, `sdlc gate analysis pass` waits for one
-to be recorded. A staffing names every enabled agent, and each instance of a
-reviewer the `team` section gives more than one, such as `security-2`. A disabled
-agent needs no row, and a row that needs it is refused.
+**When it refuses.**
+
+| It refuses when | Code |
+| --- | --- |
+| the document leaves an agent out, names one twice or gives no reason, or a staffing is already recorded | [SDLC-E0069](troubleshooting.md#sdlc-e0069) |
+| it leaves out an agent that is never left out: one that does a gate's work, the verifier, the code reviewer, or security on a security-sensitive story | [SDLC-E0070](troubleshooting.md#sdlc-e0070) |
+| a model or effort is outside the project's lists, or below the agent's lowest | [SDLC-E0071](troubleshooting.md#sdlc-e0071) |
+| it disagrees with what a person assigned | [SDLC-E0072](troubleshooting.md#sdlc-e0072) |
+
+[What the project manager cannot leave out](configuration.md#what-the-project-manager-cannot-leave-out)
+lists the limits.
 
 ## `sdlc staffing amend AGENT`
 
-Change one agent of the staffing, with the reason. The `sdlc:project-manager`
-agent runs it: when the analysis is recorded, and whenever an agent's work fell
-short or the work turned out other than expected.
+Change one agent of a recorded staffing, with the reason. The
+`sdlc:project-manager` agent runs it when the analysis is recorded, and
+whenever an agent's work fell short or the story turned out other than
+expected.
 
-```console
-$ sdlc staffing amend perf --left-out --reason "nothing here is on a hot path"
-$ sdlc staffing amend researcher --model opus --reason "its first pass missed the callers"
+```text
+sdlc staffing amend AGENT [flags]
 ```
 
 | Flag | What it does |
@@ -2351,251 +2446,249 @@ $ sdlc staffing amend researcher --model opus --reason "its first pass missed th
 | `--left-out` | the story does not need the agent |
 | `--model` | the model to ask for, one of `team.models` |
 | `--effort` | the effort to ask for, one of `team.efforts` |
-| `--reason` | why, from what happened or what the work is. Required |
+| `--reason` | why, from what happened or what the work is. Required. |
 | `--story` | the story being worked on, which is the only one a staffing is amended for |
 
-What changed, when and why is kept, and `sdlc staffing show` and `sdlc log`
-print it. `AGENT` may be an instance within the reviewer's `instances`, such as
-`security-2`, and amending one with no row writes its row.
-
-A gate that has passed stays passed when a reviewer is brought in: the reviewer
-is waited for from then on, at the next gate it reviews, and at the commit gate
-when it was brought in after the code review passed.
-
-It is held to everything `sdlc staffing set` is. A reviewer whose latest review
-is a block at a gate that has not passed is not left out
-([SDLC-E0073](troubleshooting.md#sdlc-e0073)): the block is answered by rework,
-or by a person.
-
-## `sdlc staffing assign AGENT`
-
-Pin the model or the effort an agent is asked for on a story. This is how a
-person says so: they type it in Claude Code, or run it in their own terminal.
-Reach for it when you know better than the project manager which model a story
-deserves.
-
-In Claude Code: `/sdlc:assign`, with the same arguments. You type it; the model cannot.
-
 ```console
-$ sdlc staffing assign security --model opus --effort high --reason "this one touches the installer"
+$ sdlc staffing amend perf --left-out --reason "nothing here is on a hot path"
+AUTH-3  staffing amended: perf: needed -> left out
+
+$ sdlc staffing amend researcher --model opus --reason "its first pass missed the callers"
+AUTH-3  staffing amended: researcher: sonnet at medium -> opus at medium
 ```
 
-| Flag | What it does |
-| --- | --- |
-| `--model` | the model to ask for, one of `team.models` |
-| `--effort` | the effort to ask for, one of `team.efforts` |
-| `--reason` | why. Required |
-| `--story` | a story that has been started, instead of the one being worked on |
+What changed, when and why is kept, and `sdlc staffing show` and `sdlc log`
+print it. AGENT may be an instance, such as `security-2`.
 
-The agent is then needed at every gate it has a part in, and no staffing or
-amendment changes what was assigned. Running it again changes it. Before a
-staffing is recorded, or for an agent the staffing leaves out, it takes both
-`--model` and `--effort`. It is held to the project's limits like any staffing,
-and it cannot take an agent off a story.
+A gate that has passed stays passed when a reviewer is brought in. The
+reviewer is waited for from then on: at the next gate it reviews, or at the
+commit gate when it was brought in after the code review passed.
 
-> [!WARNING]
-> It is refused wherever a Claude Code session id is set
-> ([SDLC-E0074](troubleshooting.md#sdlc-e0074)), and with
-> [SDLC-E0079](troubleshooting.md#sdlc-e0079) wherever any other of Claude
-> Code's environment variables is, and the hook refuses it to every
-> session ([enforcement](enforcement.md#assignment-is-a-human-decision)). What
-> `set_by: person` records is that this command wrote the row.
+**When it refuses.** It is held to everything
+[`sdlc staffing set`](#sdlc-staffing-set) is. A reviewer whose latest review
+is a block, at a gate that has not passed, cannot be left out
+([SDLC-E0073](troubleshooting.md#sdlc-e0073)): the block is answered by
+rework, or by you.
 
 ## `sdlc team`
 
-Report what happened to an agent of the team. It has one subcommand, `failure`. The team itself
-is set in the [`team`](configuration.md#team) section of `.sdlc/config.json`, which a person
-edits.
+Report what happened to an agent of the team. It has one command,
+[`failure`](#sdlc-team-failure-agent). The team itself is set in the
+[`team`](configuration.md#team) section of your configuration.
 
 ## `sdlc team failure AGENT`
 
-Record that a run of an agent failed at the gate the story is at: it returned nothing usable,
-or broke off. The `/sdlc:next` runbook runs it, the project manager's own failed runs included,
-and runs the agent again while [`team.retries`](configuration.md#team) allows. The failure after
-that hands the story to a person as `agent_failed`, and the person reads the reasons and decides
-with [`sdlc approve`](#sdlc-approve).
+Record that a run of an agent failed at the gate the story is at: it returned
+nothing usable, or broke off. The loop runs this, and then runs the agent
+again while [`team.retries`](configuration.md#team) allows.
 
-```console
-$ sdlc team failure researcher --reason "it returned nothing"
-US-001  analysis  researcher failed: 1 failure at this gate, and a person is asked at 3; run it again
-  "it returned nothing"
+```text
+sdlc team failure AGENT [flags]
 ```
 
 | Flag | What it does |
 | --- | --- |
-| `--reason` | what went wrong with the run, in a sentence. Required |
-| `--story` | the story being worked on, which is the only one a failure is counted on |
-| `--json` | print `ok`, `story`, `agent`, `gate`, `failures`, and `handed_over` where it handed the story over |
+| `--reason` | what went wrong with the run, in a sentence. Required. |
 
-`AGENT` is an agent of the plugin or an instance within its reviewer's `instances`, such as
-`security-2`. The count is the agent's at that gate, since a person last decided on the story;
-with `team.retries` at 2, the third failure hands the story over.
+```console
+$ sdlc team failure researcher --reason "it returned nothing"
+AUTH-3  analysis  researcher failed: 1 failure at this gate, and a person is asked at 3; run it again
+  "it returned nothing"
+```
 
-It records nothing else, and nothing passes because of it: no gate, review, staffing or freeze
-changes. Nobody takes the agent's place, and no other agent is a substitute for it. Approving
-the hand-over does not answer the pre-commit question, which a story that pauses, by its tier or
-a path its change touches, is still asked before its commit.
+The count is the agent's at that gate, since you last decided on the story.
+With `team.retries` at 2, the third failure hands the story to you. You read
+the reasons and decide with [`sdlc approve`](#sdlc-approve).
+
+It records nothing else, and nothing passes because of it: no gate, review,
+staffing or freeze changes. Nobody takes the agent's place, and no other agent
+is a substitute for it.
+
+With `--json`, it prints `story`, `agent`, `gate` and `failures`, and
+`handed_over` where it handed the story to you.
+[When an agent failed or is turned off](guides/human-approval-gates.md#when-an-agent-failed-or-is-turned-off)
+says what your choices are.
 
 ## `sdlc freeze`
 
-Lock the acceptance tests by content, so the implementer cannot change them to
-make them pass. The loop does this for you at the `tests_frozen` gate.
+Freeze the story's acceptance tests, so that the implementer cannot change
+them to make them pass. The loop does this at Gate 3, once the tests are
+written and the test reviewer has approved them.
+
+```text
+sdlc freeze [flags]
+```
+
+`freeze` has no flags of its own.
 
 ```console
 $ sdlc freeze
-$ sdlc freeze --json
+AUTH-3  1 test file frozen
+  internal/session/session_test.go
+  commands.test_files ran over the new and changed test files and failed with status 1, as new tests do; its output is in /home/<user>/src/billing/.sdlc/stories/AUTH-3/freeze-run.log
 ```
 
-The freeze records the sha256 of every file that `paths.tests` in your configuration calls
-a test, asking git which files are in the working tree so that build output and
-vendored code cannot be mistaken for one.
+The freeze covers every file that [`paths.tests`](configuration.md#pathstests)
+calls a test. From then on an agent is refused any change to them, and only
+you can lift the freeze, with [`sdlc unfreeze`](#sdlc-unfreeze).
 
-It refuses if a freeze already exists
-([SDLC-E0022](troubleshooting.md#sdlc-e0022)), because taking a second one over
-the top would quietly bless whatever changed in between. It is also refused when
-`paths.tests` names nothing to freeze
-([SDLC-E0024](troubleshooting.md#sdlc-e0024)), and when a freeze was taken and
-has since gone missing without being lifted
-([SDLC-E0025](troubleshooting.md#sdlc-e0025)): a person lifts that one with
-`sdlc unfreeze --reason`, and then freezes again.
+Before it freezes anything, `freeze` does up to three things.
 
-The one exception is `freeze.allow_new_test_files`. With it on, running
-`sdlc freeze` again on the story's own freeze adds the test files written since,
-provided none of the frozen ones has changed, and lists what it added; `--json`
-names them in `added`. Where the test reviewer is staffed, the added files are
-reviewed with the rest first, as below.
+**It waits for the test reviewer.** Where the story is staffed with a test
+reviewer, the freeze waits for that reviewer's approval of the test files as
+they are. Until then it refuses:
 
-Where `sdlc:test-reviewer` is staffed, the freeze waits for its approve of the
-test files as they are, by name and content: until it has one it refuses with
-[SDLC-E0029](troubleshooting.md#sdlc-e0029), where the reviewer has not reviewed,
-has not approved, or reviewed tests that have changed since, or with
-[SDLC-E0030](troubleshooting.md#sdlc-e0030), where it blocked, and the refusal
-names the reviewer, or, where the tests have gone to it, `test-reviewer-arbiter`,
-whose review the freeze then reads in the test reviewer's place. A test changed,
-added or renamed after the approve makes it stale. With the project manager
-disabled, or a staffing that has no row for the test reviewer, the freeze waits
-for it; one the staffing leaves out, or one
-disabled in `team.agents`, is not waited for, and where its `can_block` is false
-the freeze waits only until it has reviewed. A freeze that succeeds prints what it
-always printed.
+```console
+$ sdlc freeze
+sdlc: the freeze waits for the test reviewer's review of the tests as they are
 
-Where `commands.freeze_check` is set, `sdlc freeze` runs it first, from the
-repository root, with the test files that are new or changed in
-`SDLC_FREEZE_FILES`, one to a line, and takes the freeze only if it exits 0 and
-leaves every test file as it found it. It has no time limit of its own, and
-Ctrl-C stops it. A check that fails, or changes a test file, makes the freeze
-refuse with [SDLC-E0085](troubleshooting.md#sdlc-e0085), showing the last 40
-lines it printed: the test author corrects the files it names and runs the
-command again, and no person is needed. A refusal that no correction of a test
-can clear, such as a missing program, goes to a person. A freeze that adds
-files runs the check again; one with nothing to add is refused as before,
-without running it. [The freeze check](configuration.md#the-freeze-check) says
-what the check is handed, what it costs and an example.
+  why  test-reviewer has not reviewed
+  fix  delegate to the reviewers this gate expects -- "sdlc review list" shows who is outstanding
 
-A first freeze then runs the narrow command over the same new and changed test files:
-`commands.test_files`, or the whole `commands.test` where `commands.test_files` is empty, from the
-repository root, with `SDLC_TEST_FILES` naming a file that lists them, one to a line,
-slash-separated and relative to the root, and `SDLC_RUN_DIR` the run's own directory
-([the narrow test command](configuration.md#the-narrow-test-command)). Nothing runs where neither
-command is set, where no test file is new or changed, or where the freeze only adds files under
-`freeze.allow_new_test_files`. A test written before its code fails until the code exists, so:
+  SDLC-E0029  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0029
+```
 
-- where the run passes, the freeze is refused with
-  [SDLC-E0085](troubleshooting.md#sdlc-e0085): those tests test nothing yet;
-- where it could not run at all (no shell, a signal, or the shell's 126 or 127), it is refused
-  too, and is a person's to put right;
-- a test file whose name holds a control character other than a tab, DEL, U+0085, U+2028 or
-  U+2029 is refused before anything runs, since one name to a line cannot carry it;
-- a test file the run changes refuses the freeze; one it creates is not held, and is refused from
-  Gate 3 on, by `sdlc gate tests_frozen pass` and every gate after it
-  ([SDLC-E0043](troubleshooting.md#sdlc-e0043)), where a `commands.freeze_check` would have had
-  it refused at the freeze;
-- where it fails, the freeze is taken, and `freeze_run` on the record holds the command, its exit
-  status, its duration and the tree hash it ran on. The output says so in one line, and `--json`
-  gives the run as `run`.
+`sdlc review list --gate tests_frozen` shows where the review has got to. A
+test changed, added or renamed after the approval makes it stale, and the
+reviewer reads the tests again. Whether the freeze waits depends on your team
+and the story's staffing:
 
-Everything the run printed is in `.sdlc/stories/<ID>/freeze-run.log`, on a pass and on a refusal
-alike, replaced by each run; the story's `.gitignore` lists it. The story's run lock is held while
-it runs, as at the implementation gate.
+| The test reviewer is | The freeze |
+| --- | --- |
+| staffed for the story, or the staffing does not mention it, or the project manager is turned off | waits for its approval |
+| left out by the story's staffing, or disabled in [`team`](configuration.md#an-agents-entry) | waits for no review |
+| advisory, with `can_block` set to `false` | waits only until it has reviewed |
 
-What a taken freeze proves is that the narrow command exited non-zero, and not why. A runner that
-found no tests exits non-zero too (pytest's exit 5, jest's "No tests found"), and so does a
-`--test=<name>` naming no cargo target or a wrong `commands.test_files` that fails whatever the
-tests hold; where the story's base could not be read every test file is listed, and the freeze's
-line says so. The test author's own run, and the test reviewer, are what show each test failing for
-the right reason. On PowerShell the line that runs `sdlc freeze` takes the same form as the
-implementation gate's: the call alone, after at most `Set-Location '<absolute path>';` and a
-space.
+Where the tests have gone to `test-reviewer-arbiter`, the freeze reads the
+[arbiter's](the-loop.md#the-arbiter) review in the test reviewer's place, and
+the refusal names it.
+
+**It runs the freeze check.** Where `commands.freeze_check` is set, `sdlc
+freeze` runs it from the repository root, with the new or changed test files
+in `SDLC_FREEZE_FILES`, one to a line. It takes the freeze only if the check
+exits 0 and leaves every test file as it found it. Otherwise the freeze will
+refuse, showing the last 40 lines the check printed
+([SDLC-E0085](troubleshooting.md#sdlc-e0085)). The test author corrects the
+files it names and runs the command again, and no person is needed.
+[The freeze check](configuration.md#the-freeze-check) has an example.
+
+**It runs the new tests, and expects them to fail.** A story's first freeze
+runs `commands.test_files` over the new and changed test files, from the
+repository root, with `SDLC_TEST_FILES` naming a file that lists them. Where
+`commands.test_files` is empty it runs the whole of `commands.test`, and where
+neither is set it runs nothing.
+[The narrow test command](configuration.md#the-narrow-test-command) says what
+the command is handed. A test written before its code fails until the code
+exists, so the outcome is read the other way round:
+
+| The run | The freeze |
+| --- | --- |
+| fails | is taken. The last line of the output says so, and `--json` gives the run as `run`. |
+| passes | is refused: those tests test nothing yet ([SDLC-E0085](troubleshooting.md#sdlc-e0085)) |
+| could not run at all, as when the shell cannot find the program | is refused, and is yours to put right |
+| changes a test file | is refused |
+
+Before the run, one line on standard error names the command and the file its
+output goes to. Everything the run printed is in
+`.sdlc/stories/<ID>/freeze-run.log`, whether the freeze was taken or refused.
+
+> [!WARNING]
+> A freeze that was taken proves that the command exited non-zero, and not
+> why. A runner that found no tests exits non-zero too, and so does a wrong
+> `commands.test_files` that fails whatever the tests hold. The test author's
+> own run and the test reviewer are what show each test failing for the
+> right reason.
+
+**Adding a test file later.** With
+[`freeze.allow_new_test_files`](configuration.md#freezeallow_new_test_files)
+on, running `sdlc freeze` again adds the test files written since, provided
+none of the frozen ones has changed, and lists what it added. `--json` names
+them in `added`. The test reviewer reads the added files with the rest first,
+and the freeze check runs again. The new tests are not run a second time.
+
+**When it refuses.**
+
+| It refuses when | Code |
+| --- | --- |
+| the tests are already frozen | [SDLC-E0022](troubleshooting.md#sdlc-e0022) |
+| `paths.tests` names nothing to freeze | [SDLC-E0024](troubleshooting.md#sdlc-e0024) |
+| a freeze was taken and has gone missing without being lifted; lift it with `sdlc unfreeze --reason`, then freeze again | [SDLC-E0025](troubleshooting.md#sdlc-e0025) |
+| the test reviewer has not approved the tests as they are | [SDLC-E0029](troubleshooting.md#sdlc-e0029) |
+| the test reviewer, or its arbiter, blocked | [SDLC-E0030](troubleshooting.md#sdlc-e0030) |
+| the freeze check fails, or changes a test file | [SDLC-E0085](troubleshooting.md#sdlc-e0085) |
+| the new tests pass, could not be run, or the run changed a test file | [SDLC-E0085](troubleshooting.md#sdlc-e0085) |
+| the story's commands are already running | [SDLC-E0006](troubleshooting.md#sdlc-e0006) |
+
+[Gate 3: freeze the tests](the-loop.md#gate-3-freeze-the-tests) says what the
+freeze protects.
 
 ## `sdlc escalate`
 
 Hand the story to a person, and end the iteration. An agent reaches for this
 when it needs a decision it should not make itself.
 
-```console
-$ sdlc escalate pre_commit_approval --message "the migration has no down step"
+```text
+sdlc escalate <type> [flags]
 ```
 
 | Flag | What it does |
 | --- | --- |
-| `--message` | what the person is being asked to decide. Required |
+| `--message` | what the person is being asked to decide. Required. |
 
-The type is a word for the kind of question — `pre_commit_approval`,
-`product_decision`, `loop_stalled` — and the message is the question. Any word
-is taken, as it always was. `product_decision` is the one escalation Gate 2
-makes for a story's [product decisions](the-loop.md#two-kinds-of-decision):
-every product question of the story, each with two or three options and a
-recommendation, so that the person answers them all at once. `spec_unclear`
-and `design_decision` are for a product decision too; an implementation
-decision is never escalated, and is recorded with [`sdlc decide`](#sdlc-decide-id).
-The question goes on the
-story's record, bound to the work as it stands. The story becomes
-`awaiting_human`, and the iteration ends, so the session stops rather than
-carrying on past the question. `sdlc start` refuses the story until somebody
-answers, and `sdlc status` lists it as waiting.
+```console
+$ sdlc escalate pre_commit_approval --message "the migration has no down step"
+AUTH-3  waiting for a person: pre_commit_approval
+  the migration has no down step
 
-An escalation that is refused — git cannot measure the tree, or something it
-writes cannot be written — leaves the record, the backlog and the iteration as
-they were: no question is asked, and the command can be run again.
+The iteration has ended. A person reads the work and answers in Claude Code or in their own terminal:
+  /sdlc:approve AUTH-3, or sdlc approve AUTH-3
+  sdlc approve AUTH-3 --reject "why"
+```
 
-Nothing else starts in that checkout in the meantime either: `sdlc start` picks
-up a story already under way before a new one, so it picks the waiting story and
-refuses it. That is deliberate. The work waiting for an answer is still in the
-tree, and a second story started on top of it would end up in the same commit.
-With [`git.worktrees`](configuration.md#git) on, a story waiting in its own
-worktree is held there, and `sdlc start` in the main checkout passes it over
-and begins the next story in a worktree of its own.
+The type is one word for the kind of question, such as `pre_commit_approval`,
+`product_decision` or `frozen_test_wrong`, and the message is the question.
+The story then waits for you: the session stops rather than carrying on past
+the question, `sdlc status` lists the story as waiting, and `sdlc start`
+refuses it until you answer with [`sdlc approve`](#sdlc-approve)
+([SDLC-E0036](troubleshooting.md#sdlc-e0036)).
+
+**Product decisions.** `product_decision` is the one escalation Gate 2 makes
+for a story's [product decisions](the-loop.md#two-kinds-of-decision). It
+carries every product question of the story, each with two or three options
+and a recommendation, so that you answer them all at once. `spec_unclear` and
+`design_decision` are for a product decision too. An implementation decision
+is never escalated: the agent makes it and records it with
+[`sdlc decide`](#sdlc-decide-id).
+
+A story waiting in its own worktree is held there, so `sdlc start` in the main
+checkout passes it over and begins the next story. With worktrees turned off,
+nothing else starts in that checkout until you answer, because the waiting
+work is still in the tree.
+
+[Every reason the loop stops](guides/human-approval-gates.md#every-reason-the-loop-stops)
+lists the kinds of question and what each asks of you.
 
 ## `sdlc hook EVENT`
 
-You will not run this one. It is what the plugin's hook script calls, reading
-the event on standard input. It is documented so that a line in a log makes
-sense when you meet it.
-
-An assistant's tool call that runs it on `UserPromptExpansion`, the event on
-which it runs a person's slash command, is refused
-([`slash-command-is-a-human-decision`](enforcement.md#slash-command-is-a-human-decision)),
-and so is one that runs it on any of the eight events it records in the trace:
-`PostToolUse`, `PostToolUseFailure`, `SubagentStart`, `SubagentStop`, `Stop`,
-`Notification`, `StopFailure` and `PostCompact`
-([`recorded-event-comes-from-the-host`](enforcement.md#recorded-event-comes-from-the-host)).
-On `PreToolUse`, `SessionStart` and any other event it answers as it would answer
-Claude Code. A payload sent to `sdlc hook PreToolUse` that the hook refuses adds a
-`refusal` record to the trace, as a refusal of a real call would.
+You will not run this one. It is what the plugin calls on every tool call in a
+session, and it is listed here so that its name makes sense when you meet it
+in a log. [Enforcement](enforcement.md) describes what it holds an agent to.
 
 ## Where to go next
 
-- [Human approval gates](guides/human-approval-gates.md): answering an
-  escalation with `sdlc approve`
+- [The loop](the-loop.md): the nine gates these commands record
+- [Human approval gates](guides/human-approval-gates.md): answering with
+  `sdlc approve`
 - [Stopping and resuming a story](guides/stopping-and-resuming-a-story.md):
   `sdlc stop` and `sdlc start`
-- [When a reviewer blocks](guides/when-a-reviewer-blocks.md): `sdlc review add`
-  and `sdlc review list` in a rework round
-- [When a frozen test is wrong](guides/when-a-frozen-test-is-wrong.md): lifting
-  the freeze with `sdlc unfreeze`
+- [When a reviewer blocks](guides/when-a-reviewer-blocks.md): reviews and
+  findings in a rework round
+- [When a frozen test is wrong](guides/when-a-frozen-test-is-wrong.md):
+  `sdlc unfreeze`
 - [Reviewing what landed on trunk](guides/reviewing-what-landed-on-trunk.md):
   `sdlc log` and `sdlc ack`
 - [Tracking what a story costs](guides/tracking-what-a-story-costs.md):
-  `sdlc cost`
+  `sdlc cost` and `sdlc trace`
+- [Configuration](configuration.md): every setting these commands read
 - [Troubleshooting](troubleshooting.md): every `SDLC-E` code and what to do
   about it

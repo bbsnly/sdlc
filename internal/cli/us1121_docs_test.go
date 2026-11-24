@@ -104,7 +104,7 @@ func TestAC5TheCommandPageTheLoopPageAndTheTroubleshootingPageSayABareStartTakes
 	t.Parallel()
 	for _, tc := range []struct{ file, heading string }{
 		{"docs/commands.md", "## `sdlc start`"},
-		{"docs/the-loop.md", "## Gate 1 — `dor`, definition of ready"},
+		{"docs/the-loop.md", "### Gate 1: check the story is ready"},
 		{"docs/troubleshooting.md", "### SDLC-E0010"},
 	} {
 		t.Run(tc.file, func(t *testing.T) {

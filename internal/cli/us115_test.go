@@ -746,7 +746,9 @@ func TestAC8TheDocsDescribeThePolicyTheCountsAndTheRefusal(t *testing.T) {
 		{"`reviews` in configuration.md", rvSection(t, page(t, "configuration.md"), "## `reviews`"),
 			[]string{"### `reviews.policy`", "REVIEW.md", "relative to the repository root"}},
 		{"the-agents.md", page(t, "the-agents.md"),
-			[]string{"review policy", "sdlc review list", "--important", "--nits"}},
+			[]string{"review policy", "sdlc review list"}},
+		{"CONTRIBUTING.md", contributing(t),
+			[]string{"review policy", "--important", "--nits"}},
 		{"the-loop.md", page(t, "the-loop.md"),
 			[]string{"review policy", "nits"}},
 	} {

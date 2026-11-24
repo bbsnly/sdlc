@@ -1,22 +1,53 @@
 # Running the loop from Claude Desktop
 
-Claude Desktop's Code tab runs Claude Code sessions, with their plugins and
-hooks, so the loop works there as it does in a terminal. What is
-different is that a person there may have no terminal. This page covers what
-changes because of that: how the plugin gets its binary, the slash commands
-that stand for the commands only a person runs, where to set the variables the
-hook reads, and using a terminal of your own.
+- [Introduction](#introduction)
+- [Install the plugin from the plugin browser](#install-the-plugin-from-the-plugin-browser)
+  - [When the plugin browser cannot add a marketplace](#when-the-plugin-browser-cannot-add-a-marketplace)
+- [Set up a project and run a story](#set-up-a-project-and-run-a-story)
+- [Answering the loop](#answering-the-loop)
+  - [Answer from the story's worktree](#answer-from-the-storys-worktree)
+  - [The commands that are yours](#the-commands-that-are-yours)
+- [Set variables in the local environment editor](#set-variables-in-the-local-environment-editor)
+- [Using a terminal of your own](#using-a-terminal-of-your-own)
+- [Why Cowork is not supported](#why-cowork-is-not-supported)
+- [What is not protected](#what-is-not-protected)
+- [Next steps](#next-steps)
 
-The slash commands need `sdlc` 0.5.0 or later; see
-[Which release you need](#which-release-you-need).
+## Introduction
+
+The Code tab of Claude Desktop runs Claude Code sessions, with their plugins
+and their hooks, so the loop works there as it does in a terminal. What
+differs is that you may have no terminal at all.
+
+This page covers what changes because of that: how to add the plugin, how to
+set up a project and answer the loop without leaving the app, and where to set
+the few variables `sdlc` reads. Everything else is as
+[Getting started](getting-started.md) describes it, and this page says where
+to pick that page up.
 
 ## Install the plugin from the plugin browser
 
-Open Claude Desktop's plugin browser, add the marketplace `bbsnly/sdlc`, and
-install the `sdlc` plugin from it. The repository is its own marketplace, so
-there is nothing else to add. If the plugin browser offers no way to add a
-marketplace, the project can declare it in its `.claude/settings.json`, and
-Claude Code offers to install the plugin when a session opens the project:
+In the Code tab, typing `/plugin` does not add a plugin. Open Claude Desktop's
+plugin browser instead, add the marketplace `bbsnly/sdlc`, and install the
+`sdlc` plugin from it. The repository is its own marketplace, so there is
+nothing else to add.
+
+You don't need to install the `sdlc` command. The first time a session starts,
+the plugin downloads the release of `sdlc` that matches its own version, checks
+it against checksums it carries, and keeps it for the hook and for your agent
+to run. [Installation](installation.md#the-plugin-fetches-its-own-binary) says
+more about it.
+
+If the download fails, a session that starts in a project set up for the loop
+tells you why, and what to do about it.
+[Troubleshooting](troubleshooting.md#the-sdlc-binary-was-not-found-so-nothing-is-being-enforced)
+lists each reason and its fix.
+
+### When the plugin browser cannot add a marketplace
+
+If the plugin browser offers no way to add a marketplace, your project can
+declare it. Put this in the project's `.claude/settings.json`, and Claude Code
+offers to install the plugin when a session opens the project:
 
 ```json
 {
@@ -27,86 +58,44 @@ Claude Code offers to install the plugin when a session opens the project:
 }
 ```
 
-Nobody runs an installer this way, so the plugin fetches its own binary. The
-first time a session starts, the plugin's launcher downloads the release that
-matches the plugin's version into the plugin's `bin` directory, and checks it
-against the checksums the plugin carries before it unpacks anything. Claude Code
-puts that directory on the model's `PATH` too, so the model's Bash tool finds
-the same `sdlc`. [Installation](installation.md#the-plugin-fetches-its-own-binary)
-says more.
+## Set up a project and run a story
 
-When the fetch fails, a session that starts in a project taking part in the
-loop is told why and what to do, for example:
+With the plugin installed, open a session in the project you want to work on
+and type:
 
 ```text
-sdlc: the sdlc binary was not found, so nothing is being enforced. why: could
-not fetch sdlc 0.5.0 (sdlc_0.5.0_darwin_arm64.tar.gz) from the release. fix:
-check that this machine can reach the release, and open a new session, which
-tries again. Or, in Claude Desktop, open the local environment editor and set
-SDLC_BIN to the full path of an sdlc you installed; in a terminal, install it
-with npx @bbsnly/sdlc install. Then type /sdlc:doctor, or run sdlc doctor in a
-terminal.
+/sdlc:init
 ```
 
-Each reason the fetch can stop for, and its fix, is listed under
-[troubleshooting](troubleshooting.md#the-sdlc-binary-was-not-found-so-nothing-is-being-enforced).
+Your agent runs `sdlc init` and shows you what it printed.
+[Set up your project](getting-started.md#set-up-your-project) explains what
+`init` wrote, and takes you through the steps after it: filling in the
+contract, committing the setup and writing a story. Where that page runs
+`sdlc doctor`, type `/sdlc:doctor`. Ask your agent to run the page's other
+commands, such as `git commit` and `sdlc story list`.
 
-## The commands that are yours
+Then start the loop, as you would anywhere:
 
-Some of the loop's commands are a person's decision, and the hook refuses them
-from the model: approving, lifting the freeze, acknowledging the log, putting a
-landed story's map change on trunk, moving a story, and choosing an agent's
-model. In a terminal outside Claude Code you run them as `sdlc` commands. In
-Claude Desktop and in Claude Code you type them as slash commands:
+```text
+/sdlc:next
+```
 
-| Type in Claude Desktop or Claude Code | Stands for |
-| --- | --- |
-| `/sdlc:approve` | `sdlc approve` |
-| `/sdlc:unfreeze` | `sdlc unfreeze` |
-| `/sdlc:ack` | `sdlc ack` |
-| `/sdlc:remap` | `sdlc remap` |
-| `/sdlc:release` | `sdlc release` |
-| `/sdlc:assign` | `sdlc staffing assign` |
-| `/sdlc:init` | `sdlc init` |
-| `/sdlc:doctor` | `sdlc doctor` |
+## Answering the loop
 
-The arguments are the command's own, typed as on a command line:
-`/sdlc:approve US-001 --reject "the migration has no way back"`. Quotes group
-words, and nothing in them is run or expanded. The hook runs the command as
-the terminal would, before anything reaches the model, and shows you what it
-printed, refusals and their SDLC-E codes included. The model cannot start the
-first six: Claude Code does not offer them to it, and the hook runs only a
-command a person typed. `/sdlc:init` and `/sdlc:doctor` decide nothing, so the
-model may run those too.
+Some of the loop's commands are decisions, and decisions are yours: approving
+work, lifting the test freeze, and a few more. The hook refuses them from the
+model.
 
-In Claude Desktop you type `/sdlc:approve US-001` at the prompt, as in Claude
-Code. The hook runs the command only where its own environment is that of a hook
-Claude Code runs itself for a session a person attends, which it tells by four
-variables
-([enforcement](enforcement.md#a-persons-decisions-refused-in-every-session)).
-Those four were read in Claude Code 2.1.321 in Claude Desktop, on 2026-11-13,
-and that release is the one known to work. A later release that keeps them is
-expected to; an earlier one was not tried, and may give its hooks another label,
-and then the command does not run and the hook says to update.
-Where it cannot tell, the command does not run, and the hook says which
-variable it could not read and what to do about it. A `!` line is then the
-way in Claude Desktop: `!sdlc approve US-001` runs the command with none of the
-variables [SDLC-E0079](troubleshooting.md#sdlc-e0079) reads (seen on
-2026-10-29). A terminal outside Claude Code is the fallback; it needs sdlc
-installed ([Using a terminal of your own](#using-a-terminal-of-your-own)). In
-Claude Code run from a terminal, the slash command is the way: there a `!` line
-runs with the environment variables Claude Code sets for the model's Bash, so
-the command refuses itself with SDLC-E0079 and changes nothing. A slash command
-expanded in a session started from another session's tool call, or fed to the
-hook by a model, does not run where the hook can tell: it says that it did not
-run, and which variable told it so. It cannot always tell. A session a model
-starts in a terminal of its own, with `osascript` or `socat` for instance, may
-look attended to it, so the rules in [enforcement](enforcement.md#not-held)
-refuse the starts they read, and that page lists the ones they do not.
+You type such a command as a slash command, such as `/sdlc:approve`, in Claude
+Desktop as in Claude Code. The hook runs it before anything reaches the model,
+as a terminal would, and shows you what it printed:
 
-After the loop handed `US-001` to a person with a question, typing
-`/sdlc:approve US-001` in Claude Desktop or in Claude Code, or `!sdlc approve
-US-001` in Claude Desktop, shows:
+```text
+/sdlc:approve US-001
+```
+
+Let's say the loop has handed the story `US-001` to you with a question. That
+line approves the work, and shows:
 
 ```text
 US-001  approved (spec_unclear)
@@ -114,105 +103,157 @@ US-001  approved (spec_unclear)
 A person runs `sdlc start US-001`, or types /sdlc:next in Claude Code, to carry on.
 ```
 
-A command acts on the directory the session is in, as the same command typed
-in a terminal there would. A story under way in its own worktree is answered
-there, so open a session in `.sdlc/worktrees/<ID>` for it, or, since a `!` line
-runs where the session is, type `!cd .sdlc/worktrees/US-001 && sdlc approve
-US-001`; typed from the main
-checkout, `/sdlc:approve` is refused with
-[SDLC-E0050](troubleshooting.md#sdlc-e0050), which names the checkout that
-holds the story.
+Type `/sdlc:next`, and the story carries on from the gate it stopped at. To
+send the work back instead, give the reason:
+`/sdlc:approve US-001 --reject "the migration has no way back"`.
 
-The hook gives a slash command 60 seconds. `/sdlc:remap` waits for another
-story's landing to finish before it changes anything, and a landing can take
-longer than that. Then nothing is shown for a minute, and the model tells you
-the command did not run, which is true: the wait comes before any change. Type
-it again once the landing has finished.
+### When a slash command does not run
 
-## Which release you need
+The hook runs a command you typed only where it can tell that Claude Code
+started it for a session you are at. It reads that from four variables in its
+own environment, and that reading is known to work in Claude Code 2.1.321 in
+Claude Desktop. A later release that keeps those variables is expected to work.
+An earlier one was not tried, and may give its hooks another label: the command
+then does not run, and the hook says to update.
 
-The slash commands are run by `sdlc` 0.5.0 or later. An `sdlc` 0.4.0
-does not know them: typing one with it runs nothing, and the model, reading
-the command's text, tells you it did not run and why that usually is.
-To see which release you have, ask the assistant to run `sdlc version`, or run
-it in a terminal, and compare it with the plugin's version in the plugin
-browser. `/sdlc:doctor` says whether an `sdlc` is found at all; it does not
-print a version.
+Where the hook cannot tell, the command does not run, and the hook says which
+variable it could not read and what to do about it.
+[Troubleshooting](troubleshooting.md#a-slash-command-did-not-run) lists each.
+In Claude Desktop, type the command on a line that starts with `!` instead,
+which runs it directly and not through the model, and needs none of those
+variables:
 
-## Variables, in the local environment editor
+```text
+!sdlc approve US-001
+```
 
-A desktop app does not read your shell's profile, so the variables the hook
-reads are set in Claude Desktop's local environment editor, and a session
-started after the change sees them.
+In Claude Code run from a terminal, it is the other way round: the slash command
+is the way, and a `!` line [refuses itself](troubleshooting.md#sdlc-e0079) and
+changes nothing. A slash command typed in a session that another session's tool
+call started does not run either, and the hook says which variable told it so.
 
-`SDLC_ENFORCE` set to `0` in the local environment editor turns the hook's
-enforcement off for the sessions Desktop starts: every refusal of the hook's
-stands down, and so do the `Stop` hook and the formatter. The slash commands
-above still run, as they would in a terminal with enforcement off. A person's
-command run in the model's Bash, or from a `!` line in Claude Code run from a
-terminal, still refuses itself
-([SDLC-E0079](troubleshooting.md#sdlc-e0079), and SDLC-E0074 for
-`sdlc staffing assign`); a `!` line in Claude Desktop runs
-it, as above. It must be exactly `0`.
+### Answer from the story's worktree
+
+A command acts on the directory the session is in, and a story under way is
+answered from its own worktree, `.sdlc/worktrees/<ID>`. You may open a session
+in that directory, or, for a `!` line, change to it on the same line:
+
+```text
+!cd .sdlc/worktrees/US-001 && sdlc approve US-001
+```
+
+Typed from your main checkout, the approval
+[is refused](troubleshooting.md#sdlc-e0050), and the refusal names the checkout
+that holds the story.
+
+### The commands that are yours
+
+There are six of them. Each has a slash command, and in Claude Desktop each has
+a `!` line for when the slash command does not run:
+
+| To | Slash command | `!` line in Claude Desktop |
+| --- | --- | --- |
+| approve work, or send it back | `/sdlc:approve` | `!sdlc approve` |
+| lift the test freeze | `/sdlc:unfreeze` | `!sdlc unfreeze` |
+| mark the log of landed stories as read | `/sdlc:ack` | `!sdlc ack` |
+| put a landed story's change to `CODEMAP.md` on trunk, or drop it | `/sdlc:remap` | `!sdlc remap` |
+| let a story go from the checkout that holds it | `/sdlc:release` | `!sdlc release` |
+| choose an agent's model | `/sdlc:assign` | `!sdlc staffing assign` |
+
+The arguments are the command's own, typed as on a command line, and
+[Commands](commands.md) describes them. Quotes group words, and nothing inside
+them is run or expanded.
+
+The model cannot start any of the six: Claude Code does not offer them to it,
+and the hook runs only a command a person typed. `/sdlc:init` and
+`/sdlc:doctor` decide nothing, so the model may run those too.
+
+> [!NOTE]
+> The slash commands need `sdlc` 0.5.0 or newer, which the plugin's own
+> download always is. If a command you typed answers that it did not run,
+> `/sdlc:doctor` says whether an `sdlc` is found at all, and asking your agent
+> to run `sdlc version` shows which release it is.
+
+## Set variables in the local environment editor
+
+A desktop app does not read your shell's profile. The variables `sdlc` reads
+are set in Claude Desktop's local environment editor instead, and a session
+started after the change sees them. These are the three you may want:
+
+| Set in the local environment editor | To | What it does |
+| --- | --- | --- |
+| `SDLC_BIN` | the full path of an `sdlc` you installed yourself | The hook runs that one, and the plugin's own download is turned off |
+| `SDLC_DEBUG_FILE` | the full path of a file | The hook appends a line to it about each call. Look there when a session said nothing and you expected a refusal, or when a command you typed did not run |
+| `SDLC_ENFORCE` | `0`, and exactly that | Turns the hook's enforcement off for the sessions Claude Desktop starts |
+
+With `SDLC_ENFORCE` set to `0`, every refusal of the hook's stands down. Your
+slash commands still run, and your six commands stay yours all the same: run by
+the model, each still [refuses itself](troubleshooting.md#sdlc-e0079).
+[Turning it off](enforcement.md#turning-it-off) says more.
 
 Leave `AI_AGENT`, `CLAUDE_CODE_EXECPATH` and `GIT_EDITOR=true` out of the
-local environment editor: the hook reads all three to tell a person's typed
-command from a model's, and with any of them set there a slash command answers
-that it did not run and names the variable.
-
-`SDLC_DEBUG_FILE` set in the local environment editor to the full path of a file
-makes the hook, and the plugin's launcher, append a line to it about each call.
-That is where to look when a session says nothing and you expected a refusal,
-or a slash command did not run.
-
-`SDLC_BIN` set in the local environment editor to the full path of an `sdlc` you
-installed yourself makes the hook run that one, and turns the plugin's own fetch
-off.
+editor. The hook reads all three to tell a command you typed from a model's,
+and with any of them set there, a slash command answers that it did not run and
+names the variable.
 
 ## Using a terminal of your own
 
-A terminal outside Claude Code is a window you opened yourself, such as Terminal
-on macOS or PowerShell from the Start menu. A terminal that Claude Code or
-Claude Desktop opens is not one, and neither is a `tmux` session Claude Code
-started: where one has Claude Code's environment variables, a person's command
-refuses itself there with [SDLC-E0079](troubleshooting.md#sdlc-e0079).
+You never need a terminal, but you may prefer one. A terminal of your own is a
+window you opened yourself, such as Terminal on macOS or PowerShell from the
+Start menu. A terminal that Claude Code or Claude Desktop opens is not one,
+and nor is a `tmux` session that Claude Code started: your six commands
+[refuse themselves](troubleshooting.md#sdlc-e0079) there, as they do for the
+model.
 
-A terminal of your own has no `sdlc` unless you installed one, with
-`npx @bbsnly/sdlc install`: the plugin's copy is on Claude Code's `PATH` only.
-Install it before you run `sdlc approve`, `sdlc unfreeze`, `sdlc ack`,
-`sdlc remap`, `sdlc release` or `sdlc staffing assign` in a terminal; the slash
-commands need nothing installed.
+Your own terminal has no `sdlc` until you install one, because the plugin's
+copy is for Claude Code alone:
+
+```console
+$ npx @bbsnly/sdlc install
+```
+
+After that, `sdlc approve` and the rest work there as
+[Commands](commands.md) describes. [Installation](installation.md) has the
+other ways to install.
 
 ## Why Cowork is not supported
 
-Cowork refuses a plugin with a `bin/` directory, and that directory is where
-this plugin's launcher lives, so the plugin cannot be installed there. Cowork
-also turns off the shell lines skills use, and it cannot reach a git repository
-on your machine, which every gate works in.
+Cowork cannot run the loop. It refuses a plugin that has a `bin/` directory,
+and this plugin keeps the program that finds `sdlc` in one. Cowork also turns
+off the shell lines that skills use, and it cannot reach a git repository on
+your machine, which every gate works in.
 
 ## What is not protected
 
-- A session in a project that does not take part in the loop is held to
-  nothing, so it can still write Claude Code's own configuration under
-  `~/.claude`, this plugin's launcher, binary and checksums included. Every
-  project on the machine then runs what it wrote. A session in a project that
-  takes part is refused that write, and refused starting a second Claude Code
-  session that could type a person's slash command.
-- The model's Bash tool finds an `sdlc` an installer put on `PATH` ahead of the
-  plugin's own, so it may run another release than the one the hook runs. The
-  launcher's line in `SDLC_DEBUG_FILE` is the only record of which `sdlc` the
-  hook ran.
-- The PowerShell tool finds the plugin's `bin` directory only from Claude Code
-  2.1.303, as its changelog says; before that, the model's PowerShell finds only
-  an `sdlc` on `PATH`.
-- A person's command refuses itself only where Claude Code's environment
-  variables reach it. A program that starts it with a clean environment, such
-  as `launchctl submit` or `ssh`, or one run after those variables were
-  removed, is not caught. Nor is a program Claude Code starts from the
-  project's own configuration, such as an MCP server or a hook, that runs the
-  hook on a payload it wrote, nor a slash command another program types into
-  your prompt, as `tmux send-keys` can. Each is listed, with how you would notice it, in
-  [Commands the rules do not read](enforcement.md#commands-the-rules-do-not-read).
+`sdlc` is a discipline tool, not a sandbox. Three gaps are worth knowing when
+you run it from a desktop app:
 
-[Enforcement](enforcement.md#claude-config-is-the-persons) has the rules that
-hold a session in a project that takes part, and what they do not catch.
+- **A project that is not set up for the loop is held to nothing.** A session
+  there can write Claude Code's own configuration under `~/.claude`, this
+  plugin included, and every project on the machine then runs what it wrote. A
+  session in a project that is set up is refused that write.
+- **Your agent's shell may find a different `sdlc` from the hook's.** Where an
+  installer put one on `PATH`, your agent runs that one, which may be another
+  release. `SDLC_DEBUG_FILE` records which `sdlc` the hook ran, and
+  [updating the command and the plugin together](installation.md#updating)
+  keeps the two alike.
+- **Your commands refuse themselves only where Claude Code's environment
+  reaches them.** A program that starts one with a clean environment is not
+  caught. Nor is a program that types a slash command into your prompt. A
+  session a model starts in a terminal of its own, with `osascript` or `socat`
+  for instance, may look to the hook like one you are at: the rules refuse the
+  starts they read, and Enforcement lists the ones they do not.
+
+[Enforcement](enforcement.md#commands-the-rules-do-not-read) lists each of
+these, with how you would notice it.
+
+## Next steps
+
+With the plugin in place and a project set up, the rest of the manual applies
+as it is written:
+
+- [Write a story](getting-started.md#write-a-story), and run it
+- [Human approval gates](guides/human-approval-gates.md): every place the loop
+  can stop for you, and how to answer each
+- [Why was I refused?](guides/why-was-i-refused.md): how to read a refusal from
+  the hook

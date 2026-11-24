@@ -81,12 +81,14 @@ func TestAC8TheCommandsPageSaysWhatTheGateAndTheFreezeRun(t *testing.T) {
 // AC-8: the loop's page says it at Gates 3, 5 and 6.
 func TestAC8TheLoopSaysItAtGates3And5And6(t *testing.T) {
 	t.Parallel()
-	us134Says(t, "AC-8 docs/the-loop.md at Gate 3", us134Section(t, "the-loop.md", "## Gate 3 — `tests_frozen`"),
+	us134Says(t, "AC-8 docs/the-loop.md at Gate 3", us134Section(t, "the-loop.md", "### Gate 3: freeze the tests"),
 		"commands.test_files", "sdlc freeze", "refuse")
-	us134Says(t, "AC-8 docs/the-loop.md at Gate 5", us134Section(t, "the-loop.md", "## Gate 5 — `implementation`"),
-		"sdlc gate implementation pass", "SDLC-E0095", "loop.max_rework_rounds", "commands.test_files")
-	us134Says(t, "AC-8 docs/the-loop.md at Gate 6", us134Section(t, "the-loop.md", "## Gate 6 — `verification`, then `verifier_review`"),
-		"run by sdlc", "tree hash")
+	// The narrative keeps codes out of its words and links them to their entry
+	// in Troubleshooting instead (docs/style.md).
+	us134Says(t, "AC-8 docs/the-loop.md at Gate 5", us134Section(t, "the-loop.md", "### Gate 5: write the code"),
+		"sdlc gate implementation pass", "troubleshooting.md#sdlc-e0095", "loop.max_rework_rounds", "commands.test_files")
+	us134Says(t, "AC-8 docs/the-loop.md at Gate 6", us134Section(t, "the-loop.md", "### Gate 6: verify"),
+		"run by sdlc")
 }
 
 // AC-10 and AC-17: the configuration page documents the narrow command and the

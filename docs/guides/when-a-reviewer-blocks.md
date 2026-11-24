@@ -1,40 +1,42 @@
 # When a reviewer blocks
 
 - [Introduction](#introduction)
-- [What a block looks like](#what-a-block-looks-like)
-- [Rework](#rework)
-  - [The reviewer looks again](#the-reviewer-looks-again)
+- [What happens when a reviewer blocks](#what-happens-when-a-reviewer-blocks)
+- [Read what the reviewer found](#read-what-the-reviewer-found)
+- [When a reviewer keeps blocking](#when-a-reviewer-keeps-blocking)
+- [When the loop hands the story to you](#when-the-loop-hands-the-story-to-you)
+  - [Decide what to do](#decide-what-to-do)
+  - [Answer, and carry on](#answer-and-carry-on)
 - [Who can block](#who-can-block)
 - [What each verdict does](#what-each-verdict-does)
-- [When the rework does not converge](#when-the-rework-does-not-converge)
-- [Why the other approvals go stale too](#why-the-other-approvals-go-stale-too)
+- [Why the other reviewers look again](#why-the-other-reviewers-look-again)
 - [Making a reviewer advisory with `can_block`](#making-a-reviewer-advisory-with-can_block)
 - [Where to go next](#where-to-go-next)
 
 ## Introduction
 
-Four gates are reviewed: `tests_frozen` at Gate 3, `design_review` at Gate 4,
-`verifier_review` at Gate 6 and `code_review` at Gate 7. Sooner or later one of
-the reviewers will find something wrong and record a `block`. Don't worry if
-that happens to your first story: it is the loop doing what it is for.
+Four gates end in a review. The tests are reviewed at Gate 3, before they are
+frozen, and the plan at Gate 4. The verifier gives its verdict on the
+implementation at Gate 6, and the diff is reviewed at Gate 7. Sooner or later a
+reviewer finds something wrong and blocks. Don't worry if that happens to your
+first story: it is the loop doing what it is for.
 
-A block that can stop the gate does stop it, and the only way past it is the
-same reviewer looking again at the reworked tests, plan or code, or, once it has
-blocked as often as its limit allows, its
-[arbiter](#when-the-rework-does-not-converge). This page shows you
-what a block looks like, how a rework round goes, and which reviewers are able
-to block in the first place.
+Most blocks need nothing from you. The loop sends the finding back to the
+author, the work is revised, and the same reviewer looks again. When that does
+not settle it, a second reviewer of the same kind, its arbiter, rules on what
+is still open. A story comes to you only when the arbiter has blocked twice as
+well.
 
-A project with `human_gates.dor_advocate_check` on also has `dor` wait for the
-human advocate. That review is advisory, and nothing below changes for it.
+This page shows what a block looks like, how to read what the reviewer found,
+and what your options are when the story is handed to you. After that it says
+which reviewers can block at all, and how to change that.
 
-## What a block looks like
+## What happens when a reviewer blocks
 
-When a reviewer has blocked, `sdlc gate` tells you so and names the reviewer
-and the headline of its finding:
+A block from a reviewer that can stop its gate does stop it. When the session
+tries to pass the gate, `sdlc` refuses:
 
-```console
-$ sdlc gate design_review pass
+```text
 sdlc: design_review is blocked by a reviewer
 
   why  architect blocked: AC-2 has no step
@@ -43,90 +45,172 @@ sdlc: design_review is blocked by a reviewer
   SDLC-E0030  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0030
 ```
 
-The headline is only the start. The full review is stored as a file in the
-story's `reviews` directory (`.sdlc/stories/<ID>/reviews/`), and
-`sdlc review add` prints its path when the reviewer records it (see
-[The reviewer looks again](#the-reviewer-looks-again)). Open that file to read
-everything the reviewer found.
-
 There is no flag that overrides this. A gate that could pass over its blocking
-reviewer would make every review optional.
+reviewer would make every review optional. At Gate 3 it is `sdlc freeze` that
+refuses, with the same code, until the test reviewer approves the tests as they
+are.
 
-## Rework
+What follows is a rework round, and the loop runs it without you:
 
-The usual way through is to revise the work and ask the reviewer to look
-again. Start by recording the gate as failed, with the finding in the note:
+1. The gate is recorded as failed, with the reviewer's finding as its note.
+2. The findings go back to the author: the test author, who corrects the tests
+   at Gate 3, or the implementer, who revises the plan at Gate 4, or the code
+   at Gates 6 and 7.
+3. The same reviewer reads the revised work and gives a new verdict. Earlier
+   rounds are kept, so the second round can see what the first one said.
+4. The other reviewers of that gate look again as well, because
+   [what they reviewed has changed](#why-the-other-reviewers-look-again).
 
-```console
-$ sdlc gate design_review fail --note "architect blocked: AC-2 has no step"
-US-001  design_review  fail
-  architect blocked: AC-2 has no step
-```
+> [!NOTE]
+> If you are watching, resist asking the session to patch the plan or the code
+> itself. The hook refuses code written in the main conversation, and a plan
+> revised by the conversation that argued for it is not what the reviewer asked
+> for.
 
-Then send the findings back to whoever did the work. At Gate 4 that is
-`sdlc:implementer`, revising the plan and storing it again with
-`sdlc artifact write plan`. At Gates 6 and 7 it is also `sdlc:implementer`, this
-time changing the code.
+## Read what the reviewer found
 
-> [!WARNING]
-> Do not fix the plan or the code in the main conversation. The hook refuses
-> code there, and a plan revised by the conversation that argued for it is not
-> what the reviewer asked for.
-
-### The reviewer looks again
-
-A reviewer records its conclusion with `sdlc review add GATE ROLE VERDICT`. The review document
-comes from standard input or `--file`, and `--note` carries the headline. `--important` and `--nits`
-carry the reviewer's own counts: a block with no important finding is refused
-([SDLC-E0086](../troubleshooting.md#sdlc-e0086)), and a review with only nits is an approve with the
-nits listed. At `design_review` and `code_review`, `--finding` lists each finding counted, and
-each is numbered F-1, F-2 and so on. The numbers below are examples. When the architect first
-blocked, the review was recorded like this:
+To see where every reviewer of a gate stands, ask from the story's worktree:
 
 ```console
-$ sdlc review add design_review architect block --important 1 --finding "important the plan: AC-2 has no step" --note "AC-2 has no step" < review.md
-US-001  design_review  architect  block (round 1)
-  .sdlc/stories/US-001/reviews/design_review-architect-1.md
-```
-
-The implementer closes the finding once the plan has the step, with
-`sdlc finding close design_review architect F-1 --fixed`. When the rework is in, the **same**
-reviewer looks again. It reads the finding's closing first, and its new verdict is a new round,
-which the gate reads:
-
-```console
-$ sdlc review add design_review architect approve --important 0 --nits 2 --finding "nit the plan: step 4 is long" --finding "nit the plan: AC-1 and AC-2 share a step" < review.md
-US-001  design_review  architect  approve (round 2)
-  .sdlc/stories/US-001/reviews/design_review-architect-2.md
-```
-
-Earlier rounds are kept, both in the record and as files, so the second round
-can see what the first one said.
-
-What a reviewer reports is set by the [review policy](../configuration.md#reviewspolicy). If the
-reviewers are reporting the wrong things, a person commits a change to it on trunk between stories,
-and a running story keeps the copy it was cut from. To apply it to this story, end the story, commit
-on trunk and start again.
-
-## Who can block
-
-Not every reviewer can stop a gate. Every reviewer a gate expects has to
-report, whether or not it can block, and what its verdict does depends on the
-kind of reviewer it is. `sdlc review list` shows the split for the story in
-front of you:
-
-```console
+$ cd .sdlc/worktrees/AUTH-3
 $ sdlc review list --gate design_review
 Review policy: REVIEW.md
   design_review   architect       blocking  block (round 1)
-  design_review   red-team        advisory  not reviewed
-  design_review   security        advisory  not reviewed
-  design_review   perf            on budget not reviewed
-  design_review   human-advocate  advisory  not reviewed
+  design_review   red-team        advisory  note (round 1)
+  design_review   security        advisory  note (round 1)
+  design_review   perf            on budget note (round 1)
+  design_review   human-advocate  advisory  note (round 1)
 ```
 
-Here the architect is blocking, so its `block` holds the gate. The same split,
-gate by gate:
+Each line is a reviewer, whether it can stop the gate, and its latest verdict.
+Once the story has been handed to you it is no longer running, so name it:
+`sdlc review list --story AUTH-3`.
+
+The reason in a refusal is only the headline. Every review is kept in full in
+your project, one file for each reviewer and round, such as
+`.sdlc/stories/AUTH-3/reviews/design_review-architect-1.md`. Open that file to
+read everything the reviewer found.
+
+Each thing a reviewer wants changed is a numbered finding, `F-1`, `F-2` and so
+on. Every finding is closed before the story is committed: fixed, or declined
+with a reason the reviewer then reads.
+
+## When a reviewer keeps blocking
+
+Rounds are not unlimited. When the same reviewer has blocked twice, which is the
+limit `sdlc init` sets as `loop.max_review_rounds`, the loop does not hand the
+story to you yet. It sends the gate to the reviewer's **arbiter**, and goes on
+without you. This is what `sdlc` prints at the second block:
+
+```text
+AUTH-3  design_review  architect  block (round 2)
+  .sdlc/stories/AUTH-3/reviews/design_review-architect-2.md
+  architect has blocked design_review 2 times, and loop.max_review_rounds is 2: the gate goes to architect-arbiter, a fresh sdlc:architect that rules on the open findings.
+  Its review then stands for architect at design_review, and architect is refused there.
+  Until architect-arbiter first reviews, any answer a person gives the story starts architect's count again and gives it its turn.
+  From then on, only a person's answer to a review_not_converging hand-over raised by architect or architect-arbiter at design_review gives architect its turn again.
+```
+
+The arbiter is a fresh agent of the same kind as the reviewer, recorded as
+`architect-arbiter`. It reads the open findings, how each was closed and the
+reviewer's documents, and rules on each: fixed, or declined with a reason. It is
+asked for one step above the reviewer, in effort, or in model where the effort
+is already at its ceiling, and `sdlc staffing show --gate design_review` lists
+it in the architect's place.
+
+From then on the arbiter's review stands for the architect's at that gate, and
+the gate reads it. The architect itself is refused there. A reviewer that cannot
+block never reaches an arbiter, because a block that cannot stop the gate is not
+counted. A reviewer your project has turned off has none, so its own limit hands
+the story over, as the next section describes.
+
+## When the loop hands the story to you
+
+Only the arbiter's own limit hands the story to you. When the arbiter has
+blocked twice too, `sdlc` ends the iteration:
+
+```text
+AUTH-3  design_review  architect-arbiter  block (round 2)
+  .sdlc/stories/AUTH-3/reviews/design_review-architect-arbiter-2.md
+
+AUTH-3 is handed to a person: architect-arbiter has blocked design_review 2 times, and loop.max_review_rounds is 2, so the rework is not converging on what it asks for. The last note: AC-2 still has no step
+
+A person reads the work and answers in Claude Code or in their own terminal:
+  /sdlc:approve AUTH-3, or sdlc approve AUTH-3
+  sdlc approve AUTH-3 --reject "why"
+```
+
+An agent may have a limit of its own, `max_rounds` in its entry under
+`team.agents`, and it then counts for that agent in place of
+`loop.max_review_rounds`. A gate that is recorded as failed three times,
+whatever the reason, is handed over in the same way, and that limit is
+`loop.max_rework_rounds`. A block from an advisory reviewer is a finding, not a
+lost round, so it is not counted. [`loop`](../configuration.md#loop) describes
+both settings.
+
+Nothing has gone wrong, and nothing is lost. The work is in the story's
+worktree, `.sdlc/worktrees/AUTH-3`, and every round of the reviews, the
+arbiter's included, is in `.sdlc/stories/AUTH-3/reviews/` in your project.
+
+### Decide what to do
+
+Read the rounds of both reviewers and the work they are about. A reviewer and an author who
+cannot agree are usually in one of three positions, and each has its own way
+on.
+
+**The reviewer is right, and the author has not got there yet.** Let the loop
+try again. Your approval gives the reviewer its turn again and starts the counts
+afresh, so the author gets two more rounds with it. If you can see what the
+author keeps missing, say so in the story first.
+
+**They disagree because the story leaves it open.** Settle it yourself. Edit
+the story in your backlog, `user_stories.json` in your project: tighten the
+criterion, or add a line to its `decisions`. Every agent reads the story from
+there, the reviewer included.
+[Write your decision down](human-approval-gates.md#write-your-decision-down)
+has an example.
+
+**The reviewer is holding the work to the wrong thing.** A blocking reviewer
+cannot be overruled for one story, and that is deliberate. What you can change
+is what reviewers are asked to report, in the
+[review policy](../configuration.md#reviewspolicy), and which of them can stop
+a gate, with [`can_block`](#making-a-reviewer-advisory-with-can_block). Both
+are changed on trunk, and both reach the stories you start afterwards. The
+story that is waiting keeps the copies its worktree was cut from, so for this
+one, write your ruling into the story's `decisions`, where the reviewer reads
+it on the next round.
+
+### Answer, and carry on
+
+Answer in a terminal of your own, from the story's worktree:
+
+```console
+$ cd .sdlc/worktrees/AUTH-3
+$ sdlc approve AUTH-3
+AUTH-3  approved (review_not_converging)
+
+A person runs `sdlc start AUTH-3`, or types /sdlc:next in Claude Code, to carry on.
+```
+
+To send the work back with a reason of your own, use
+`sdlc approve AUTH-3 --reject "why"` in its place.
+[Human approval gates](human-approval-gates.md#where-to-type-your-answer) says
+where to type the answer if you are not at a terminal.
+
+Then set the story going again, in Claude Code, in your project:
+
+```text
+/sdlc:next AUTH-3
+```
+
+The loop picks up at the gate that was blocked and starts another rework
+round.
+
+## Who can block
+
+Every reviewer a gate expects has to report, but not every reviewer can stop
+the gate. `sdlc review list` shows which is which for the story in front of
+you, in its third column. The same split, gate by gate:
 
 | Gate | Blocking | On budget | Advisory |
 | --- | --- | --- | --- |
@@ -135,27 +219,25 @@ gate by gate:
 | `verifier_review` | `verifier` | none | none |
 | `code_review` | `code-reviewer`; `security` when the story is security-sensitive | `perf` | `human-advocate`; `security` otherwise |
 
-The test reviewer is the one whose block refuses a command other than `sdlc gate`:
-it refuses `sdlc freeze`, with SDLC-E0030, until the review that stands for the
-test reviewer approves the tests as they are: its own, or `test-reviewer-arbiter`'s
-once its limit has sent the tests there. Where its `can_block` is false it is
+The test reviewer is the one whose block refuses a command other than
+`sdlc gate`: it refuses `sdlc freeze` until the review that stands for the test
+reviewer approves the tests as they are. That is its own, or its arbiter's once
+its limit has sent the tests there. Where its `can_block` is false it is
 advisory, and the freeze waits only until it has reviewed.
 
-Whether a story is security-sensitive is recorded at Gate 2 with
-`sdlc gate analysis pass --security-sensitive` or `--security-sensitive=false`.
-If it was never set, the story is treated as sensitive and security blocks.
+Whether a story is security-sensitive is decided at Gate 2, from the
+researcher's threat assessment. Until that gate has passed, the story is
+treated as sensitive, and security blocks.
 
-`perf` never has to approve, but its block stops the gate. Its agent is told to
-block only when the change breaks a performance budget stated in `CLAUDE.md`, so
-a block from it means a stated budget, not a preference.
-
-`can_block` set to false moves a reviewer, the code reviewer among them, to advisory.
-See the [last section](#making-a-reviewer-advisory-with-can_block).
+`perf` is the one "on budget" reviewer. It never has to approve, but its block
+stops the gate. Its agent is told to block only when the change breaks a
+performance budget stated in your `CLAUDE.md`, so a block from it means a
+stated budget and not a preference.
 
 ## What each verdict does
 
-A reviewer's verdict is `approve`, `block` or `note`, and the table shows what
-each does for each kind of reviewer:
+A reviewer's verdict is `approve`, `block` or `note`. What it does depends on
+the kind of reviewer that gave it:
 
 | Verdict | From a blocking reviewer | From perf | From an advisory reviewer |
 | --- | --- | --- | --- |
@@ -163,138 +245,82 @@ each does for each kind of reviewer:
 | `block` | stops the gate | stops the gate | counts as reported |
 | `note` | not enough: the gate waits for an approval | counts as reported | counts as reported |
 
-A role the gate does not expect is refused with
-[SDLC-E0027](../troubleshooting.md#sdlc-e0027).
+## Why the other reviewers look again
 
-## When the rework does not converge
-
-Rounds are not unlimited. A block that stops the gate, recorded
-`loop.max_review_rounds` times by the same reviewer (or its own
-[`max_rounds`](../configuration.md#an-agents-entry)), sends the gate to that
-reviewer's [arbiter](../the-loop.md#the-arbiter): a fresh agent of the same kind,
-recorded as `<role>-arbiter`, that rules on the open findings. The test reviewer
-is no exception: at its limit the tests go to `test-reviewer-arbiter`. The
-configuration `sdlc init` writes sets the limit to 2, so had the architect
-blocked again in round 2:
-
-```console
-$ sdlc review add design_review architect block --important 1 --finding "important the plan: AC-2 still has no step" --note "AC-2 still has no step" < review.md
-US-001  design_review  architect  block (round 2)
-  .sdlc/stories/US-001/reviews/design_review-architect-2.md
-  architect has blocked design_review 2 times, and loop.max_review_rounds is 2: the gate goes to architect-arbiter, a fresh sdlc:architect that rules on the open findings.
-  Its review then stands for architect at design_review, and architect is refused there.
-  Until architect-arbiter first reviews, any answer a person gives the story starts architect's count again and gives it its turn.
-  From then on, only a person's answer to a review_not_converging hand-over raised by architect or architect-arbiter at design_review gives architect its turn again.
-```
-
-Nothing is handed over yet, and the iteration goes on. The runbook delegates
-the open findings, their closings and the architect's documents to a fresh
-`sdlc:architect` as `architect-arbiter`, at what
-`sdlc staffing show --gate design_review` asks for it, one step above the
-architect. From here `sdlc review add design_review architect` is refused with
-[SDLC-E0027](../troubleshooting.md#sdlc-e0027), and the gate reads the
-arbiter's review in the architect's place. Only the arbiter's own limit hands
-the story to a person, had it blocked twice too:
-
-```console
-$ sdlc review add design_review architect-arbiter block --important 1 --finding "important the plan: AC-2 still has no step" --note "AC-2 still has no step" < review.md
-US-001  design_review  architect-arbiter  block (round 2)
-  .sdlc/stories/US-001/reviews/design_review-architect-arbiter-2.md
-
-US-001 is handed to a person: architect-arbiter has blocked design_review 2 times, and loop.max_review_rounds is 2, so the rework is not converging on what it asks for. The last note: AC-2 still has no step
-
-A person reads the work and answers in Claude Code or in their own terminal:
-  /sdlc:approve US-001, or sdlc approve US-001
-  sdlc approve US-001 --reject "why"
-```
-
-The iteration ends there, and `sdlc status` lists the story as waiting. A block
-from an advisory reviewer is a finding, not a lost round, so it is not counted,
-and it sends nothing to an arbiter. A reviewer the project disables has no
-arbiter, so its own limit hands the story over, as above.
-
-Recording the same gate as failed `loop.max_rework_rounds` times, 3 by default,
-hands the story over in the same way, and that count starts again once a person
-has answered with `sdlc approve`. The reviewer's turn comes back as the lines
-above say: before the arbiter's first review, any answer starts its count again;
-from that review, only an answer to a `review_not_converging` hand-over raised by
-the reviewer or its arbiter at that gate does. See
-[`loop`](../configuration.md#loop).
-
-## Why the other approvals go stale too
-
-You may notice that after a rework, reviewers who never blocked are asked to
-look again. Every review is stamped with what the reviewer was looking at: the
-content of `PLAN.md` at `design_review`, and the working tree, minus `.sdlc/`,
-at `verifier_review` and `code_review`. Rework changes that, so every earlier
-review of the gate stops counting, advisory ones included:
+After a rework round you may notice that reviewers who never blocked are asked
+to look again. Every review is of something in particular: the plan at Gate 4,
+and the files in the story's worktree at Gates 6 and 7. Rework changes that, so
+every earlier review of the gate stops counting, advisory ones included:
 
 ```console
 $ sdlc review list --gate design_review
 Review policy: REVIEW.md
   design_review   architect       blocking  approve (round 2)
-  design_review   red-team        advisory  note (round 1, stale -- what was reviewed has changed since; reviewed revision 40c9f6da7ea56d0ae851a7114f073945adaf8903e44383452f4111abcdb86a5d; see sdlc artifact diff plan --since red-team)
-  design_review   security        advisory  note (round 1, stale -- what was reviewed has changed since; reviewed revision 40c9f6da7ea56d0ae851a7114f073945adaf8903e44383452f4111abcdb86a5d; see sdlc artifact diff plan --since security)
-  design_review   perf            on budget note (round 1, stale -- what was reviewed has changed since; reviewed revision 40c9f6da7ea56d0ae851a7114f073945adaf8903e44383452f4111abcdb86a5d; see sdlc artifact diff plan --since perf)
-  design_review   human-advocate  advisory  note (round 1, stale -- what was reviewed has changed since; reviewed revision 40c9f6da7ea56d0ae851a7114f073945adaf8903e44383452f4111abcdb86a5d; see sdlc artifact diff plan --since human-advocate)
-
-$ sdlc gate design_review pass
-sdlc: design_review cannot pass until its reviews are in
-
-  why  red-team reviewed something that has changed since; security reviewed something that has changed since; perf reviewed something that has changed since; human-advocate reviewed something that has changed since
-  fix  delegate to the reviewers this gate expects -- "sdlc review list" shows who is outstanding
-
-  SDLC-E0029  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0029
+  design_review   red-team        advisory  note (round 1, stale -- what was reviewed has changed since; reviewed revision d5e8e535085d883692e839a7faaba7b232fcf7a45be95221c23fd1199f1531eb; see sdlc artifact diff plan --since red-team)
+  design_review   security        advisory  note (round 1, stale -- what was reviewed has changed since; reviewed revision d5e8e535085d883692e839a7faaba7b232fcf7a45be95221c23fd1199f1531eb; see sdlc artifact diff plan --since security)
+  design_review   perf            on budget note (round 1, stale -- what was reviewed has changed since; reviewed revision d5e8e535085d883692e839a7faaba7b232fcf7a45be95221c23fd1199f1531eb; see sdlc artifact diff plan --since perf)
+  design_review   human-advocate  advisory  note (round 1, stale -- what was reviewed has changed since; reviewed revision d5e8e535085d883692e839a7faaba7b232fcf7a45be95221c23fd1199f1531eb; see sdlc artifact diff plan --since human-advocate)
 ```
 
-This is deliberate. The red team read a plan that no longer exists, and its
-findings about that plan say nothing about this one. Send the whole gate back
-out, not only the reviewer that blocked.
+This is deliberate. The red team read a plan that no longer exists, and what it
+found there says nothing about this one. The gate
+[will not pass](../troubleshooting.md#sdlc-e0029) until each of them has given
+a verdict on the plan as it now stands.
 
-Those reviewers are resumed, not started afresh, and each is given what changed,
-from the command its line names. `sdlc artifact diff` reads a diff and records
-nothing, so every reviewer still records a verdict on the plan as it now stands
-before the gate can pass.
+It costs less than it sounds. Those reviewers are resumed, not started afresh,
+and each is given only what changed since it last looked, which is the diff
+its line names.
 
-The same holds after a gate has passed. If the code changes after
-`code_review`, the hook refuses `git commit` of that tree and names the
-reviewers whose approvals it no longer matches. `sdlc gate commit pass` asks
-again too, and refuses with SDLC-E0029, sending the story back to
-`verifier_review` and `code_review`. See
-[why approvals go stale](../the-loop.md#why-approvals-go-stale).
+The same holds after a gate has passed. If the code changes after the code
+review, the commit is refused, naming the reviewers whose approvals it no
+longer matches.
+[Why approvals go stale](../the-loop.md#why-approvals-go-stale) has the whole
+rule.
 
 ## Making a reviewer advisory with `can_block`
 
-If you would rather the code reviewer could not stop Gate 7, there is a setting
-for it: `team.agents.code-reviewer.can_block` set to false.
-[Configuration](../configuration.md#an-agents-entry) describes it: it makes the
-reviewer advisory, and it is true by default. Set to false, `sdlc review list`
-shows the change:
+If you would rather a reviewer could not stop its gate, there is a setting for
+it. Each reviewer's entry under `team.agents` in `.sdlc/config.json` has a
+`can_block`, and for the code reviewer it looks like this once it is set to
+false:
+
+```json
+"code-reviewer":   { "enabled": true, "can_block": false, "instances": 1 }
+```
+
+Commit the change to trunk, and the stories you start afterwards read it.
+`sdlc review list` shows the difference:
 
 ```console
 $ sdlc review list --gate code_review
 Review policy: REVIEW.md
   code_review     code-reviewer   advisory  not reviewed
-  code_review     security        blocking  not reviewed
+  code_review     security        advisory  not reviewed
   code_review     perf            on budget not reviewed
   code_review     human-advocate  advisory  not reviewed
 ```
 
-Advisory does not mean skipped: `code_review` still waits for the code reviewer's report
-on the tree as it stands, and a missing or stale one holds the gate, but its
-`block` no longer stops it. Its findings are still closed before the commit, as
-every reviewer's are. Nothing else moves. The verifier stays blocking,
-perf still blocks on a budget, and security still blocks on a security-sensitive
-story. It blocks here only because this story's sensitivity was never recorded.
+Advisory does not mean skipped. The gate still waits for the code reviewer's
+report on the files as they stand, and a missing or stale one holds it. Only
+its `block` no longer stops the gate. Its findings are still closed before the
+commit, as every reviewer's are.
+
+Nothing else moves. The verifier stays blocking, perf still blocks on a budget,
+and security still blocks on a security-sensitive story, which this one is not.
 
 > [!WARNING]
-> Setting it to false is a real loosening: Gate 7 is the last review between a
-> change and trunk.
+> Think twice before you turn this off for the code reviewer. Gate 7 is the
+> last review between a change and trunk, and for a story like this one only a
+> broken performance budget can then stop it.
+> [An agent's entry](../configuration.md#an-agents-entry) describes the
+> setting.
 
 ## Where to go next
 
-- [Commands: `sdlc review add`](../commands.md#sdlc-review-add-gate-role-verdict)
-  and [`sdlc review list`](../commands.md#sdlc-review-list)
-- [Agents](../the-agents.md#who-does-what): which agent reviews at each gate
-- [The loop: rework](../the-loop.md#rework)
-- [When a frozen test is wrong](when-a-frozen-test-is-wrong.md)
+- [Human approval gates](human-approval-gates.md): answering any hand-over,
+  and where to type the answer
+- [Agents](../the-agents.md#who-does-what): which agent reviews at each gate,
+  and what each looks for
+- [Rework](../the-loop.md#rework): how the loop goes back, and never around
+- [`sdlc review list`](../commands.md#sdlc-review-list): the reference for the
+  command

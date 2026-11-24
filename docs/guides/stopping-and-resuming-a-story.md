@@ -2,378 +2,315 @@
 
 - [Introduction](#introduction)
 - [Pick up where you left off](#pick-up-where-you-left-off)
-- [In a new Claude Code session](#in-a-new-claude-code-session)
-- [Stop the iteration](#stop-the-iteration)
-- [Start again](#start-again)
-- [What a stop keeps](#what-a-stop-keeps)
-  - [A second story and the freeze](#a-second-story-and-the-freeze)
-- [When reviews go stale](#when-reviews-go-stale)
-- [In another checkout](#in-another-checkout)
+  - [See where a story got to](#see-where-a-story-got-to)
+- [Put a story down](#put-a-story-down)
+- [Take over from the loop](#take-over-from-the-loop)
+- [What a stopped story keeps](#what-a-stopped-story-keeps)
 - [When the story is finished](#when-the-story-is-finished)
-- [Getting out of a broken state](#getting-out-of-a-broken-state)
-  - [The gate record will not read](#the-gate-record-will-not-read)
-  - [The story is not in the backlog](#the-story-is-not-in-the-backlog)
+  - [Keep a finished story off trunk](#keep-a-finished-story-off-trunk)
+  - [Reopen a finished story](#reopen-a-finished-story)
+- [Move a story to another checkout](#move-a-story-to-another-checkout)
+- [When something is broken](#when-something-is-broken)
+- [With worktrees turned off](#with-worktrees-turned-off)
 - [Where to go next](#where-to-go-next)
 
 ## Introduction
 
 A story does not have to be finished in one sitting. Sessions end, laptops
-close, and sometimes you want to take over from the loop for a while. Don't
-worry: nothing is lost when that happens.
+close, and sometimes you want to take the work over from the loop for a while.
+Don't worry: nothing is lost when that happens.
 
-You can put a story down at any gate, close the session, and pick it up
-tomorrow where it stopped. This page shows how, what is kept while the story is
-down, and how `sdlc stop` gets you out when the loop's own state is broken.
+Everything the loop knows about a story is on disk, not in the conversation.
+You can leave a story at any gate and pick it up tomorrow, in a new session, at
+the gate where it stopped.
+
+This page shows how to pick a story up again, how to put one down on purpose
+and work on it yourself, and what happens when a story is finished and lands on
+trunk.
 
 ## Pick up where you left off
 
-If a session ended part-way through a story, there is only one thing to do. Open
-Claude Code in the repository and type:
+If a session ended part-way through a story, open Claude Code in your project
+and type `/sdlc:next` with the story's id:
 
 ```text
-/sdlc:next
+/sdlc:next AUTH-3
 ```
 
-The skill finds the story that is under way and works out the first gate that
-has not passed. It carries on from there, and the gates already passed are not
-worked again.
+The loop finds the first gate that has not passed and carries on from there.
+The gates the story has already passed are not worked again.
 
-That is all most people ever need. The rest of this page covers putting a story
-down on purpose, carrying on in another checkout, and getting out when
-something is broken.
+The id matters. Each story is worked in a worktree of its own, a second
+checkout at `.sdlc/worktrees/AUTH-3`, and a plain `/sdlc:next` typed in a new
+session in your project begins the next `ready` story instead of going back to
+this one. `/sdlc:next` alone is enough in two places: the session that is still
+working the story, and a session opened in the story's worktree.
 
-## In a new Claude Code session
-
-Nothing the loop needs lives in the conversation, so a new session starts
-cleanly. A fresh session running `/sdlc:next` reads `sdlc status --json`, and if
-a story is active it runs `sdlc start` to make the story this session's, then
-goes straight to `next_gate`. The hook reads the same files on every tool call,
-so the freeze and the write rules apply from the session's next edit.
-
-If you closed the old session without stopping, the iteration is still active
-and there is nothing to do but run `/sdlc:next`. The exception is a session that
-kept ending its turn mid-story: after `loop.max_stop_blocks` stops in a row with
-nothing recorded, the `Stop` hook hands the story to a person. `sdlc status`
-then lists it as waiting, and it needs `sdlc approve` before it can start again.
-A stop made while a subagent is still running is
-[not counted](../enforcement.md#stopping-mid-story) for up to 30 minutes.
-
-A session that never runs `/sdlc:next` or `sdlc start` is not held to the story,
-and hears nothing about it. Neither is any session while a story started from a
-terminal waits for one to pick it up: `sdlc status` says when that is the case.
-
-If an `sdlc` command run in a different session is refused with
-[SDLC-E0048](../troubleshooting.md#sdlc-e0048), the story is being worked in
-another session. A person types `/sdlc:next` in the session that should work it,
-which makes it that session's.
-
-## Stop the iteration
-
-When you want to put a story down on purpose, for instance to take over from the
-loop, run `sdlc stop`:
-
-```console
-$ sdlc stop
-Stopped the iteration on US-001. Nothing was recorded; `sdlc start` picks it up again.
-```
-
-Stopping ends the iteration and nothing else. No gate changes, the story stays
-`in_progress` in the backlog, and the gate record gets one `loop_end` event.
-
-Once enough stories have finished since you last ran `/sdlc:consolidate`, this
-stop, and the one that finishes a story, end with one more line, saying how many
-and that you can run the skill. It is the same line `sdlc status` ends with, and
-[`consolidate.nudge_after`](../configuration.md#consolidate) sets when it
-comes, or turns it off at `0`. The outputs below are what a project with fewer
-finished stories prints.
-
-It also turns the hook off. Every rule in [enforcement](../enforcement.md) only
-applies while `.sdlc/state/active` names a story, and only in the Claude Code
-session working it, so once you have stopped you can edit code, tests or
-configuration as yourself. Another Claude Code session in the repository is
-never held to a story it did not start or pick up, and resuming the story
-there with `/sdlc:next` makes it that session's. Stopping is the sanctioned
-route when the loop refuses something and you want to take over.
-
-With [`git.worktrees`](../configuration.md#git) on, the default, a story runs in
-its own worktree, `.sdlc/worktrees/<ID>` in the main checkout, so that is where
-`sdlc stop` ends it: run it there. The commands on this page that act on the
-story being worked on, `sdlc stop`, `sdlc unfreeze` and `sdlc freeze`, all act
-in the checkout they run in.
-
-Once every gate has passed, though, stop in the story's worktree does not put
-it down: it lands it on trunk ([below](#when-the-story-is-finished)). To put a
-finished story down without landing it, hand it to a person instead:
-
-```console
-$ sdlc escalate hold_landing --message "US-001 is finished; it lands once the release branch is cut"
-```
-
-The type, here `hold_landing`, is a word you choose for the kind of question.
-
-It then waits for a person's answer, and nothing reaches trunk until a stop in
-its worktree lands it.
-
-## Start again
-
-With nothing running, `sdlc status` names the story that `sdlc start` would pick
-up. A story already under way comes before anything new:
+If you don't remember which story was under way, ask in your project:
 
 ```console
 $ sdlc status
 No iteration running.
 
-  backlog  1 in progress
-  next up  US-001  Example: reject invoices with a non-positive total
+  backlog  1 ready · 1 in progress
+  held     AUTH-3  in "/home/<user>/src/billing/.sdlc/worktrees/AUTH-3"
+  next up  AUTH-4  Log every rejected session
 
 A person runs `sdlc start`, or types /sdlc:next in Claude Code, to begin.
+```
 
-$ sdlc start
-Resumed US-001  Example: reject invoices with a non-positive total
+The `held` line names the story under way and its worktree. `next up` is what a
+plain `/sdlc:next` would begin.
+
+> [!NOTE]
+> If `status` lists the story under `waiting`, the loop handed it to you with a
+> question, and it will not start until you have answered.
+> [Human approval gates](human-approval-gates.md) shows how.
+
+### See where a story got to
+
+You may look before you set the loop going. Run `sdlc start` with the story's
+id, in your project:
+
+```console
+$ sdlc start AUTH-3
+Resumed AUTH-3  Reject expired sessions
+
+Worktree: "/home/<user>/src/billing/.sdlc/worktrees/AUTH-3"
+Branch: story/AUTH-3
 
   dor              pass  criteria are testable
   analysis         pass  no trust boundary
   tests_frozen     pass  2 criteria, 1 failing test
-  plan             pass  2 steps
-  design_review    pass  architect approved round 2
-  implementation   pass
-  verification     pass
-  verifier_review  pass
+  plan             pass  1 step
+  design_review    fail  architect blocked: AC-2 has no step
 
-Next: a person types /sdlc:next in Claude Code to work the story.
+Next: a person opens Claude Code in the worktree above and types /sdlc:next there to work the story; /sdlc:next typed in a new session in this checkout begins the next story instead.
 ```
 
-The loop picks up at the first gate that has not passed, here `code_review`.
-You do not have to work that out. `sdlc start --json` reports it:
+Each gate the story has reached is listed with its outcome and the note that
+was recorded with it. The loop carries on at the first one that has not passed,
+here `design_review`.
+
+You don't have to run this first, because `/sdlc:next AUTH-3` does it for you.
+Its last line describes the other way to carry on, a session opened in the
+worktree, where no id is needed.
+
+## Put a story down
+
+You don't need to do anything before you close a session or shut the laptop.
+The story stays as it is, and `/sdlc:next AUTH-3` picks it up.
+
+To put a story down on purpose, run `sdlc stop` in a terminal of your own, from
+the story's worktree:
 
 ```console
-$ sdlc start --json
-{"ok":true,"story":"US-001","title":"Example: reject invoices with a non-positive total","resume":true,"next_gate":"code_review"}
+$ cd .sdlc/worktrees/AUTH-3
+$ sdlc stop
+Stopped the iteration on AUTH-3. Nothing was recorded; `sdlc start` picks it up again.
 ```
 
-`/sdlc:next` reads those two fields. Whether you run `sdlc start` yourself or
-leave it to the skill, a story with `"resume": true` goes straight to
-`next_gate`, and the gates it already passed are not worked again. Once the story
-is active, `sdlc status` shows the same gate on its `next` line, and
-`sdlc status --json` as `next_gate`.
+Stopping ends the iteration and nothing else. No gate changes, and the story
+stays in progress in your backlog.
 
-A story in its own worktree says where, in both forms. The text has a
-`Worktree:` line with the worktree's path and a `Branch:` line with
-`story/US-001`, and the JSON has `worktree`, `branch` and `main`, the main
-checkout's path. `/sdlc:next` reads `worktree` too, and works the story there.
-Run in the main checkout, `sdlc start US-001` picks the story up in its
-worktree; a plain `sdlc start` there passes it over, as a story another checkout
-holds, and begins the next one.
+Run it in the worktree, not in your project. A stop acts on the checkout it
+runs in, and in your project it answers `No iteration was running.` and leaves
+the story as it was.
 
-A resumed story is not held to the trunk checks a new one is. `sdlc start`
-refuses to begin a new story from a trunk that is behind `origin`, or that
-fails its smoke check in the story's new worktree; with `git.worktrees` off, it
-also refuses a checkout on another branch or with uncommitted work
-([SDLC-E0038](../troubleshooting.md#sdlc-e0038) to
-[SDLC-E0041](../troubleshooting.md#sdlc-e0041)). A story already in progress has
-its own work in the tree, so those checks are skipped when it is picked up.
+> [!WARNING]
+> Check that the story is not finished before you stop it. Once every gate has
+> passed, `sdlc stop` in the story's worktree does not put the story down: it
+> lands it on trunk. [When the story is finished](#when-the-story-is-finished)
+> shows how to hold one back.
 
-A story handed to a person with `sdlc escalate` is not stopped, it is waiting.
-`sdlc status` lists it under `waiting`, and `sdlc start` refuses it
-([SDLC-E0036](../troubleshooting.md#sdlc-e0036)) until a person answers with
-`sdlc approve` in their own terminal.
+## Take over from the loop
 
-## What a stop keeps
+Stopping also stands the hook down. Its rules apply only while a story is being
+worked, and only to the session working it, so once you have stopped you may
+edit code, tests or anything else in the worktree as yourself. This is the way
+to take over when the loop refuses something you want done.
+
+Let's change a line the reviewers have already approved. Stop the story, make
+your change in the worktree, and from there ask where the reviews stand now:
+
+```console
+$ sdlc review list --story AUTH-3 --gate code_review
+Review policy: REVIEW.md
+  code_review     code-reviewer   blocking  approve (round 1, stale -- what was reviewed has changed since)
+  code_review     security        advisory  approve (round 1, stale -- what was reviewed has changed since)
+  code_review     perf            on budget approve (round 1, stale -- what was reviewed has changed since)
+  code_review     human-advocate  advisory  approve (round 1, stale -- what was reviewed has changed since)
+```
+
+Stopping and resuming make no review stale. Your change did: the verifier and
+the code reviewers approved the files as they were, and an approval of files
+that have changed is not counted. The design reviewers approved the plan, so
+only a changed plan makes their reviews stale.
+
+Send your change back through the gates that check it, by recording the first
+of them as failed:
+
+```console
+$ sdlc gate verification fail --story AUTH-3 --note "changed the expiry comparison after review"
+AUTH-3  verification  fail
+  changed the expiry comparison after review
+  reopened: verifier_review, code_review
+```
+
+Then type `/sdlc:next AUTH-3`. The verifier and the code reviewers see your
+change before the loop commits it. If you skip this step nothing slips through:
+the commit is [refused](../troubleshooting.md#sdlc-e0029), naming the reviews
+your change made stale.
+
+Two things do not stand down with the hook. The tests stay frozen, and
+[When a frozen test is wrong](when-a-frozen-test-is-wrong.md) shows the way to
+change one. And the hook holds only the session that is working a story: any
+other session open in your repository was never held to it.
+
+## What a stopped story keeps
 
 A stopped story keeps everything the loop has recorded about it:
 
-| Kept | Where |
+| Kept | Where it is |
 | --- | --- |
-| every gate outcome and its note | `.sdlc/stories/<ID>/gate-record.json` |
-| every review, every round | the record, and `reviews/` beside it |
-| the gate documents | `ANALYSIS.md`, `PLAN.md` and the rest, beside the record |
-| the test freeze | `.sdlc/state/tests.lock` |
-| spend recorded with `sdlc cost add` | the record |
+| every gate's outcome and its note | on the story's record; `sdlc start <ID>` prints them |
+| the documents the gates wrote | `.sdlc/stories/<ID>/` in your project |
+| every review, every round | `.sdlc/stories/<ID>/reviews/` in your project |
+| the code | the story's worktree, `.sdlc/worktrees/<ID>` |
+| the test freeze | in force in the story's worktree |
+| what the story has cost | on the story's record; see [Tracking what a story costs](tracking-what-a-story-costs.md) |
 
-The freeze is the one worth understanding. It belongs to the story, not the
-session, so an unfinished story keeps its tests locked while it is down.
+The freeze is the one worth understanding. It belongs to the story, not to the
+session, so an unfinished story keeps its tests frozen while it is down.
 Stopping and starting again is not a way round it.
-
-### A second story and the freeze
-
-Because the freeze stays on disk, a second story cannot freeze its own tests
-while the first one's freeze is there. You can `sdlc start OTHER-1` while US-001
-is still in progress, provided trunk passes the checks above, but OTHER-1's
-`sdlc freeze` then fails with
-[SDLC-E0022](../troubleshooting.md#sdlc-e0022), naming US-001.
-
-`sdlc unfreeze` will not help: it refuses to lift a freeze that belongs to
-another story. Finish US-001 (`sdlc stop`, then `sdlc start US-001`), or mark it
-`dropped` in the backlog, which releases its freeze. That is one checkout's
-freeze: with `git.worktrees` on, OTHER-1 starts in a worktree of its own, with a
-freeze of its own.
-
-## When reviews go stale
-
-Stopping and resuming does not make any review stale. `sdlc stop` on an
-unfinished story writes only under `.sdlc/`, which is left out of what reviews
-are stamped with. Stopping a finished story also removes what the hook wrote
-down about its commits, in the repository's git directory, which reviews never
-see either. `sdlc start` on a story that is already `in_progress` writes
-nothing to the backlog.
-
-What you do while the story is down is another matter. A review at
-`verifier_review` or `code_review` is stamped with the whole working tree, minus
-`.sdlc/`. Touch any file git can see and those approvals no longer count. That
-includes the backlog file: `sdlc` leaves out the `status` and `updated` fields it
-writes itself, but changing a story's title or its criteria by hand changes the
-tree. A design review is stamped with `PLAN.md`, so only a changed plan makes it
-stale.
-
-```console
-$ sdlc review list --gate verifier_review
-Review policy: REVIEW.md
-  verifier_review verifier        blocking  approve (round 1, stale -- what was reviewed has changed since)
-```
-
-A stale review is simply not counted. The gate refuses to pass until that
-reviewer looks again. See
-[why approvals go stale](../the-loop.md#why-approvals-go-stale).
-
-## In another checkout
-
-In a repository with linked worktrees, a stopped story stays with the checkout
-that started it. `sdlc stop` and `sdlc escalate` both keep its claim, so
-`sdlc start` in another checkout passes over it and picks the next story, and
-naming it there is refused with
-[SDLC-E0050](../troubleshooting.md#sdlc-e0050), which names the checkout that
-holds it. Pick it up again in that checkout. A story in its own worktree under
-`.sdlc/worktrees/` can also be picked up by name in any other checkout, the main
-checkout included, which carries it on in the worktree.
-
-If you would rather carry on somewhere else, a person releases the story first,
-in their own terminal:
-
-```console
-$ sdlc release US-001 --reason "carrying on in the main checkout"
-Released US-001: the checkout at "/path/to/project-wt" no longer holds it. "sdlc start US-001" picks it up in any checkout.
-Anything the checkout at "/path/to/project-wt" has not committed stays there, and is not moved.
-```
-
-Only the hold moves. Work the old checkout has not committed stays there, so
-commit it there, or bring it across yourself, before you carry on;
-`sdlc start` in the new checkout says so again. The test freeze is that
-checkout's too: in the new one, lift it with `sdlc unfreeze --reason ...` and
-freeze again with `sdlc freeze`, which freezes the tests as they are there.
-Release refuses while an iteration is running on the story: `sdlc stop` in the
-checkout named ends it first. When the checkout that held a story is gone, every
-command on the story says so ([SDLC-E0051](../troubleshooting.md#sdlc-e0051))
-until it is released.
-
-Occasionally two checkouts both name the same story as their current one, as a
-worktree cut from a commit carrying `.sdlc/state` does. Neither holds it, and
-each is refused it. Keep the checkout with the story's work in it and the
-session you are working in, and run `sdlc stop` in every other one. Stop there
-writes nothing to the story's record.
 
 ## When the story is finished
 
-In a checkout without a worktree for the story, passing the retro marks it
-`done` in the backlog. (A story in its own worktree is different, as the end
-of this section explains.) `sdlc status` then reads `finished` instead of
-`in progress`, and stopping is what puts the story away:
+Once its last gate has passed, a story is finished, but it is not done yet:
+trunk does not have its commits. The stop in its worktree is what lands it.
+`/sdlc:next` runs that stop for you at the end of Gate 9, and this is what it
+prints:
 
 ```console
 $ sdlc stop
-Ended the iteration on US-001. Every gate passed, so the story is done and `sdlc start` moves on to the next one.
+main moved from a3ff947e9908 to 1e2985e3a9bc by fast-forward; the files in "/home/<user>/src/billing", which has main checked out, moved with it.
+The backlog and AUTH-3's record are changed in the main checkout and not committed.
+Ended the iteration on AUTH-3. Every gate passed, so the story is done and `sdlc start` moves on to the next one.
+Removed .sdlc/worktrees/AUTH-3, with the files git ignored in it, and story/AUTH-3.
 ```
 
-This is the one stop that changes something: the story's freeze is lifted, so
-the next story can take its own. A finished story cannot be started again
-([SDLC-E0033](../troubleshooting.md#sdlc-e0033)). The way back in is to record a
-gate as failed, naming the story since no iteration is running, which puts the
-story back to `in_progress`:
+Trunk, which this project calls `main`, now has the story's commits, and the
+worktree and its branch are gone. Nothing is pushed. Two things are left in
+your project for you to commit: the backlog, where the story is now `done`, and
+the story's directory under `.sdlc/stories/`.
+
+A landing that is refused leaves trunk where it was, and the story finished and
+waiting in its worktree. The refusal says what to do. Where it says to stop
+again, as it does when another story is still landing, when trunk moved while
+the landing ran, or after a stop that was cut short, nothing is lost. The
+session stops again, up to three times, and if the third stop does not land the
+story either, it hands the story to a person.
+[Done when it lands](../the-loop.md#done-when-it-lands) says what a landing
+checks.
+
+### Keep a finished story off trunk
+
+A stop in the story's worktree always lands a finished story. To hold one back,
+hand it to a person before that stop, from the worktree:
 
 ```console
-$ sdlc gate code_review fail --story US-001 --note "..."
+$ sdlc escalate hold_landing --message "AUTH-3 is finished; it lands once the release branch is cut"
 ```
 
-A story worked in its own worktree is different: passing the retro does not
-mark it done, because trunk does not have its commits yet. The stop in its
-worktree lands it, moving trunk to the story's commits by fast-forward, and only
-then is it done and its worktree taken away
-([`sdlc stop`](../commands.md#landing-a-story-from-its-worktree) shows the
-output, and [the loop](../the-loop.md#done-when-it-lands) what it checks).
-A refused landing leaves trunk where it was, and the story finished and waiting
-in its worktree; the refusal says what to do. Where it says to stop again, as it
-does when another story is still landing or trunk moved while the landing ran,
-and after a stop that was cut short, nothing is lost: stop again, up to three
-times, and if the third does not land either, hand the story to a person with
-`sdlc escalate`, naming the last code and how many stops you ran. To keep a
-finished story off trunk for now, escalate it, as [above](#stop-the-iteration).
+The first word is the kind of question, and `hold_landing` is a word of your
+own choosing. The story now waits for your answer, and nothing reaches trunk
+until it has one. When you are ready, answer with `sdlc approve AUTH-3` in the
+worktree, and the next `sdlc stop` there lands the story.
+[Human approval gates](human-approval-gates.md#answer) covers answering.
 
-## Getting out of a broken state
+### Reopen a finished story
 
-`sdlc stop` is built to work when other commands will not. If the loop's own
-state is damaged, it is the way to end the iteration and hand the repository
-back to you.
-
-### The gate record will not read
-
-A damaged `gate-record.json` stops `sdlc status`, and the hook refuses
-`git commit` because no gate can be shown to have passed:
+`sdlc` [refuses to start](../troubleshooting.md#sdlc-e0033) a story whose gates
+have all passed. If a finished story that has not landed needs more work,
+record the gate it goes back to as failed, in its worktree:
 
 ```console
-$ sdlc status
-sdlc: the record for "US-001" is not valid JSON
+$ sdlc gate code_review fail --story AUTH-3 --note "the 401 body is not empty"
+AUTH-3  code_review  fail
+  the 401 body is not empty
+  reopened: commit, retro
+```
 
-  why  .sdlc/stories/US-001/gate-record.json does not parse, and sdlc writes it whole or not at all, so it was edited or merged by hand; git has the last committed copy
-  fix  run "sdlc doctor", which names every file it cannot read; restore a committed one from git, or fix its permissions — and if sdlc left it that way, open an issue at https://github.com/bbsnly/sdlc/issues
+The story is in progress again, and `/sdlc:next AUTH-3` takes it up at that
+gate.
 
-  SDLC-E0005  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0005
+## Move a story to another checkout
 
+A story stays with the checkout that started it, which is its own worktree.
+You will rarely need to move one. The usual reason is that the worktree was
+deleted by hand, after which every command on the story
+[says so](../troubleshooting.md#sdlc-e0051) until you let the story go.
+
+Releasing is a person's decision, so run it in a terminal of your own, or type
+`/sdlc:release` with the same arguments in Claude Code:
+
+```console
+$ sdlc release AUTH-3 --reason "the worktree it was started in was deleted"
+```
+
+After that, `sdlc start AUTH-3` picks the story up in any checkout. Only the
+hold moves. Work the old checkout had not committed stays where it was, so
+commit it there or bring it across yourself before you carry on.
+
+`release` refuses while the story is running. Stop it first, in the checkout
+that holds it. [`sdlc release`](../commands.md#sdlc-release) has the details,
+including what happens to the test freeze.
+
+## When something is broken
+
+`sdlc stop` is built to work when other commands will not. If the story's
+record has been damaged, by a hand edit or a bad merge, `sdlc status` refuses
+to read it, and the stop still gets you out:
+
+```console
 $ sdlc stop
-sdlc: .sdlc/stories/US-001/gate-record.json could not be read, so this stop is not written to it. Run `sdlc doctor` to see why.
-Stopped the iteration on US-001. Nothing was recorded; `sdlc start` picks it up again.
+sdlc: .sdlc/stories/AUTH-3/gate-record.json could not be read, so this stop is not written to it. Run `sdlc doctor` to see why.
+Stopped the iteration on AUTH-3. Nothing was recorded; `sdlc start` picks it up again.
 ```
 
-The iteration ends and the hook stands down, so you can commit as yourself.
-Stopping does not repair the record: `sdlc start` refuses with the same
-SDLC-E0005 until the file reads again. If you committed the story's directory,
-restore the file from git.
+The iteration has ended and the hook has stood down, so the repository is yours
+again. Stopping does not repair the file. `sdlc start` keeps
+[refusing the story](../troubleshooting.md#sdlc-e0005) until the record reads,
+and `sdlc doctor` names every file it cannot read. If you committed the story's
+directory, restore the file from git.
 
-`sdlc doctor` names the unreadable record under "loop state" whether or not the
-story is active, because it reads every story's record on disk. Before the stop
-its fix is about the commit; after it, that `sdlc start US-001` fails until the
-file reads.
+The same holds when a story's id has gone from the backlog, renamed or deleted
+while the story was running. `sdlc status` says the story cannot be committed
+and offers two ways out: put the story back under its old id, or run
+`sdlc stop`.
 
-### The story is not in the backlog
+## With worktrees turned off
 
-If the active story's id disappears from the backlog, whether renamed or
-deleted, `sdlc status` says so, and `sdlc gate` refuses to record against it:
+Everything above describes the default, where each story has a worktree of its
+own. With [`git.worktrees`](../configuration.md#turning-worktrees-off) set to
+false, stories are worked in your project itself, one at a time, and a few
+things are simpler:
 
-```console
-$ sdlc status
-US-001  in progress  (not in the backlog)
-...
-US-001 is not in user_stories.json any more, so it cannot be committed. Put it back, or run `sdlc stop` to end the iteration.
-
-$ sdlc gate code_review pass
-sdlc: no story with the id "US-001"
-
-  why  the backlog has US-002
-  fix  run "sdlc story list" to see the ids you can use
-
-  SDLC-E0009  https://github.com/bbsnly/sdlc/blob/main/docs/troubleshooting.md#sdlc-e0009
-
-$ sdlc stop
-Stopped the iteration on US-001. Nothing was recorded; `sdlc start` picks it up again.
-```
-
-`sdlc status --json` reports it as `"not_in_backlog": true`. The commit gate
-refuses such a story too, because its risk tier cannot be read. Stop still ends
-the iteration. Put the story back under its old id to carry on with its record,
-or `sdlc start` the next one.
+- Every command on this page is run in your project.
+- A plain `/sdlc:next` picks up the story under way before anything new, so you
+  don't need to name it.
+- A story that is waiting for your answer holds the checkout. Nothing else
+  starts there until you have answered.
+- A story is `done` as soon as its last gate passes. `sdlc stop` then puts it
+  away and lifts its test freeze, so that the next story can freeze its own.
 
 ## Where to go next
 
-- [Commands: `sdlc stop`](../commands.md#sdlc-stop) and
-  [`sdlc start`](../commands.md#sdlc-start)
-- [When a reviewer blocks](when-a-reviewer-blocks.md)
-- [When a frozen test is wrong](when-a-frozen-test-is-wrong.md)
-- [Enforcement](../enforcement.md): which rules turn off when you stop
+- [Human approval gates](human-approval-gates.md): when the story stopped
+  because the loop wants an answer from you
+- [When a reviewer blocks](when-a-reviewer-blocks.md) and
+  [When a frozen test is wrong](when-a-frozen-test-is-wrong.md): the two stops
+  you are most likely to meet
+- [`sdlc stop`](../commands.md#sdlc-stop) and
+  [`sdlc start`](../commands.md#sdlc-start): the reference for both commands
+- [Enforcement](../enforcement.md): the rules that stand down when you stop

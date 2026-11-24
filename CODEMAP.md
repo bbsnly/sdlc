@@ -1755,7 +1755,7 @@ states: failed, changed, newline in a name, no shell, nested, moved.
 
 ## internal/plugin: the agent contract tests (US-110)
 
-`docs/the-agents.md` defines the agent contract: frontmatter declaring kind,
+`CONTRIBUTING.md` ("Writing an agent") defines the agent contract: frontmatter declaring kind,
 gates and team defaults, eight sections in a fixed order, shared Inputs, Rules
 and Never texts, a hand-back that is one JSON object with role fields under
 `details`, one review document shape, and approve or block only.
@@ -1765,5 +1765,5 @@ reports one line per breach naming the file, the rule and the change.
 `contract_test.go` holds each agent's declarations to the binary's roster and
 team defaults, resolved through the binary's accessors. `contract_fixtures_test.go`
 holds the non-conforming agents the check must refuse. `contract_docs_test.go`
-holds the contract's text in `docs/the-agents.md` to the checks. The hand-back
+holds the contract's text in `CONTRIBUTING.md` to the checks. The hand-back
 check reads only the `## Hand-back` section.

@@ -3,38 +3,37 @@
 - [Introduction](#introduction)
 - [Run `sdlc init`](#run-sdlc-init)
   - [What it writes, and what it leaves alone](#what-it-writes-and-what-it-leaves-alone)
-  - [What it detects](#what-it-detects)
-  - [Mixed repositories and projects with no marker](#mixed-repositories-and-projects-with-no-marker)
-  - [Running it again](#running-it-again)
+  - [Check what it guessed](#check-what-it-guessed)
 - [Commit the setup](#commit-the-setup)
 - [Check it with `sdlc doctor`](#check-it-with-sdlc-doctor)
-  - [What `doctor` checks](#what-doctor-checks)
 - [Fill in the contract](#fill-in-the-contract)
-- [Deciding what to commit](#deciding-what-to-commit)
-- [What lives under `.sdlc/`](#what-lives-under-sdlc)
-  - [The files, one by one](#the-files-one-by-one)
-  - [Files outside `.sdlc/`](#files-outside-sdlc)
+- [What to commit from here on](#what-to-commit-from-here-on)
+- [A project that keeps AGENTS.md](#a-project-that-keeps-agentsmd)
+  - [With a CLAUDE.md as well](#with-a-claudemd-as-well)
+  - [Where one file is a link to the other](#where-one-file-is-a-link-to-the-other)
+- [Starting again from the defaults](#starting-again-from-the-defaults)
 - [Where to go next](#where-to-go-next)
 
 ## Introduction
 
-When a repository already has code, tests and a `CLAUDE.md` of its own, it is
-fair to wonder what a new tool will touch. This guide answers that, and takes
-you through putting the loop on such a repository.
+When a repository already has code, tests, a build and a `CLAUDE.md` of its
+own, it is fair to ask what a new tool will touch before you let it in. This
+guide answers that, and takes you through adding the loop to such a
+repository.
 
-The short version is reassuring. `sdlc init` adds a few files and appends one
-section to your `CLAUDE.md`. It does not change your code, your tests, your
-build or your own `.gitignore`, and it does not overwrite a `CLAUDE.md`, an
-`AGENTS.md` or a backlog you already have. Along the way you will run `sdlc init`, commit what it
-wrote, check what it guessed with `sdlc doctor`, fill in the contract the
-reviewers hold the work to, and decide what else belongs in version control.
+The short answer is reassuring. `sdlc init` adds a handful of files and appends
+one section to your `CLAUDE.md`. It does not change your code, your tests, your
+build or your `.gitignore`, and it never overwrites a file you wrote.
 
-This guide assumes the `sdlc` binary is on your `PATH` and the plugin is
-installed in Claude Code. [Installation](../installation.md) covers both.
+On this page you will run `init`, commit what it wrote, check its guesses with
+`sdlc doctor`, and fill in the contract that the reviewers hold the work to.
+You need the `sdlc` command and the plugin installed first:
+[Installation](../installation.md) covers both.
 
 ## Run `sdlc init`
 
-From anywhere inside the repository, run `sdlc init`:
+From anywhere inside the repository, run `sdlc init`, or type `/sdlc:init` in
+Claude Code:
 
 ```console
 $ sdlc init
@@ -54,163 +53,89 @@ Next:
   3. /sdlc:next               type it in Claude Code to work the first story
 ```
 
-`init` walks up to the nearest `.git` and writes everything relative to that
-directory, so it does not matter which subdirectory you run it from. The
-output lists each file it wrote as `created` and each it left alone as `kept`,
-and there is nothing else. Beside them, and not in that list, it writes
-`.sdlc/.gitignore`, which keeps each story's `trace.jsonl` out of git.
+Every file `init` wrote is listed as `created`, and a file it found and left
+alone is listed as `kept`. Here `CLAUDE.md` was already there, so `init` says
+it appended to it.
 
 ### What it writes, and what it leaves alone
 
-Here is what happens to each file the first time you run it, and what changes
-if you later run `sdlc init --force`:
+| File | What `init` does |
+| --- | --- |
+| `.sdlc/config.json` | writes the loop's settings, with the commands it guessed for your project |
+| `.sdlc/templates/story.schema.json` | writes the description of a story, for you and your editor |
+| `user_stories.json` | writes a backlog with one example story; a backlog you already have is kept |
+| `CLAUDE.md` | appends a `## SDLC Contract` section and leaves the rest as it was; creates the file where there is none |
+| `REVIEW.md` | writes the [review policy](../configuration.md#reviewspolicy) every reviewer reads first; one you already have is kept |
+| `.sdlc/.gitignore` | keeps each story's cost measurements out of git; it is not in the list `init` prints |
 
-| File | First run | `sdlc init --force` |
-| --- | --- | --- |
-| `.sdlc/config.json` | written | rewritten from a fresh detection and the defaults, keeping `backlog.path` and `git.trunk_branch` |
-| `.sdlc/templates/story.schema.json` | written | rewritten |
-| `user_stories.json` | written with one example story, unless it exists | kept |
-| `CLAUDE.md` | created, or the `## SDLC Contract` section appended | section appended only if missing |
-| `AGENTS.md` | the section appended in place of `CLAUDE.md`, where there is no `CLAUDE.md` or it links to `AGENTS.md` | section appended only if missing |
-| `.sdlc/.gitignore` | written, holding `/stories/*/trace.jsonl`, unless it exists | kept |
+That is everything. Your source, your tests, your build files, your CI and
+your own `.gitignore` are left exactly as they were.
 
-`init` never touches your own `.gitignore`. The one it writes under `.sdlc/`
-ignores only the stories' traces, the measurements
-[`sdlc trace`](../commands.md#sdlc-trace) reads, which are kept on the machine
-that made them. Leave it empty to commit the traces too. What else a project
-commits and ignores is the project's decision, and
-[Deciding what to commit](#deciding-what-to-commit) gives you the facts to make
-it.
+> [!NOTE]
+> Does your project keep its instructions in `AGENTS.md`? Then the contract
+> section goes there, and no `CLAUDE.md` is created.
+> [A project that keeps AGENTS.md](#a-project-that-keeps-agentsmd) says what
+> changes for you.
 
-`init` and `doctor` look for the contract as a `## SDLC Contract` heading on a
-line of its own. A `### SDLC Contract` heading, or a sentence that mentions the
-words, does not count, and `init` appends a section of its own.
+### Check what it guessed
 
-### What it detects
-
-To fill in the commands for you, `init` looks for a marker file in the
-repository root. It tries the stacks in this order and takes the first match:
+To fill in the commands that build, test and lint your project, `init` looks
+for a marker file at the root of the repository. It tries four stacks in this
+order and takes the first that matches:
 
 | Stack | Marker | Commands it fills in |
 | --- | --- | --- |
-| Go | `go.mod` | `smoke`, `build`, `test`, `lint` (golangci-lint), `fmt`, `fmt_check`, `fmt_file`, `coverage` |
-| Rust | `Cargo.toml` | `smoke`, `build`, `test`, `lint` (clippy), `fmt`, `fmt_check` |
-| Node | `package.json` | `build`, `test`, `lint` for each script that exists; `fmt` and `fmt_check` from `format` / `format:check` scripts or a `prettier` dependency; `fmt_file` from a `prettier` dependency when there is no `format` script; `smoke` is `build` |
-| Python | `pyproject.toml`, `setup.py` or `requirements.txt` | `test` (pytest), `lint`, `fmt`, `fmt_check`, `fmt_file` (ruff), `coverage` (pytest-cov) |
+| Go | `go.mod` | build, test, lint with golangci-lint, format and coverage |
+| Rust | `Cargo.toml` | build, test, lint with clippy, and format |
+| Node | `package.json` | build, test and lint, each only where your `package.json` has that script; format from your `format` scripts, or from prettier where it is a dependency |
+| Python | `pyproject.toml`, `setup.py` or `requirements.txt` | test with pytest, lint and format with ruff, and coverage with pytest-cov |
 
-Each stack also sets `paths.tests` and `paths.src`.
-[Tuning commands for your stack](tuning-commands-for-your-stack.md) explains
-what they do and how to change them.
+The line beginning `Guessed the commands from` tells you which one it took. In
+a repository with more than one stack, the order decides. A Go service with a
+`package.json` for its front-end tooling is set up as Go, and `init` says so:
 
-For Node, a command is only wired to a script your `package.json` already has.
-A command pointing at a missing script would fail every gate on a project that
-is otherwise fine. A `package.json` that does not parse still counts as Node,
-with no commands filled in.
-
-### Mixed repositories and projects with no marker
-
-The order in the table matters in a mixed repository. A Go service with a
-`package.json` for its front-end tooling is set up as Go, and a Python project
-with one is set up as Node. `init` says when it saw more than one:
-
-```console
+```text
 Guessed the commands from a Go project. This repository also has Node in it,
 so check .sdlc/config.json before you rely on it.
 ```
 
-With no marker at all, every command is empty, `paths.tests` gets `tests/`,
-`test/`, `testdata/` and `fixtures/` plus the built-in file patterns, and
-`paths.src` is `src/`. Don't worry if that is your situation: you can fill the
-commands in by hand, and `sdlc doctor` will tell you if one cannot be found.
+Take that advice. A Python project with a `package.json` beside it is set up
+as Node, which is rarely what you want.
 
-### Running it again
+If `init` finds no marker at all, it says so and leaves every command empty:
 
-Run `init` a second time without `--force` and it stops with
-[SDLC-E0003](../troubleshooting.md#sdlc-e0003) rather than lose your settings.
-
-If you want a fresh start, `--force` replaces every other setting with its
-default, but keeps where your stories are and what your trunk branch is
-called: those describe the repository rather than tune the loop. The backlog it
-keeps, or writes if it is missing, is the one at the `backlog.path` you had.
-
-### A project that keeps AGENTS.md
-
-Claude Code reads `AGENTS.md` only where there is no `CLAUDE.md`, from version
-2.1.277 on. So where the repository has an `AGENTS.md` and no `CLAUDE.md`,
-`sdlc init` appends the section to `AGENTS.md` and creates no `CLAUDE.md`,
-which would hide your `AGENTS.md` from Claude Code:
-
-```console
-  created  AGENTS.md (appended to)
-  created  REVIEW.md
+```text
+No stack was recognised, so the commands in .sdlc/config.json are empty.
+sdlc looks for Go, Rust, Node and Python.
 ```
 
-Where your `CLAUDE.md` is a link to `AGENTS.md`, `init` appends to `AGENTS.md`
-and keeps the link, and says `AGENTS.md (appended to; CLAUDE.md links to it)`.
-Where `AGENTS.md` is itself a link, to a file shared between projects, `init`
-writes a file of the project's own in its place and leaves the shared one
-alone: `AGENTS.md (appended to a copy of the file it linked to, which is
-unchanged)`. `init` writes nothing outside the project. Where either file
-already carries the section, it changes neither.
-
-`sdlc doctor` then says Claude Code reads the section there:
-
-```console
-  ok       project contract     AGENTS.md carries the "## SDLC Contract" section and there is no CLAUDE.md, so Claude Code 2.1.277 or later reads it
-```
-
-Whether Claude Code reads `AGENTS.md` at all is its Project instructions
-setting, which you change with `/config` in Claude Code. Its default,
-`claude-md-or-agents-md`, reads it; `claude-md` and `managed-only` do not. In
-this layout `doctor` adds a `project instructions` check, which reads the
-setting from your user settings only, never writes it, and says that managed
-settings, which an organisation sets, were not checked.
-
-A project that has both files keeps the section in one of them. With it in
-`AGENTS.md`, `CLAUDE.md` needs a line `@AGENTS.md`, outside any code block,
-for Claude Code to read it, and `doctor` reports it until it has one:
-
-```console
-  problem  project contract     AGENTS.md carries the "## SDLC Contract" section, but Claude Code reads CLAUDE.md in its place, and CLAUDE.md does not import it
-                                fix: add a line @AGENTS.md to CLAUDE.md, outside any code block
-```
-
-With the line in place:
-
-```console
-  ok       project contract     AGENTS.md carries the "## SDLC Contract" section, and CLAUDE.md imports it with an @AGENTS.md line
-```
-
-A `CLAUDE.local.md` at the root is read in place of `AGENTS.md` too, so it
-needs the same `@AGENTS.md` line, or can be a link to `AGENTS.md`. A `CLAUDE.md`
-that imports `AGENTS.md` is enough even beside a `CLAUDE.local.md` without the
-line, because Claude Code reaches `AGENTS.md` through the import, and `doctor`
-reports that layout as ok.
-
-A link in place of a file needs Developer Mode on Windows, or an administrator,
-and git checks a link out as a plain file where it cannot make one. That is why
-the `@AGENTS.md` line, which works everywhere, is the advice for Windows.
+Don't worry if that is your project. Open `.sdlc/config.json` and fill in at
+least `test` and `lint` with what you already run.
+[Tuning commands for your stack](tuning-commands-for-your-stack.md) shows how,
+and how to tell the loop where your tests and your source live.
 
 ## Commit the setup
 
-The `Next:` list that `init` prints starts with `sdlc doctor`. Commit first,
-because each story's worktree is cut from trunk's commits and so holds only what
-trunk has. Until trunk carries `.sdlc/config.json`, `doctor` reports a `story
-worktrees` problem and `sdlc start` is refused with
-[SDLC-E0053](../troubleshooting.md#sdlc-e0053):
+Next, commit what `init` wrote:
 
 ```console
 $ git add .sdlc user_stories.json CLAUDE.md REVIEW.md
 $ git commit -m "Set up the sdlc loop"
 ```
 
-You can commit the contract again once you have filled it in. [Deciding what to
-commit](#deciding-what-to-commit) covers the rest of the decision.
+> [!WARNING]
+> Don't skip this commit. Each story is worked in a worktree of its own, a
+> second checkout that git cuts from the commits on trunk, the branch your
+> finished work lands on. What you have not committed is not there, so `sdlc`
+> [refuses to start a story](../troubleshooting.md#sdlc-e0053) until you have.
+
+You will commit `CLAUDE.md` again once you have filled in the contract. That
+is fine: the setup is what has to be on trunk before the first story.
 
 ## Check it with `sdlc doctor`
 
-`init` makes guesses, so the next step is to check them. Run `sdlc doctor` once
-the setup is committed:
+`init` makes guesses, so check them. Run `sdlc doctor`, or type `/sdlc:doctor`
+in Claude Code:
 
 ```console
 $ sdlc doctor
@@ -224,7 +149,7 @@ sdlc doctor
   ok       loop state           the iteration, every gate record, the test freeze and the commit acknowledged all read
   ok       review policy        REVIEW.md
   ok       project contract     CLAUDE.md carries the "## SDLC Contract" section
-  ok       commands             build, coverage, fmt, fmt_check, fmt_file, lint, smoke, test
+  ok       commands             build, coverage, fmt, fmt_check, fmt_file, lint, smoke, test, test_files
   problem  commands on PATH     golangci-lint is not installed, so lint would fail
                                 fix: install golangci-lint, or clear commands.lint in .sdlc/config.json
   ok       freeze check         commands.freeze_check is not set, so sdlc freeze runs no check
@@ -233,57 +158,42 @@ sdlc doctor
 1 problem. The fix is above it.
 ```
 
-Each problem comes with the fix beneath it. Here the guess was right but the
-tool is missing, so you either install it or clear that command. `doctor`
-exits non-zero when anything is a problem.
+Read down the left-hand column. Each `problem` has its fix directly beneath
+it. Here the guess was right but the tool is missing, so you either install
+golangci-lint or set `commands.lint` to `""` to go without a lint step. When
+nothing is wrong, the last line reads `Everything checks out.`
 
-### What `doctor` checks
-
-`doctor` does not run your commands, because a test suite can take minutes.
-It takes the first word of each part of a command and looks it up on your
-`PATH`, so `test -z "$(gofmt -l .)"` is checked for `gofmt`. A `;` or `|`
-inside quotes does not start a new part, so `awk '{a; b}' file` is checked for
-`awk` alone. To skip a step you have no tool for, set that command to `""`.
-
-It also asks the hook's classifier whether each command would be refused, and
-names the command by its key and the rule, without printing the command. A quiet
-`doctor` is not a promise that the hook will allow every command: it judges each
-one as the main conversation would run it from the project root, with no story
-under way, so it does not judge the agent's role, the freeze, the other
-checkouts or whether the story's gates have passed, and it does not judge
-`fmt_file`, which the hook runs itself.
-
-The last check asks what the hooks will run. With `SDLC_BIN` set, that is the
-program it names, and `doctor` reports a problem when it names nothing
-runnable, because the hooks then pass over it and run whatever `sdlc` they
-find instead.
-
-If the repository cannot be found, `doctor` marks every check after that as
-skipped rather than reporting the same cause several times. If the
-configuration cannot be read, it skips the rest too, apart from the loop state
-check, which does not need it.
+`doctor` is quick because it does not run your commands. It only checks that
+the program each one starts with is installed, so a test command that is
+spelled correctly and fails is something you will find on the first story, not
+here. Run your `test` and `lint` commands once by hand if you have any doubt.
 
 > [!NOTE]
-> The contract check only looks for the heading. A section still full of `TBD`
-> passes it, which is why the next step is yours.
+> The `project contract` line only looks for the section's heading. A contract
+> still full of `TBD` passes it, which is why the next step is yours.
 
 ## Fill in the contract
 
-The `## SDLC Contract` section in `CLAUDE.md` is prose that the runbook and
-every agent read. `.sdlc/config.json` holds the values a script can use, and
-the contract holds the rules a script cannot check. Each part has a reader:
+Open `CLAUDE.md` and find the `## SDLC Contract` section that `init` appended.
+It is where you tell the agents what good looks like in this project. Your
+settings in `.sdlc/config.json` hold what a program can check, such as a test
+command. The contract holds the rules only a reader can check, and each part
+of it has a reader:
 
-| Section | Read by |
+| Part | Who works from it |
 | --- | --- |
 | Phase constraints | the researcher, the test author, the implementer and the architect |
-| Architecture rules | the implementer when it plans, and the architect, who blocks on them |
+| Architecture rules | the implementer, when it plans, and the architect, who blocks a plan that breaks one |
 | Test conventions | the test author |
-| Domain glossary | the researcher and the human advocate, who flag names that do not match |
+| Code conventions | the code reviewer |
+| Domain glossary | the researcher and the human advocate, who flag a name that does not match |
 | Performance budgets | the performance reviewer, which blocks only when one is breached |
-| Security and data rules | the security reviewer, as the template says |
+| Security and data rules | the security reviewer |
 
-You do not need to fill in every part today. Write rules as sentences someone
-could check against a diff, in the project's own words:
+Most of the fields start as `TBD`. In an existing project you already know the
+answers: they are the things you say in code review. Start with the
+architecture rules, the test conventions and the glossary, and write each rule
+as a sentence somebody could check against a diff:
 
 ```markdown
 ### Architecture rules (the design reviewer blocks on these)
@@ -293,126 +203,147 @@ could check against a diff, in the project's own words:
 - Do-not-touch areas: `internal/ledger/` needs a person before any change.
 ```
 
-The template asks you to keep the section under about 150 lines, because it is
-loaded into every session.
+Keep the whole section under about 150 lines. It is loaded into every session,
+so every line in it costs a little on every story.
+
+When you are done, commit it. A story's worktree has only what trunk has
+committed, so a rule you have not committed is a rule the next story never
+sees.
 
 > [!NOTE]
-> Edit the contract between stories. While a story is running, the hook refuses
-> any attempt by the assistant to write `CLAUDE.md`
-> ([`write-protected-path`](../enforcement.md#write-protected-path)).
+> Edit the contract between stories. While a story is running, the hook
+> [refuses an agent](../enforcement.md#write-protected-path) that tries to
+> write `CLAUDE.md`, so the rules a story is reviewed against cannot be changed
+> by the story.
 
-## Deciding what to commit
+## What to commit from here on
 
-What to ignore is your call, and `init` leaves it to you. Committing the setup
-is not optional, as [Commit the setup](#commit-the-setup) says. These are the
-facts the rest of the decision rests on:
+Committing the setup was the one step you could not skip. After that, there is
+only one more habit to pick up. When a story lands, two things are left in
+your checkout for you to commit:
 
-- `sdlc gate commit pass` refuses while `git status --porcelain` shows
-  anything, untracked files included. When it runs, every file under `.sdlc/`
-  must be either committed or ignored.
-- The runbook commits a story with `git add -A`, so anything not ignored goes
-  into the same commit as the code. With `git.worktrees` on, that commit is made
-  in the story's worktree, on `story/<ID>`: the backlog and the story's records,
-  kept in the main checkout, are not in it, and wait there for you to commit.
-- Review approvals are stamped with a hash of the tree that leaves out `.sdlc/`
-  and the `status` and `updated` fields of the backlog's stories. Committing
-  loop files does not make an approval stale.
-- Some files change after the commit. Recording the commit and retro gates
-  updates `gate-record.json`, the retro adds `RETRO.md`, and `sdlc stop` on a
-  finished story removes `state/active` and `state/tests.lock`. Passing the
-  retro marks the story `done` in the backlog, except for a story in its own
-  worktree, which is marked `done` when `sdlc stop` lands it.
-- `state/session` names a Claude Code session, and `sdlc start` rewrites it
-  whenever the story is picked up in another one. A clone that brings it along
-  holds none of the cloner's sessions to the story until one of them runs
-  `/sdlc:next`.
-- The freeze only considers files git lists: tracked, or untracked and not
-  ignored.
-- Each story's `trace.jsonl` grows with every tool call while the story runs,
-  and `.sdlc/.gitignore` keeps it out of git. In a project initialised before
-  traces, `sdlc start` writes that file; commit it once, with the story's own
-  commit or as a commit of your own on trunk between stories, never on trunk
-  while a story is being worked on.
+- the backlog, where the story is now `done`
+- the story's directory, `.sdlc/stories/<ID>/`, which holds its record and the
+  documents its gates produced: the analysis, the plan, every review and the
+  retro
 
-## What lives under `.sdlc/`
+Commit them between stories, when nothing is running. They are plain text, and
+they are the history of how each change was made.
 
-You will not need to edit most of what is under `.sdlc/`, but it helps to know
-what each file is for, particularly when you decide what to commit. This is the
-layout:
+Everything else under `.sdlc/` looks after itself:
+
+| Path | In git? |
+| --- | --- |
+| `.sdlc/config.json`, `.sdlc/templates/`, `.sdlc/.gitignore` | yes: you committed them with the setup |
+| `.sdlc/stories/<ID>/` | yes, once the story has landed |
+| `.sdlc/stories/<ID>/trace.jsonl` | no: what the story cost, as measured on your machine, ignored by `.sdlc/.gitignore` |
+| `.sdlc/worktrees/` | no: the stories' own checkouts, which ignore themselves |
+
+You don't need to add anything to your own `.gitignore`. To commit the cost
+measurements as well, empty `.sdlc/.gitignore`. Don't delete it, because
+`sdlc` writes it again when the next story starts.
+
+[The loop](../the-loop.md#where-everything-lives) shows every file under
+`.sdlc/` and which gate writes it.
+
+> [!NOTE]
+> All of this assumes each story has a worktree of its own, which is the
+> default. If you [turn worktrees off](../configuration.md#turning-worktrees-off),
+> stories are worked and committed in your own checkout, and it has to be on
+> trunk with nothing uncommitted before one can start.
+
+## A project that keeps AGENTS.md
+
+Claude Code reads `AGENTS.md` only where there is no `CLAUDE.md`, from version
+2.1.277 on. So where your repository has an `AGENTS.md` and no `CLAUDE.md`,
+`sdlc init` appends the contract to `AGENTS.md` and creates no `CLAUDE.md`,
+which would hide your `AGENTS.md` from Claude Code. Its list then has this
+line in place of the one for `CLAUDE.md`:
 
 ```text
-.sdlc/
-  .gitignore                    written by init, or by sdlc start where there is none; ignores the traces
-  config.json                   written by init; read by every command and the hook
-  templates/story.schema.json   written by init; not read by sdlc itself
-  state/
-    active                      sdlc start writes it; sdlc stop and a hand-over remove it
-    session                     sdlc start writes it in Claude Code; removed with active
-    tests.lock                  sdlc freeze writes it
-    stop-blocks.json            the Stop hook's count of stops it sent back, and when it began waiting for a subagent
-    trace-read.json             the hook's mark of how far it has read each transcript
-  stories/<ID>/
-    gate-record.json            sdlc start creates it; every gate, event and review
-    trace.jsonl                 the hook and the commit gate append to it; what the story cost
-    ANALYSIS.md ... RETRO.md    sdlc artifact write
-    plans/<sha256>.md           sdlc artifact write plan; a kept revision of the plan
-    reviews/                    sdlc review add
-  worktrees/
-    .gitignore                  sdlc start writes it, holding *
-    <ID>/                       the story's own worktree, on the branch story/<ID>
+  created  AGENTS.md (appended to)
 ```
 
-With [`git.worktrees`](../configuration.md#git) on, the default, `sdlc start`
-writes `state/` in the story's worktree, `.sdlc/worktrees/<ID>`, rather than in
-the main checkout: every checkout has a `state/` of its own. `config.json` there
-is trunk's committed copy. The backlog and `stories/` stay in the main
-checkout, where every checkout reads and writes them.
+Everything else on this page works the same way. Wherever it says
+`CLAUDE.md`, read `AGENTS.md`, including in the `git add` line when you commit
+the setup. `sdlc doctor` confirms that Claude Code will read the section
+there:
 
-### The files, one by one
+```text
+  ok       project contract     AGENTS.md carries the "## SDLC Contract" section and there is no CLAUDE.md, so Claude Code 2.1.277 or later reads it
+```
 
-- **`config.json`** makes a project take part. Without it the hook allows
-  everything, and `sdlc status`, `sdlc start` and the other loop commands stop
-  with [SDLC-E0002](../troubleshooting.md#sdlc-e0002).
-- **`templates/story.schema.json`** describes a story for editors and for you.
-  The backlog is not validated against it.
-- **`state/active`** names the story under way. Its presence is what turns
-  enforcement on. Handing a story to a person with `sdlc escalate` ends the
-  iteration and removes it.
-- **`state/session`** names the Claude Code session working the story. Only
-  that session and its agents are held to the story, and the `sdlc` commands
-  that change it refuse to run in any other Claude Code session; every other
-  session in the repository is otherwise left alone. `sdlc start` in another
-  session moves the story there, and outside Claude Code it records none.
-- **`state/tests.lock`** is the freeze: every test file's sha256. `sdlc
-  unfreeze` removes it, and so does `sdlc stop` on a finished story.
-- **`state/stop-blocks.json`** counts the stops the `Stop` hook sent back with
-  nothing recorded, up to `loop.max_stop_blocks`. Once a stop has been let
-  through because a subagent was still running, `waiting_since` in it is when
-  that [wait began](../enforcement.md#stopping-mid-story), in UTC.
-- **`state/trace-read.json`** is where the hook keeps how far it has read each
-  session's transcript, so that each turn's tokens are counted once.
-- **`stories/<ID>/`** is the story's history: the gate record, the documents
-  each gate stored and every review round, and its
-  [trace](../the-loop.md#the-trace), `trace.jsonl`.
-- **`.gitignore`** keeps every story's `trace.jsonl` out of git. sdlc writes it
-  where there is none and never writes over it, so to commit the traces, leave
-  it empty: deleted, it is written again at the next `sdlc start`.
+Whether Claude Code reads `AGENTS.md` at all is its Project instructions
+setting, which you change with `/config` in Claude Code. The default reads it.
+In this layout `doctor` adds a `project instructions` line that checks the
+setting in your own Claude Code settings, and reports a problem if it has been
+changed to one that skips `AGENTS.md`. It cannot see settings your organisation
+manages, and says so.
 
-### Files outside `.sdlc/`
+### With a CLAUDE.md as well
 
-Outside `.sdlc/`, the loop also relies on the backlog, whose `status` and
-`updated` fields it rewrites, `CLAUDE.md`, and `CODEMAP.md`, which the analysis
-and retro agents add to.
+A project that has both files keeps the contract in one of them. Where it is
+in `AGENTS.md`, Claude Code reads `CLAUDE.md` in its place, so `CLAUDE.md` has
+to pull `AGENTS.md` in. Until it does, `doctor` reports it:
 
-The lock that stops two `sdlc` commands writing at once lives in your user
-cache directory, not in the repository.
+```text
+  problem  project contract     AGENTS.md carries the "## SDLC Contract" section, but Claude Code reads CLAUDE.md in its place, and CLAUDE.md does not import it
+                                fix: add a line @AGENTS.md to CLAUDE.md, outside any code block
+```
+
+Add the line `@AGENTS.md` to `CLAUDE.md`, on a line of its own and outside any
+code block, and the check passes:
+
+```text
+  ok       project contract     AGENTS.md carries the "## SDLC Contract" section, and CLAUDE.md imports it with an @AGENTS.md line
+```
+
+A `CLAUDE.local.md` at the root is read in place of `AGENTS.md` too. It is
+covered once `CLAUDE.md` has the `@AGENTS.md` line. Where there is no
+`CLAUDE.md`, give `CLAUDE.local.md` the line.
+
+### Where one file is a link to the other
+
+Some projects make `CLAUDE.md` a link to `AGENTS.md`, so that every tool reads
+the same file. `sdlc init` appends to `AGENTS.md` and keeps the link, and its
+list says `AGENTS.md (appended to; CLAUDE.md links to it)`.
+
+Where `AGENTS.md` is itself a link, to a file shared between projects, `init`
+writes nothing outside your project. It puts a file of the project's own in
+place of the link, with the contract appended, and leaves the shared file
+unchanged.
+
+On Windows, a link in place of a file needs Developer Mode or an
+administrator, and git checks a link out as a plain file where it cannot make
+one. So on Windows, prefer the `@AGENTS.md` line, which works everywhere.
+
+## Starting again from the defaults
+
+Run `init` a second time and it
+[stops rather than lose your settings](../troubleshooting.md#sdlc-e0003). To
+start again on purpose, pass `--force`:
+
+```console
+$ sdlc init --force
+```
+
+`--force` detects your stack afresh and puts every setting back to its
+default. It keeps the things that describe your repository: where your backlog
+is, what your trunk branch is called, and a review policy you have moved. It
+never touches your stories, your `REVIEW.md` or a contract section that is
+already there. Run it between stories: it is
+[refused](../troubleshooting.md#sdlc-e0012) while one is being worked on.
 
 ## Where to go next
 
 Now that the loop is set up, you are ready for your first story.
 
-- [Writing stories the loop can run](writing-stories.md)
-- [Tuning commands for your stack](tuning-commands-for-your-stack.md)
-- [Configuration](../configuration.md): every setting
-- [The loop](../the-loop.md#where-everything-lives): what each gate produces
-- [Enforcement](../enforcement.md): what the hook refuses while a story runs
+- [Writing stories](writing-stories.md): acceptance criteria the loop can turn
+  into tests
+- [Tuning commands for your stack](tuning-commands-for-your-stack.md): make the
+  commands and paths match what your project runs
+- [Getting started](../getting-started.md#run-your-first-story): what you will
+  see when the first story runs
+- [Configuration](../configuration.md): every setting in `.sdlc/config.json`
+- [Enforcement](../enforcement.md): what the hook holds an agent to while a
+  story runs

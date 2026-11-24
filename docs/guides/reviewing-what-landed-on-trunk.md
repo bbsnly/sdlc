@@ -1,258 +1,283 @@
 # Reviewing what landed on trunk
 
 - [Introduction](#introduction)
-- [The log, and marking it read](#the-log-and-marking-it-read)
-- [With the assistant](#with-the-assistant)
-- [Follow-ups go into the backlog between stories](#follow-ups-go-into-the-backlog-between-stories)
+- [See what landed](#see-what-landed)
+  - [Read an entry](#read-an-entry)
+  - [Start from somewhere else](#start-from-somewhere-else)
+- [Read a story's change](#read-a-storys-change)
+- [Review it with the assistant](#review-it-with-the-assistant)
+- [Mark it read](#mark-it-read)
+- [Add follow-ups to the backlog](#add-follow-ups-to-the-backlog)
 - [When the log will not start](#when-the-log-will-not-start)
 - [Ranges to read with care](#ranges-to-read-with-care)
-  - [What a range is](#what-a-range-is)
-  - [What the check cannot catch](#what-the-check-cannot-catch)
-  - [What is kept after a story stops](#what-is-kept-after-a-story-stops)
-  - [When the hook watched nothing](#when-the-hook-watched-nothing)
-  - [Stories worked in their own worktree](#stories-worked-in-their-own-worktree)
-  - [Entries the log could not place](#entries-the-log-could-not-place)
+  - [What the log says about a range](#what-the-log-says-about-a-range)
+  - [The map commit](#the-map-commit)
+  - [Stories worked in your own checkout](#stories-worked-in-your-own-checkout)
+- [Where to go next](#where-to-go-next)
 
 ## Introduction
 
-The loop commits a story once every gate has passed, and nobody has to be
-watching when it does. That is the point of it, but it also means that stories
-can land on trunk while you are somewhere else.
+The loop lands a story once every gate has passed, and nobody has to be
+watching when it does. That is the point of it. It also means stories reach
+trunk while you are somewhere else.
 
-This guide shows how to see what landed since you last looked, read it with or
-without the assistant, and add follow-ups to the backlog. You may want to look
-back after a run of stories nobody watched, before you cut a release, or when
-you pick a project up again. The everyday case takes two commands, and the rest
-of the page is there for when you need it.
+`sdlc log` is how you catch up. It lists the stories that landed since you
+last looked, with the commits each one landed in and what it went through on
+the way: how many rounds of review, who blocked, what was found, what it cost.
 
-## The log, and marking it read
+This guide shows how to read the log, look at a story's change with or without
+the assistant, mark what you have read, and turn what you find into follow-up
+stories. You may want it after a run of stories nobody watched, before you cut
+a release, or when you pick a project up again.
 
-`sdlc log` lists the stories committed to trunk, oldest first, with the commits
-each one landed in and what it went through: review rounds, blocks, a freeze
-lifted, gates reopened, questions handed to a person, and spend. It changes
-nothing, so you may run it as often as you like.
+## See what landed
+
+From your project, run `sdlc log`:
 
 ```console
 $ sdlc log
 ```
 
-By default it starts after the last commit you acknowledged. When you have read
-up to a commit, say so in your own terminal:
+It lists every story that was committed since the last commit you marked as
+read, oldest first. The first time, that is every story. It changes nothing,
+so you may run it as often as you like.
 
-```console
-$ sdlc ack --through HEAD
+### Read an entry
+
+Each story's entry starts with a line like this one:
+
+```text
+b9a9f4e96c93..75ef254ded0b  AUTH-3  Reject expired sessions
 ```
 
-From then on the log starts after that commit. Acknowledging an earlier commit
-is allowed, and the log lists the stories after it again.
+That is the range of commits the story landed in, its id and its title.
+Beneath it comes a row for each thing worth knowing about how the story got
+there. Here are the rows from the same entry:
 
-> [!WARNING]
-> `sdlc ack` is for a person alone. The hook refuses it from a tool call,
-> because an assistant that could run it would be deciding which stories nobody
-> needs to look at. Run it in your own terminal.
+| Row | What it tells you |
+| --- | --- |
+| `rounds     design_review 2 · verifier_review 1 · code_review 1` | How many rounds of review each gate took. More than one means something was sent back. |
+| `blocks     1: design_review architect (round 1)` | Which reviewer blocked, at which gate, in which round. |
+| `counts     design_review architect (round 1): 1 important` | How many findings a review counted. |
+| `finding    design_review architect F-1 fixed, important: the plan: AC-2 has no step` | Each finding, and whether it was fixed, declined or referred to you. A declined or referred finding gives its reason. |
+| `staffing   2026-11-23T19:51:47Z  staffing_set: 13 agents needed, 0 left out; staffing changes on the record before this: 0` | Which agents the story used. A line for each agent sits above this one, with what the agent was asked for, or that it was left out, and why. |
+| `spent      $12.40` | What was [recorded as spent](tracking-what-a-story-costs.md) on the story. |
 
-If you would rather start somewhere else, give the log a starting point, or ask
-for everything:
+Three more rows appear only when something unusual happened, and they are
+where a second look pays most:
+
+- **`unfrozen`**: the freeze on the story's tests was lifted, with the reason
+  that was given. Check that the tests changed the way the reason says.
+- **`reopened`**: a gate that had passed was opened again.
+- **`escalated`**: the story was handed to a person, with the question, and
+  whether it was `answered` or is still `waiting`.
+
+An entry may also have a `range` row. That is the log telling you how far to
+trust the range on its first line, and
+[Ranges to read with care](#ranges-to-read-with-care) says what each one
+means.
+
+### Start from somewhere else
+
+To look further back than the last commit you marked as read, name the commit
+to start after, or ask for everything:
 
 ```console
 $ sdlc log --since v0.3.0
 $ sdlc log --all
 ```
 
-The acknowledgement lives in `.sdlc/state/acknowledged` and says how far the
-person using this clone has read. Whether it is committed is your call.
-[`sdlc log`](../commands.md#sdlc-log) and [`sdlc ack`](../commands.md#sdlc-ack)
-have every flag.
+`--since` takes a tag, a hash, or a name such as `HEAD~20`.
+[`sdlc log`](../commands.md#sdlc-log) has the rest, including `--json` for a
+script.
 
-## With the assistant
+## Read a story's change
 
-If you would like company while you read, Claude Code has a skill for it:
+The range on an entry's first line is one git understands, so you can hand it
+straight to git. Let's take a look at what AUTH-3 changed:
+
+```console
+$ git log --stat b9a9f4e96c93..75ef254ded0b
+$ git diff b9a9f4e96c93..75ef254ded0b
+```
+
+Read the change against the story's acceptance criteria in your backlog. Does
+each criterion have something in the change behind it? Is there a change no
+criterion asked for?
+
+The story's own documents are beside your code, in `.sdlc/stories/AUTH-3/`,
+all as text you can read. The two worth opening first are `RETRO.md`, which
+says what deviated from the plan and what was learned, and the files under
+`reviews/`, which hold everything each reviewer said. The log only shows the
+findings they counted.
+
+## Review it with the assistant
+
+If you would like company while you read, there is a skill for it. Type this
+in Claude Code:
 
 ```text
 /sdlc:trunk-review
 ```
 
-It reads the same log and goes through it with you, story by story. It lists
-the commits in each range and reads the changes against the story's acceptance
-criteria and its retro. It looks hardest where the log shows a freeze lifted, a
-gate reopened or a question answered. For each story it reports what looks
-right, what is worth a second look, and what to follow up.
+The assistant reads the same log and goes through it with you, story by story.
+It lists the commits in each range and reads the change against the story's
+acceptance criteria and its retro. It looks hardest where the log shows a
+freeze lifted, a gate reopened or a question answered. For each story it
+reports what looks right, what is worth a second look, and what to follow up.
 
-To start somewhere else, say so after the command:
-`/sdlc:trunk-review since v0.3.0`, or `/sdlc:trunk-review everything`.
+To start from somewhere else, say so after the command:
 
-The skill does not mark anything read. When it is done it names the commit to
-pass to `sdlc ack`, and leaves running it to you.
+```text
+/sdlc:trunk-review since v0.3.0
+/sdlc:trunk-review everything
+```
+
+The skill only reads. It never reverts, resets or rewrites a commit, and it
+marks nothing as read. When it is done, it names the commit to acknowledge and
+leaves that to you.
 
 > [!NOTE]
-> Only you start the skill. It carries `disable-model-invocation`, so the
-> assistant does not run it on its own initiative, and the plugin is tested so
-> that no agent loads it either.
+> Only you can start this skill. The assistant does not run it on its own
+> initiative, and none of the loop's agents can load it.
 
-## Follow-ups go into the backlog between stories
+## Mark it read
 
-When the skill finds something worth following up, it proposes each follow-up
-as a story in the backlog's own shape, with `status` set to `blocked`, so
-`sdlc start` does not pick it up before you have read it. A `ready`
-story is picked next, and a `todo` one is passed over; see
-[Statuses](writing-stories.md#statuses). It gives the follow-up the risk tier of
-the story it follows up, for you to confirm: a story
-with no tier is `low`, and would be committed without waiting for you unless its
-change touches a path `pre_commit_pause_paths` lists.
+When you have read up to a commit, tell `sdlc`. Run this in your own terminal:
 
-Nothing is added until you say which ones to add. Even then, a follow-up goes
-into the backlog only when no story is being worked on. While one runs, the
-session working it cannot edit the backlog
-([`backlog-is-not-edited`](../enforcement.md#backlog-is-not-edited)), so the
-criteria that story is held to stay the ones it started with. Other sessions are
-not held to that, so the skill leaves the follow-ups as text instead, and you add
-them once the story is finished.
+```console
+$ sdlc ack --through HEAD
+Acknowledged through 75ef254ded0b. `sdlc log` starts after it.
+```
+
+In Claude Code, you may type `/sdlc:ack --through HEAD` instead.
+
+From then on the log starts after that commit. `--through` takes HEAD or any
+commit in its history, and there is no default: you always say how far you
+read. If you acknowledge a commit earlier than the last one, the log lists the
+stories in between again.
+
+A story the log [could not place](#what-the-log-says-about-a-range) stays in
+the log whatever you acknowledge, so that it is seen.
+
+> [!WARNING]
+> Acknowledging is yours alone. The hook refuses `sdlc ack` from an agent,
+> because an agent that could run it would be deciding which stories nobody
+> needs to look at.
+
+The acknowledgement says how far the person using this clone has read. It is
+kept in this clone and is not something to commit.
+
+## Add follow-ups to the backlog
+
+A review usually ends with a short list: a criterion that deserves another
+test, a finding that was declined and should not have been. Each of those is a
+new story.
+
+The `/sdlc:trunk-review` skill drafts them for you. It proposes each follow-up
+as a story in your backlog's own shape, with two choices made on the safe
+side for you to confirm:
+
+- **`status` is `blocked`**, so the loop does not start the story before you
+  have read it.
+- **`risk_tier` is the tier of the story it follows up.** A story with no tier
+  is `low`, and a low-risk story is committed without waiting for you, unless
+  its change touches a path `pre_commit_pause_paths` lists.
+
+Nothing is added until you say which ones to add. To write a follow-up
+yourself, add it to the backlog like any other story:
+[Writing stories](writing-stories.md) shows how.
+
+> [!NOTE]
+> Add follow-ups between stories. While a story is being worked on, the skill
+> leaves the backlog alone and gives you the follow-ups as text, so that the
+> criteria that story is held to stay the ones it started with.
 
 ## When the log will not start
 
-If `.sdlc/state/acknowledged` names a commit git does not have, `sdlc log`
-stops with [SDLC-E0047](../troubleshooting.md#sdlc-e0047). That happens after a
-history rewrite, or when the file came from another clone. Acknowledge a commit
-this repository has, or use `sdlc log --all` to read everything without it.
+If the commit you last acknowledged is one git no longer has, `sdlc log`
+[stops and says so](../troubleshooting.md#sdlc-e0047) rather than guess where
+you got to. That happens after history was rewritten, or when the
+acknowledgement was copied from another clone.
+
+Acknowledge a commit this repository does have, and the log starts from there.
+To read everything in the meantime, use `sdlc log --all`.
 
 ## Ranges to read with care
 
-Most of the time you can read a story's range as it is listed. This section is
-for the times you want to know how far to trust one. It explains how a range is
-worked out, the three things its check cannot catch, and which entries deserve a
-closer look. Don't worry if you do not need it yet: the log and the skill both
-work without it.
+Most of the time you can read a range as it is listed. This section is for
+the times you want to know how far to trust one. Don't worry if you do not
+need it yet: the log and the skill both work without it.
 
-### What a range is
+A range is the commits the loop saw the story land. For a story worked in a
+worktree of its own, which is how `sdlc` sets a project up, it is exactly the
+commits that reached trunk when the story landed. Everything in it was checked
+before trunk moved: it is the change the reviewers saw, or it was reviewed
+again. [Done when it lands](../the-loop.md#done-when-it-lands) lists the
+checks.
 
-A range is the commits the loop watched the story's session land, as far as the
-hook could tell a command was a commit. The hook writes down the HEAD each such
-command starts from, in the repository's git directory at
-`<git-dir>/sdlc/commits/<story>/`, one small file per HEAD.
-`git rev-parse --absolute-git-dir` names the git directory. The commit gate takes the commits
-whose first parent is one of those, checks that exactly they and nothing else
-lie between the pair it picks, and records that pair. So a person's commit made
-after the story's is left out, and a story whose commits somebody else's sits
-between records no range at all, rather than one that would hold theirs. It says
-the session **landed** those commits, not that it wrote them: a fast-forward
-merge the session ran lands commits somebody else made.
+A range is still a record and not proof. It is a list to read, never a list
+to revert.
 
-### What the check cannot catch
+### What the log says about a range
 
-The check is that the pair holds exactly the commits the loop watched, never
-that it holds everything the story did. Three things it cannot catch, each with
-what to do about it.
+When the log is not sure of a range, it says so on a `range` row beneath the
+entry's first line:
 
-#### A commit the hook did not watch
+| The row says | What it means | What to do |
+| --- | --- | --- |
+| `head is <head>, past <end>: nothing that landed after <end> was watched` | When the story's commit was recorded, HEAD had moved past the end of the range, and the loop watched nothing after it. Usually a person committed after the session. | Look at what `<head>` changed, and whether it belongs to the story. |
+| `inferred from commit messages` | The story was committed by an older `sdlc` that recorded no range, so the log found it by the commit messages that name its id. | Check both ends. A commit that forgot the id is missing, and a later one that names it, such as a revert, moves the end. |
+| `unknown: the loop watched this story's commits, but no single range holds only them` | Somebody else's commits sit between the story's. | Find the story's commits yourself, among those since its code review. |
+| `unknown: the record names no commit, and no commit message names AUTH-3` | Nothing says where the story landed. | Review what the story's documents say, and treat the change itself as not reviewed. |
+| `not on this branch`, or `not in this repository` | The story's commit is not in the history of the branch you are on, or git does not have it at all. | The same. Nothing is guessed for it. |
 
-It is missing from the range, and leaves no sign. A command the hook could not
-tell was a commit, one whose repository its words did not identify as this one
-(after `cd "$DIR"`, with `git -C "$DIR"`, with `GIT_DIR` set), or the second
-commit of one Bash call that made two, is not in the range. At the start, the
-story's first commits then read as somebody else's, and at the end the range
-stops short.
+Entries with an `unknown` range, or one that is not on this branch or not in
+this repository, are listed every time, whatever you have acknowledged.
 
-When the range stops before HEAD the commit gate says `head is <head>, past
-<end>: nothing that landed after <end> was watched`, which is usually a person's
-commit and is sometimes this. When the range ends *at* HEAD there is no such
-line and no signal at all: a commit nobody watched, made straight on a HEAD
-the hook had written down (after a command that went through and committed
-nothing, say) is taken into the range, and nothing says so.
+### The map commit
 
-Read the last commit of every range as one that may not be the story's.
+One commit can reach trunk with a story and sit outside its range. Where the
+story wrote sections for `CODEMAP.md`, the project's map of its code,
+`sdlc stop` puts them on trunk in a commit of its own, straight after the
+story's commits. Its message begins `docs: map` and the story's id:
 
-#### History rewritten under the loop
+```console
+$ git log --oneline --grep "docs: map AUTH-3"
+```
 
-It can hand a person's commit to the story. A story in its own worktree that is
-put onto a later trunk commit, by a rebase or by the stop's own replay, is the
-exception: its range starts at the trunk commit it sits on, and the commits made
-again are taken as its own. Elsewhere, a rebase that replays the story's
-commit on top of one a person made on trunk leaves the person's commit in the
-range and the story's own rewritten commit out of it. The same follows from
-anybody rewriting trunk while a story is under way, such as a force-push, a
-squash or a tidy of history, and not only from the session. The `head is` line
-fires in that case, because HEAD is the rewritten commit and the range ends
-before it.
+No reviewer saw that commit, because the map is written after the last
+review. Give it a glance with `git show` when you review the story.
 
-Read a range whose story saw a rebase or a force-push against its commits by
-hand. And read the first commits of a range that starts at the trunk commit a
-story sits on: nothing watched them, so a person's commit made right on that
-trunk commit, or on the rebased story before the session's next commit, reads as
-the story's.
+### Stories worked in your own checkout
 
-#### What the hook writes down is believed
+With [`git.worktrees`](../configuration.md#git) set to `false`, a story's
+commits are made straight onto the branch you have checked out, among
+whatever else is committed in the meantime. A range is then only what the
+hook watched the story's session commit, and three things can make it wrong:
 
-Anyone who can write into the git directory can plant a HEAD, and the commit
-gate cannot tell. What that buys is not a fake commit, which git would not
-resolve, but the parent of a real, unrelated commit already on trunk: the next
-commit gate takes that commit into the story's range, the check passes, and an
-unreviewed commit reads as the story's.
+- **A commit the hook did not watch.** It is missing from the range, with no
+  sign. A commit nobody watched can also be taken into the end of a range that
+  stops at HEAD. Read the last commit of every range as one that may not be
+  the story's.
+- **History rewritten while the story was under way.** After a rebase, a
+  squash or a force-push, a person's commit can end up inside the range and
+  the story's own rewritten commit outside it. Read such a story's commits by
+  hand.
+- **A session the hook was not watching.** Where the plugin was not installed
+  or enforcement was off, the range is everything from the story's code review
+  to its commit, which can hold commits somebody else made in that window.
 
-The git directory is protected from the session's tools and shell commands by
-the same rules that protect `.git/hooks`, and those rules have known gaps.
+A story that was reopened after it was committed spans everything that landed
+in between.
 
-### What is kept after a story stops
+## Where to go next
 
-What the hook wrote down is removed when a finished story is stopped, which the
-loop does straight after its last gate, so it is not there to look at when you
-review later. What survives is on the story's record, and `sdlc log` reads it
-back: the range, `range      unknown` where the gate recorded none, and, where
-the gate saw HEAD past the range's end, the same `head is <head>, past <end>`
-line beneath it, with the full HEAD as `head_past_commit` in `sdlc log --json`.
-An entry with no such line had a range ending at HEAD when it was recorded.
-
-### When the hook watched nothing
-
-Where the hook watched nothing — the plugin was not installed, enforcement was
-switched off, or the story was already under way when the version that watches
-arrived — the range is the older, wider one: from HEAD when code review first
-passed to HEAD when the commit gate last passed, which can hold commits somebody
-else made in that window. A story reopened after it was committed spans
-everything that landed in between, unless it was put onto a later trunk commit.
-A range is a list to read, not a list to revert, and the skill never reverts,
-resets or rewrites a commit.
-
-### Stories worked in their own worktree
-
-A story worked in its own worktree reaches trunk only when `sdlc stop` lands it,
-and the landing replaces the commit gate's range with the commits that reached
-trunk, as they are after any rebase onto it. Everything in that range was
-checked before trunk moved: no merge commit, nothing under `.sdlc/` and no
-backlog change, the reviewed change or reviews recorded again, and the
-configured commands passing where it was put onto a trunk that moved
-([the loop](../the-loop.md#done-when-it-lands) lists the checks). The record's
-`replayed` event names the commit the story was at before, the trunk commit it
-was put onto and the commit it became. Two things
-are still worth a look:
-
-- **`CODEMAP.md`.** The story's sections of it reach trunk in a commit no
-  reviewer saw, made by `sdlc stop` straight after the story's own commits and
-  outside the range the log prints. It is the commit `docs: map <ID>`, and the
-  story's record names it as `codemap_commit`: read it with `git show`. A
-  commit of `CODEMAP.md` inside the range, from a story that made one on its
-  own branch, was not reviewed either.
-- **Where the reviewed change began.** Where some of the story's commits reached
-  trunk before the landing, the landed event on its record names the commit its
-  reviewed change began at, and the range starts later. The commits between are
-  the story's too, among whatever else trunk gained meanwhile, and the log does
-  not tell them apart.
-
-### Entries the log could not place
-
-Three kinds of entry deserve a closer look, because the log could not place
-their range with confidence:
-
-- **Inferred.** A story committed by an `sdlc` that did not record its range is
-  found by the commit messages that name it, and the entry says so. A commit
-  that forgot the id is missed, and a later one that names it, such as
-  `Revert US-001`, moves the end of the range.
-- **No single range.** The commit gate watched the story's commits and no one
-  range holds only them, so it recorded none, and the log says
-  `range      unknown: the loop watched this story's commits, but no single
-  range holds only them`. The commit messages are not read for it: the story's
-  commits are somewhere since its code review, with somebody else's among them.
-- **Unknown, missing, or off this branch.** When no message names the story, or
-  its commit is not in this repository or not in HEAD's history, nothing is
-  guessed. These entries are listed every time, whatever you acknowledge, so
-  that they are seen. The skill reviews what the record says and tells you the
-  change itself was not reviewed.
+- [`sdlc log`](../commands.md#sdlc-log) and
+  [`sdlc ack`](../commands.md#sdlc-ack): every flag, and the `--json` fields
+- [Consolidating what the retros say](consolidating-what-the-retros-say.md):
+  looking across stories for what repeats, where this page looks at one story
+  at a time
+- [Tracking what a story costs](tracking-what-a-story-costs.md): where the
+  `spent` row comes from
+- [Writing stories](writing-stories.md): the shape of a follow-up
