@@ -3,6 +3,7 @@
 package shellx
 
 import (
+	"fmt"
 	"os/exec"
 	"sync"
 	"sync/atomic"
@@ -13,10 +14,18 @@ import (
 // InGroup has cmd, not yet started, run in a job object of its own, which
 // ends every process in it once its handle is closed: a test runner's
 // children otherwise keep writing to the worktree after the command that
-// started them was stopped. Run puts the process in the job as soon as it has
-// started; a child it starts before then is not in the job, and outlives a
-// stop. Only sdlc holds the handle, so a stop killed outright, which no signal
-// handler sees, closes it too and takes the job down with it.
+// started them was stopped. Only sdlc holds the handle, so a stop killed
+// outright, which no signal handler sees, closes it too and takes the job down
+// with it.
+//
+// The process is made suspended, and Run lets it go only once it is in the
+// job, so nothing it does, and no child it starts, happens outside the job.
+// It was let run from the start once, and put in the job after: a command
+// quick enough to end first was refused by Windows with "Access is denied"
+// and reported as one that could not be started, though it had run and exited
+// 0 (windows-latest, release run 45290041947), and a child started in that
+// moment outlived a stop. A command InGroup made is started by Run, which
+// alone lets it go; started any other way, it never runs.
 func InGroup(cmd *exec.Cmd) {
 	job, err := newJob()
 	if err != nil {
@@ -25,6 +34,10 @@ func InGroup(cmd *exec.Cmd) {
 		cmd.Err = err
 		return
 	}
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.CreationFlags |= createSuspended
 	g := &group{job: job}
 	groups.Lock()
 	if groups.of == nil {
@@ -84,8 +97,11 @@ const (
 	jobObjectExtendedLimitInformation = 9
 	jobObjectLimitKillOnJobClose      = 0x2000
 
-	processSetQuota  = 0x0100
-	processTerminate = 0x0001
+	processSetQuota      = 0x0100
+	processTerminate     = 0x0001
+	processSuspendResume = 0x0800
+
+	createSuspended = 0x00000004
 )
 
 // newJob makes a job that kills everything in it when its handle is closed.
@@ -112,9 +128,11 @@ func newJob() (syscall.Handle, error) {
 	return job, nil
 }
 
-// joinGroup puts cmd's process, just started, in the job InGroup made for it.
-// The pid cannot have been taken by another process: cmd still holds a handle
-// to its own until it has been waited for.
+// joinGroup puts cmd's process, just started and still suspended, in the job
+// InGroup made for it, and then lets it run. The pid cannot have been taken by
+// another process: cmd still holds a handle to its own until it has been
+// waited for. Where either step fails Run kills the process, which a suspended
+// one allows, so nothing of the command has run.
 func joinGroup(cmd *exec.Cmd) error {
 	groups.Lock()
 	g := groups.of[cmd]
@@ -122,7 +140,7 @@ func joinGroup(cmd *exec.Cmd) error {
 	if g == nil {
 		return nil
 	}
-	p, err := syscall.OpenProcess(processSetQuota|processTerminate, false, uint32(cmd.Process.Pid)) //nolint:gosec // G115: a process id Windows gave is a DWORD, so it fits
+	p, err := syscall.OpenProcess(processSetQuota|processTerminate|processSuspendResume, false, uint32(cmd.Process.Pid)) //nolint:gosec // G115: a process id Windows gave is a DWORD, so it fits
 	if err != nil {
 		return err
 	}
@@ -131,6 +149,20 @@ func joinGroup(cmd *exec.Cmd) error {
 		return err
 	}
 	g.joined.Store(true)
+	return resumeProcess(p)
+}
+
+// resumeProcess lets a process made suspended run. ntdll's NtResumeProcess
+// resumes every thread of it: exec does not hand out the one thread a new
+// process has, so ResumeThread cannot be called on it.
+func resumeProcess(p syscall.Handle) error {
+	proc := syscall.NewLazyDLL("ntdll.dll").NewProc("NtResumeProcess")
+	if err := proc.Find(); err != nil {
+		return err
+	}
+	if status, _, _ := proc.Call(uintptr(p)); status != 0 {
+		return fmt.Errorf("NtResumeProcess answered NTSTATUS %#x", status)
+	}
 	return nil
 }
 

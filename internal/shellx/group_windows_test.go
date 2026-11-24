@@ -25,8 +25,12 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
+	"strings"
+	"syscall"
 	"testing"
 	"time"
+	"unsafe"
 )
 
 // jbPatience bounds every wait here. It is a deadline, not a pause: nothing
@@ -182,4 +186,71 @@ func TestAC7RunReturningEndsWhatACommandInAJobLeftRunning(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	jbGone(t, c, "Run returned")
+}
+
+// jbInJob reports whether the process cmd started is in the job InGroup made
+// for it.
+func jbInJob(t *testing.T, cmd *exec.Cmd) bool {
+	t.Helper()
+	groups.Lock()
+	g := groups.of[cmd]
+	groups.Unlock()
+	if g == nil {
+		t.Fatal("the command has no job")
+	}
+	p, err := syscall.OpenProcess(0x1000, false, uint32(cmd.Process.Pid)) // PROCESS_QUERY_LIMITED_INFORMATION
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = syscall.CloseHandle(p) }()
+	proc, err := kernel32Proc("IsProcessInJob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var in int32
+	if r, _, err := proc.Call(uintptr(p), uintptr(g.job), uintptr(unsafe.Pointer(&in))); r == 0 {
+		t.Fatal(err)
+	}
+	return in != 0
+}
+
+// A command in a job is in it before any of it runs: it is made suspended,
+// and only joinGroup lets it go, once it is in the job. It used to run from
+// the start and be put in the job after, and a command that ended first was
+// refused by Windows with "Access is denied" and reported as one that could
+// not be started though it had exited 0 (windows-latest, release run
+// 45290041947).
+func TestACommandInAJobIsInItBeforeAnyOfItRuns(t *testing.T) {
+	cmd, err := Command(t.Context(), t.TempDir(), "echo ran")
+	if errors.Is(err, ErrNoShell) {
+		t.Skip("neither sh nor bash is on PATH")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	InGroup(cmd)
+	defer leaveGroup(cmd)
+	var out strings.Builder
+	cmd.Stdout = &out
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if jbInJob(t, cmd) {
+		t.Fatal("the process was in its job before joinGroup put it there")
+	}
+
+	if err := joinGroup(cmd); err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		t.Fatalf("joinGroup: %v", err)
+	}
+	if !jbInJob(t, cmd) {
+		t.Error("joinGroup returned and the process is not in its job")
+	}
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("the command, let go, ended with %v", err)
+	}
+	if got := strings.TrimSpace(out.String()); got != "ran" {
+		t.Errorf("the command, let go, printed %q, want ran", got)
+	}
 }

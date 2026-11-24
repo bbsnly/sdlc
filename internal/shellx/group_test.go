@@ -112,11 +112,14 @@ func TestAFinishedCommandLeavesNothingForStopAllToKillLater(t *testing.T) {
 			t.Fatal(err)
 		}
 		InGroup(cmd)
-		out, err := cmd.Output()
-		if err != nil {
+		// Through Run, as every command in a group is started: on Windows
+		// only Run lets the suspended process go.
+		var out strings.Builder
+		cmd.Stdout = &out
+		if err := Run(cmd); err != nil {
 			t.Fatalf("a command in a group of its own: %v", err)
 		}
-		return strings.TrimSpace(string(out))
+		return strings.TrimSpace(out.String())
 	}
 	if got := run(); got != "ran" {
 		t.Fatalf("the command printed %q", got)
