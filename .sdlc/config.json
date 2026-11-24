@@ -32,7 +32,10 @@
     "than the code. npm_test is not one the loop runs by name:",
     "it needs node on PATH, and is for a story that touches npm/.",
     "freeze_check lints the tree and compiles every test without running one, so a",
-    "test that does not lint or build is corrected before the freeze, not after it."
+    "test that does not lint or build is corrected before the freeze, not after it.",
+    "test_files is the freeze's narrow run: only the packages that hold the files in",
+    "SDLC_TEST_FILES, and the npm tests when a .test.js file is among them, so a",
+    "freeze no longer runs the whole twenty-minute suite to see the new tests fail."
   ],
   "commands": {
     "smoke":     "test -z \"$(go list ./...)\" || go vet ./...",
@@ -45,7 +48,8 @@
     "fmt_file":  "case \"$FILE\" in *.go) GOTOOLCHAIN=\"$(sed -n 's/^toolchain //p' go.mod | head -n 1)\" go fmt \"$FILE\" >/dev/null ;; esac",
     "coverage":  "test -f .scratch/cover.out && test -z \"$(find cmd internal test -name '*.go' -newer .scratch/cover.out | head -n 1)\" || { echo 'no coverage profile for this tree: run commands.test first, which writes it' >&2; exit 1; }; go tool cover -func=.scratch/cover.out | tail -1 | grep -Eo '[0-9]+\\.[0-9]+'",
     "mutation":  "",
-    "freeze_check": "./task lint && go test -count=1 -run '^$' ./... >/dev/null"
+    "freeze_check": "./task lint && go test -count=1 -run '^$' ./... >/dev/null",
+    "test_files": "if [ -n \"${SDLC_TEST_FILES-}\" ]; then r=0; p=$(grep -v '\\.test\\.js$' \"$SDLC_TEST_FILES\" | sed -e 's#^#./#' -e 's#/testdata/.*#/x#' -e 's#/[^/]*$##' | sort -u); if [ -n \"$p\" ]; then printf '%s\\n' \"$p\" | tr '\\n' '\\0' | xargs -0 go test -timeout 25m -count=1 || r=1; fi; if grep -q '\\.test\\.js$' \"$SDLC_TEST_FILES\"; then ./task npm-test || r=1; fi; exit $r; else go test ./... -count=1; fi"
   },
 
   "thresholds": {
@@ -67,7 +71,19 @@
 
   "freeze": { "allow_new_test_files": false },
 
-  "human_gates": { "pre_commit_pause_tiers": ["high"], "dor_advocate_check": false },
+  "_human_gates_doc": [
+    "pre_commit_pause_paths are the paths the contract holds as risk_tier high, so a",
+    "story that touches one waits for a person whatever tier it was written with."
+  ],
+  "human_gates": {
+    "pre_commit_pause_tiers": ["high"],
+    "pre_commit_pause_paths": [
+      "internal/hook", "internal/shellpolicy", "internal/policy", "internal/pathrules",
+      "internal/testset", "internal/cli/approve.go", "internal/cli/ack.go", "internal/cli/freeze.go",
+      "install.sh", "install.ps1", "npm", "plugin/hooks", ".github/workflows", ".goreleaser.yml"
+    ],
+    "dor_advocate_check": false
+  },
 
   "budget": { "per_story_usd": 0, "alert_fractions": [0.5, 0.8, 1.0] },
 
