@@ -1,56 +1,82 @@
 # @bbsnly/sdlc
 
-Installs [sdlc](https://github.com/bbsnly/sdlc): a story-driven delivery loop
-for Claude Code, with gates a model cannot talk its way past.
+[sdlc](https://github.com/bbsnly/sdlc) is a delivery loop for
+[Claude Code](https://claude.com/claude-code). It takes one user story at a
+time through nine gates: failing tests are written from your acceptance
+criteria and frozen before any code exists, the plan and the diff are each
+reviewed, and the commit comes last. A hook holds your agent to every gate.
 
-```sh
-npx @bbsnly/sdlc install
+This package installs the `sdlc` command. It needs Node 18 or newer, and the
+loop itself needs git 2.17 and Claude Code 2.1.309 or newer.
+
+## Install
+
+First, install the command. One line does it on macOS, Linux and Windows:
+
+```console
+$ npx @bbsnly/sdlc install
 ```
 
-That downloads the release for your machine, checks it against the release's
-checksums, and puts the `sdlc` binary in `~/.local/bin` (on Windows,
-`%LOCALAPPDATA%\Programs\sdlc\bin`).
+The installer downloads the native `sdlc` binary built for your machine,
+checks it against the checksums this package carries, and puts it in
+`~/.local/bin`, or in `%LOCALAPPDATA%\Programs\sdlc\bin` on Windows. If that
+directory is not on your `PATH`, it prints the lines to add.
 
-Then, in Claude Code:
+What you run afterwards is `sdlc` itself, with nothing of Node behind it. The
+package has no postinstall script, so nothing is installed until you ask.
+
+Next, add the plugin. Type these two commands into Claude Code:
 
 ```text
 /plugin marketplace add bbsnly/sdlc
 /plugin install sdlc@sdlc
 ```
 
-In the Code tab of Claude Desktop, `/plugin` does not add it: open the plugin
-browser, add the marketplace `bbsnly/sdlc` and install `sdlc` from there, as
-[Claude Desktop](https://github.com/bbsnly/sdlc/blob/main/docs/claude-desktop.md#install-the-plugin-from-the-plugin-browser)
-says.
+In the Code tab of Claude Desktop, you add it from the
+[plugin browser](https://github.com/bbsnly/sdlc/blob/main/docs/claude-desktop.md#install-the-plugin-from-the-plugin-browser)
+instead.
 
-## What this package is, and is not
+Then set up your project, from anywhere inside its repository:
 
-It is an installer. What ends up on your PATH is the native `sdlc` binary, not
-a Node wrapper around it: sdlc runs as a Claude Code hook on every matching
-tool call, where a Node process start would cost more than everything else in
-the loop put together.
-
-For the same reason there is no postinstall script. Installing a native binary
-is something you ask for, not something that happens while you were installing
-something else — and `--ignore-scripts` changes nothing here.
-
-## Options
-
-```sh
-npx @bbsnly/sdlc install --version 0.4.0   # an earlier release than this package's
-npx @bbsnly/sdlc install --dir /usr/local/bin
+```console
+$ sdlc init
 ```
 
-`SDLC_VERSION` and `SDLC_INSTALL_DIR` do the same, which is easier in a script.
+From here,
+[Getting started](https://github.com/bbsnly/sdlc/blob/main/docs/getting-started.md)
+takes you to your first story in about ten minutes.
 
-## Other ways to install
+## Choose a version or a directory
 
-```sh
-curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/bbsnly/sdlc/main/install.sh | sh
-go install github.com/bbsnly/sdlc/cmd/sdlc@latest
+To install another release, or to put the command somewhere else, pass
+`--version` and `--dir`:
+
+```console
+$ npx @bbsnly/sdlc install --version 0.6.1 --dir ~/bin
 ```
+
+[Installation](https://github.com/bbsnly/sdlc/blob/main/docs/installation.md)
+covers every other way to install, with or without Node.
+
+## Update
+
+Update the command and the plugin together. First the command:
+
+```console
+$ npx @bbsnly/sdlc@latest install
+```
+
+Then the plugin, in Claude Code:
+
+```text
+/plugin update sdlc@sdlc
+```
+
+Restart Claude Code afterwards.
+[Updating](https://github.com/bbsnly/sdlc/blob/main/docs/installation.md#updating)
+lists the migration guide for each release with breaking changes.
 
 ## Licence
 
-MIT. See [the repository](https://github.com/bbsnly/sdlc) for the full text,
-the documentation, and the source.
+`sdlc` is open-source software under the
+[MIT licence](https://github.com/bbsnly/sdlc/blob/main/LICENSE).
